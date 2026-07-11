@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+  <ObjectLibrary Name="OBJECTS">
+    <ObjectLibraryTab Name="TAB_STANDARD" Label="Standard">
+      <Block Name="TEMPLATE_BLOCK"/>
+      <VisualAttribute Name="VA_STD"/>
+    </ObjectLibraryTab>
+  </ObjectLibrary>
+</Module>

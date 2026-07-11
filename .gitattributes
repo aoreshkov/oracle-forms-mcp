@@ -1,0 +1,15 @@
+# https://help.github.com/articles/dealing-with-line-endings/
+# Normalize all text files to LF in the repository; check out LF everywhere.
+* text=auto eol=lf
+
+# The Linux Gradle wrapper script must stay LF (it runs on the CI Linux runner).
+/gradlew text eol=lf
+
+# Windows scripts must keep CRLF.
+*.bat text eol=crlf
+
+# Binary files are left untouched.
+*.jar binary
+*.gif binary
+*.png binary
+*.jpg binary

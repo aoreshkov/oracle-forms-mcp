@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+  <MenuModule Name="MAINMENU" MainMenu="MAIN">
+    <ProgramUnit Name="DO_EXIT" ProgramUnitType="Procedure" ProgramUnitText="PROCEDURE do_exit IS&#10;BEGIN&#10;  EXIT_FORM;&#10;END;"/>
+    <Menu Name="MAIN">
+      <MenuItem Name="FILE" Label="File" CommandType="Menu" SubMenuName="FILE_MENU"/>
+    </Menu>
+    <Menu Name="FILE_MENU">
+      <MenuItem Name="EXIT" Label="Exit" CommandType="PL/SQL" CommandText="do_exit;"/>
+    </Menu>
+  </MenuModule>
+</Module>

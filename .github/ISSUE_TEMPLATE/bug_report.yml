@@ -1,0 +1,59 @@
+name: Bug report
+description: Something doesn't work as documented
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+      placeholder: |
+        Called `fetch_module` for `ORDERS.fmb` and …
+    validations:
+      required: true
+  - type: input
+    id: module
+    attributes:
+      label: Module (if applicable)
+      description: The module file that triggers the problem, so it can be reproduced.
+      placeholder: "ORDERS.fmb (.fmb / .mmb / .pll / .olb)"
+  - type: dropdown
+    id: conversion-mode
+    attributes:
+      label: Conversion mode
+      description: Is ORACLE_HOME set (live conversion) or are you using pre-converted copy-mode files?
+      options:
+        - ORACLE_HOME set (Oracle tools convert)
+        - Copy-mode (pre-converted files, no ORACLE_HOME)
+        - Not sure / not conversion-related
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - stdio
+        - Streamable HTTP
+        - Not transport-related
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: oracle-forms-mcp version
+      placeholder: "0.1.0 (release zip / docker / built from source @ commit)"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS, MCP client, and Oracle Forms version
+      placeholder: "Windows 11, Claude Code 2.x, Forms 12c"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: stderr output or log file contents. Automatically formatted as code.
+      render: shell

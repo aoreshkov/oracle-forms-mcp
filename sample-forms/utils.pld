@@ -1,0 +1,21 @@
+PROCEDURE log_message(p_msg VARCHAR2) IS
+BEGIN
+  dbms_output.put_line('PROCEDURE inside a string literal');
+  NULL;
+END;
+
+FUNCTION add_numbers(a NUMBER, b NUMBER) RETURN NUMBER IS
+BEGIN
+  RETURN a + b;
+END;
+
+PACKAGE pkg_util IS
+  PROCEDURE noop;
+END;
+
+PACKAGE BODY pkg_util IS
+  PROCEDURE noop IS
+  BEGIN
+    NULL;
+  END;
+END;
