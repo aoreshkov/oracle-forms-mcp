@@ -35,7 +35,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 
 const val SERVER_NAME: String = "oracle-forms-mcp"
-const val SERVER_VERSION: String = "0.1.0"
+const val SERVER_VERSION: String = "0.1.1"
 
 /** Runtime configuration shared by both transports, populated from the CLI flags in `Main`. */
 data class ServerConfig(
