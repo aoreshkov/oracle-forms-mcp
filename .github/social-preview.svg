@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1b2a"/>
+      <stop offset="1" stop-color="#132a3f"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7F52FF"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="8" fill="url(#accent)"/>
+
+  <!-- top eyebrow -->
+  <text x="80" y="118" fill="#7dd3fc" font-size="26" font-weight="600" letter-spacing="3">MODEL CONTEXT PROTOCOL SERVER</text>
+
+  <!-- title -->
+  <text x="78" y="212" fill="#ffffff" font-size="92" font-weight="800" letter-spacing="-1">Oracle Forms MCP</text>
+
+  <!-- value prop -->
+  <text x="80" y="288" fill="#cbd5e1" font-size="35" font-weight="400">Serve legacy <tspan fill="#f8fafc" font-weight="600">.fmb / .mmb / .pll / .olb</tspan> modules to AI assistants</text>
+  <text x="80" y="338" fill="#cbd5e1" font-size="35" font-weight="400">&#8212; blocks, triggers, PL/SQL &amp; object XML, without Forms Builder.</text>
+
+  <!-- tool chips -->
+  <g font-size="26" font-weight="600" fill="#e2e8f0">
+    <rect x="80"  y="392" width="196" height="56" rx="28" fill="#1e3a5f" stroke="#334e6b"/>
+    <text x="178" y="428" text-anchor="middle">list_modules</text>
+    <rect x="292" y="392" width="200" height="56" rx="28" fill="#1e3a5f" stroke="#334e6b"/>
+    <text x="392" y="428" text-anchor="middle">fetch_module</text>
+    <rect x="508" y="392" width="176" height="56" rx="28" fill="#1e3a5f" stroke="#334e6b"/>
+    <text x="596" y="428" text-anchor="middle">get_trigger</text>
+    <rect x="700" y="392" width="216" height="56" rx="28" fill="#1e3a5f" stroke="#334e6b"/>
+    <text x="808" y="428" text-anchor="middle">search_source</text>
+    <rect x="932" y="392" width="212" height="56" rx="28" fill="#1e3a5f" stroke="#334e6b"/>
+    <text x="1038" y="428" text-anchor="middle">get_object_xml</text>
+  </g>
+
+  <!-- footer marks -->
+  <g font-size="27" font-weight="600">
+    <circle cx="94" cy="544" r="9" fill="#F80000"/>
+    <text x="114" y="553" fill="#e2e8f0">Oracle Forms</text>
+    <circle cx="330" cy="544" r="9" fill="#7F52FF"/>
+    <text x="350" y="553" fill="#e2e8f0">Kotlin Multiplatform</text>
+    <circle cx="690" cy="544" r="9" fill="#3b82f6"/>
+    <text x="710" y="553" fill="#e2e8f0">stdio + HTTP</text>
+    <circle cx="912" cy="544" r="9" fill="#22c55e"/>
+    <text x="932" y="553" fill="#e2e8f0">Apache-2.0</text>
+  </g>
+
+  <!-- repo handle -->
+  <text x="80" y="606" fill="#64748b" font-size="24" font-weight="500">github.com/aoreshkov/oracle-forms-mcp</text>
+</svg>
