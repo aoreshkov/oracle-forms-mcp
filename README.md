@@ -18,6 +18,41 @@ server on top: declarative tool adapters over a single `FormsService`, stdio and
 and a fingerprint-based on-disk cache. Oracle tool conversion feeds a streaming StAX parser that
 turns Forms XML into a structured index.
 
+## Why
+
+Oracle Forms applications from the 1990s–2000s are still running critical business processes, but
+their logic is locked inside binary `.fmb`/`.pll` modules that only Forms Builder can open. That
+makes them opaque to modern AI tooling and painful to review, document, or migrate.
+
+Oracle Forms MCP turns those modules into structured, queryable content so an AI assistant can:
+
+- **Understand a legacy app** — enumerate blocks, items, triggers, and program units without a Forms IDE.
+- **Review & document PL/SQL** — pull decoded trigger and program-unit bodies straight into the model's context.
+- **Assist modernization** — feed decades-old business logic to an assistant for migration to APEX,
+  Java, or a rewrite, and search across every module's source.
+
+It is aimed at developers and teams doing Oracle Forms **modernization, reverse engineering, code
+review, and documentation** — anyone who needs to read Forms logic faster than opening it by hand.
+
+## See it work
+
+<!-- TODO: record a short asciinema/GIF of a Claude session and embed it here:
+     ![demo](docs/demo.gif)   (drop the file at docs/demo.gif or an assets/ path) -->
+
+A typical session against the bundled `sample-forms` directory:
+
+```text
+You:  What does ORDERS.fmb do?
+AI →  list_modules                 → ORDERS.fmb (NOT_CACHED), MAIN.mmb, UTILS.pll …
+AI →  fetch_module ORDERS.fmb      → converted + indexed (12 blocks, 47 triggers, 9 program units)
+AI →  get_module_overview ORDERS   → blocks, triggers, LOVs, record groups, windows, canvases …
+You:  Show me the validation logic on the ORDER_ITEMS block.
+AI →  list_triggers block=ORDER_ITEMS  → WHEN-VALIDATE-ITEM, WHEN-NEW-RECORD-INSTANCE …
+AI →  get_trigger ORDER_ITEMS WHEN-VALIDATE-ITEM  → the decoded PL/SQL body
+You:  Where else is the ADD_TAX procedure called?
+AI →  search_source "ADD_TAX" scope=plsql  → hits across triggers and program units
+```
+
 ## How it works
 
 1. `list_modules` scans the configured `--forms-dir` (non-recursive) and reports each module's
@@ -67,6 +102,46 @@ Register with Claude Code (stdio):
 ```
 claude mcp add oracle-forms -- server/build/install/server/bin/server --forms-dir C:\path\to\forms
 ```
+
+<details>
+<summary><b>Other MCP clients</b> (Claude Desktop, Cursor, VS Code) — via the Docker image</summary>
+
+The published image runs the server over stdio with no local build. Point the volume mount at
+your forms directory (copy-mode: the pre-converted `*_fmb.xml`/`*.pld` files must sit next to the
+modules — see [Docker](#docker-copy-mode-only)).
+
+**Claude Desktop** (`claude_desktop_config.json`) and **Cursor** (`~/.cursor/mcp.json`) use the same shape:
+
+```json
+{
+  "mcpServers": {
+    "oracle-forms": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "/path/to/forms:/forms",
+               "ghcr.io/aoreshkov/oracle-forms-mcp", "--forms-dir", "/forms"]
+    }
+  }
+}
+```
+
+**VS Code** (`.vscode/mcp.json`) uses a `servers` key instead:
+
+```json
+{
+  "servers": {
+    "oracle-forms": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "${workspaceFolder}/forms:/forms",
+               "ghcr.io/aoreshkov/oracle-forms-mcp", "--forms-dir", "/forms"]
+    }
+  }
+}
+```
+
+Prefer the native launcher? Swap `"command": "docker", "args": [...]` for
+`"command": "/abs/path/to/server/build/install/server/bin/server", "args": ["--forms-dir", "/abs/path/to/forms"]`.
+
+</details>
 
 Try it without any Oracle installation using the bundled fixtures:
 
