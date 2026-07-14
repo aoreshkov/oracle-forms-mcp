@@ -169,13 +169,18 @@ public data class SearchHit(
     val snippet: String,
 )
 
-/** `search_source`. [truncated] is `true` when more hits existed than the bounded result cap. */
+/**
+ * `search_source`. [truncated] is `true` when more hits existed than the page cap; in that case
+ * [nextOffset] is the `offset` to pass to fetch the next page. [offset] echoes the page start.
+ */
 @Serializable
 @SerialName("SearchResults")
 public data class SearchResults(
     val query: String,
     val hits: List<SearchHit> = emptyList(),
     val truncated: Boolean = false,
+    val offset: Int = 0,
+    val nextOffset: Int? = null,
 )
 
 /**

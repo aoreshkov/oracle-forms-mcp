@@ -213,6 +213,7 @@ class FormsService(
         block: String?,
         item: String?,
         level: String?,
+        detailed: Boolean = false,
     ): TriggerList {
         val wanted: Set<TriggerLevel>? = when (level?.lowercase()) {
             null, "all" -> null
@@ -232,7 +233,8 @@ class FormsService(
                     level = it.level,
                     block = it.blockName,
                     item = it.itemName,
-                    firstLine = it.firstLine,
+                    // The PL/SQL preview is the bulky per-row field; omit it unless asked.
+                    firstLine = if (detailed) it.firstLine else "",
                     lineCount = it.lineCount,
                 )
             }
@@ -314,6 +316,7 @@ class FormsService(
         regex: Boolean,
         scope: String?,
         maxResults: Int,
+        offset: Int = 0,
     ): SearchResults {
         index(key) // staleness/fetched check before touching files
         val includePlsql: Boolean
@@ -326,8 +329,10 @@ class FormsService(
         }
         val moduleDir = Path.of(cache.moduleDir(key))
         val cap = maxResults.coerceIn(1, MAX_SEARCH_RESULTS)
+        val start = offset.coerceAtLeast(0)
         val pattern = if (regex) Regex(query) else null
         val hits = mutableListOf<SearchHit>()
+        var seen = 0 // total matches scanned across all files, for stable offset paging
         var truncated = false
 
         val files = withContext(Dispatchers.IO) { searchableFiles(moduleDir, includePlsql, includeXml) }
@@ -336,8 +341,9 @@ class FormsService(
             for ((lineIndex, line) in lines.withIndex()) {
                 val matches = pattern?.containsMatchIn(line) ?: line.contains(query)
                 if (!matches) continue
+                if (seen++ < start) continue // skip earlier pages
                 if (hits.size == cap) {
-                    truncated = true
+                    truncated = true // a further match exists beyond this page
                     break@outer
                 }
                 hits += SearchHit(
@@ -347,7 +353,13 @@ class FormsService(
                 )
             }
         }
-        return SearchResults(query = query, hits = hits, truncated = truncated)
+        return SearchResults(
+            query = query,
+            hits = hits,
+            truncated = truncated,
+            offset = start,
+            nextOffset = if (truncated) start + hits.size else null,
+        )
     }
 
     suspend fun getObjectXml(key: ModuleKey, objectType: String, name: String, owner: String?): ObjectXml {

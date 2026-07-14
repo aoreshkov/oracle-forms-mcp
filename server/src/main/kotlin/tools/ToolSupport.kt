@@ -9,6 +9,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
@@ -37,8 +39,17 @@ internal inline fun <reified T> toolResult(value: T): CallToolResult {
 
 // --- behavior annotations (hints surfaced in tools/list) ---
 
-/** Reads only the local forms dir/cache: no side effects, closed domain. */
-internal val LOCAL_READ_ONLY = ToolAnnotations(readOnlyHint = true, openWorldHint = false)
+/**
+ * Reads only the local forms dir/cache: no side effects, closed domain. `idempotentHint`/
+ * `destructiveHint` are set for symmetry with `fetch_module` even though clients treat any
+ * `readOnlyHint = true` tool as side-effect-free regardless of the other two.
+ */
+internal val LOCAL_READ_ONLY = ToolAnnotations(
+    readOnlyHint = true,
+    destructiveHint = false,
+    idempotentHint = true,
+    openWorldHint = false,
+)
 
 /**
  * Runs a tool body, turning expected failures (bad arguments, un-fetched module, conversion
@@ -70,6 +81,28 @@ internal fun boolProp(description: String): JsonObject = buildJsonObject {
     put("type", "boolean")
     put("description", description)
 }
+
+/** A string property constrained to [values] (rendered as JSON Schema `enum`). */
+internal fun enumProp(description: String, values: List<String>): JsonObject = buildJsonObject {
+    put("type", "string")
+    put("description", description)
+    put("enum", buildJsonArray { values.forEach { add(it) } })
+}
+
+// --- verbosity (shared response-size control, per Anthropic's token-efficiency guidance) ---
+
+internal const val VERBOSITY_CONCISE: String = "concise"
+internal const val VERBOSITY_DETAILED: String = "detailed"
+internal val VERBOSITY_VALUES: List<String> = listOf(VERBOSITY_CONCISE, VERBOSITY_DETAILED)
+
+/** Enum property for a tool's `verbosity` argument; [extra] describes what `detailed` adds. */
+internal fun verbosityProp(extra: String): JsonObject = enumProp(
+    "Response detail: '$VERBOSITY_CONCISE' (default) $extra. Use '$VERBOSITY_DETAILED' for the full payload.",
+    VERBOSITY_VALUES,
+)
+
+/** True when the caller asked for the full payload; `concise` (or absent) is the token-lean default. */
+internal fun JsonObject.detailedArg(): Boolean = enumArg("verbosity", VERBOSITY_VALUES) == VERBOSITY_DETAILED
 
 internal const val MODULE_DESCRIPTION: String =
     "Module name, optionally with extension: 'ORDERS' or 'ORDERS.fmb'. The extension " +
@@ -105,6 +138,13 @@ internal fun JsonObject.intArg(name: String): Int? =
 
 internal fun JsonObject.booleanArg(name: String): Boolean? =
     (this[name] as? JsonPrimitive)?.contentOrNull?.toBooleanStrictOrNull()
+
+/** A string argument constrained to [values] (case-insensitive); rejects anything else. */
+internal fun JsonObject.enumArg(name: String, values: List<String>): String? {
+    val raw = stringArg(name)?.lowercase() ?: return null
+    require(raw in values) { "$name must be one of: ${values.joinToString(", ")}" }
+    return raw
+}
 
 /** The raw `module` argument; resolution to a [ModuleKey] happens in `FormsService`. */
 internal fun JsonObject.moduleArg(): String = requireStringArg("module")
