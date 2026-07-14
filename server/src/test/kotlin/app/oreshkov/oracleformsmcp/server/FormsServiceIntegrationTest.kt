@@ -95,6 +95,46 @@ class FormsServiceIntegrationTest {
     }
 
     @Test
+    fun listTriggersVerbosityControlsThePlsqlPreview() = runTest {
+        service.fetchModule(ordersKey)
+
+        val concise = service.listTriggers(ordersKey, block = null, item = null, level = null)
+        assertTrue(concise.triggers.isNotEmpty())
+        assertTrue(
+            concise.triggers.all { it.firstLine.isEmpty() },
+            "concise (default) must omit the one-line PL/SQL preview",
+        )
+        // The high-signal fields survive concise.
+        assertTrue(concise.triggers.all { it.name.isNotEmpty() })
+
+        val detailed =
+            service.listTriggers(ordersKey, block = null, item = null, level = null, detailed = true)
+        assertTrue(
+            detailed.triggers.any { it.firstLine.isNotEmpty() },
+            "detailed must include the PL/SQL preview",
+        )
+    }
+
+    @Test
+    fun searchSourcePagesWithOffset() = runTest {
+        service.fetchModule(ordersKey)
+
+        val page1 = service.searchSource(ordersKey, "Name", regex = false, scope = "xml", maxResults = 1)
+        assertEquals(1, page1.hits.size)
+        assertTrue(page1.truncated, "a one-hit page over a form with many matches must be truncated")
+        assertEquals(0, page1.offset)
+        assertEquals(1, page1.nextOffset)
+
+        val page2 = service.searchSource(
+            ordersKey, "Name", regex = false, scope = "xml", maxResults = 1, offset = page1.nextOffset!!,
+        )
+        assertEquals(1, page2.hits.size)
+        assertEquals(1, page2.offset)
+        // Paging advances: the second page is a different match than the first.
+        assertTrue(page1.hits.single() != page2.hits.single())
+    }
+
+    @Test
     fun libraryDumpIsServedFromThePldItself() = runTest {
         service.fetchModule(utilsKey)
         val units = service.listProgramUnits(utilsKey).units

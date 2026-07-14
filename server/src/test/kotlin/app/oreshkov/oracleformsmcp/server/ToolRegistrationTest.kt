@@ -76,6 +76,8 @@ class ToolRegistrationTest {
         readOnlyLocal.forEach { name ->
             val annotations = assertNotNull(tools.getValue(name).annotations)
             assertEquals(true, annotations.readOnlyHint, name)
+            assertEquals(false, annotations.destructiveHint, name)
+            assertEquals(true, annotations.idempotentHint, name)
             assertEquals(false, annotations.openWorldHint, name)
         }
     }

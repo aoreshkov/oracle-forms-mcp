@@ -10,7 +10,8 @@ fun Server.registerGetModuleOverviewTool(service: FormsService) {
         description = "Overview of a fetched module: Forms version plus the names of every " +
             "section — blocks, program units, attached libraries, LOVs, record groups, windows, " +
             "canvases, alerts, parameters, visual attributes, property classes, editors, menus, " +
-            "object-library tabs — and the trigger count. The natural first call after fetch_module.",
+            "object-library tabs — and the trigger count. The natural first call after fetch_module; " +
+            "drill in with list_blocks, list_triggers, list_program_units, then the get_* tools.",
         inputSchema = moduleSchema(),
         title = "Module overview",
         outputSchema = outputSchemaOf<ModuleOverview>(),

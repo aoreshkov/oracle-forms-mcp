@@ -8,13 +8,15 @@ fun Server.registerListTriggersTool(service: FormsService) {
     addTool(
         name = "list_triggers",
         description = "List a fetched module's triggers with their level (form/block/item/menu), " +
-            "owning block/item, a one-line PL/SQL preview, and line count. Filter by block, item, " +
-            "or level; fetch a body with get_trigger.",
+            "owning block/item, and line count. Filter by block, item, or level. 'concise' (default) " +
+            "omits the one-line PL/SQL preview to save tokens when triaging a large trigger set; " +
+            "'detailed' includes it. Fetch a full body with get_trigger.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "block" to stringProp("Only triggers of this block (optional)"),
                 "item" to stringProp("Only triggers of this item (optional; combine with 'block')"),
                 "level" to stringProp("Only this level: form, block, item, menu, or all (default all)"),
+                "verbosity" to verbosityProp("omits each trigger's one-line PL/SQL preview"),
             ),
         ),
         title = "List triggers",
@@ -29,6 +31,7 @@ fun Server.registerListTriggersTool(service: FormsService) {
                     block = args.stringArg("block"),
                     item = args.stringArg("item"),
                     level = args.stringArg("level"),
+                    detailed = args.detailedArg(),
                 ),
             )
         }

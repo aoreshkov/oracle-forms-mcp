@@ -1,0 +1,37 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits"
+  ],
+  "enabledManagers": ["gradle", "gradle-wrapper", "github-actions"],
+  "timezone": "Europe/Sofia",
+  "schedule": ["before 6am on monday"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    {
+      "description": "Highlight MCP SDK bumps — the protocol dependency that matters most here.",
+      "matchPackageNames": ["io.modelcontextprotocol:kotlin-sdk{/,}**"],
+      "groupName": "MCP Kotlin SDK",
+      "labels": ["dependencies", "mcp-sdk"],
+      "addLabels": ["needs-review"]
+    },
+    {
+      "description": "Group the kotlinx families so coroutines/serialization move together.",
+      "matchPackageNames": ["org.jetbrains.kotlinx:{/,}**"],
+      "groupName": "kotlinx"
+    },
+    {
+      "description": "Group Ktor artifacts, which must share a version.",
+      "matchPackageNames": ["io.ktor:{/,}**"],
+      "groupName": "ktor"
+    },
+    {
+      "description": "Keep the Kotlin plugin/stdlib in lockstep.",
+      "matchPackageNames": ["org.jetbrains.kotlin{/,}**", "org.jetbrains.kotlin.plugin.serialization{/,}**"],
+      "groupName": "kotlin"
+    }
+  ]
+}
