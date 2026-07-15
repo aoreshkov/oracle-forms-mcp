@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `search_source` pagination via `offset`/`nextOffset` (`SearchResults` gains `offset` + `nextOffset`).
+- `list_triggers` verbosity control: `concise` (default) omits the PL/SQL preview, `detailed` includes it.
+
+## [0.1.1] - 2026-07-13
+
+### Changed
+- Shortened the `server.json` server description to satisfy the MCP Registry 100-character limit.
+
 ## [0.1.0] - 2026-07-12
 
 ### Added
@@ -20,5 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aoreshkov/oracle-forms-mcp/releases/tag/v0.1.0
