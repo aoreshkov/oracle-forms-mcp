@@ -5,7 +5,7 @@
     ":dependencyDashboard",
     ":semanticCommits"
   ],
-  "enabledManagers": ["gradle", "gradle-wrapper", "github-actions"],
+  "enabledManagers": ["gradle", "gradle-wrapper"],
   "timezone": "Europe/Sofia",
   "schedule": ["before 6am on monday"],
   "labels": ["dependencies"],

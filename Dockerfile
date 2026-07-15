@@ -16,8 +16,10 @@ LABEL org.opencontainers.image.source="https://github.com/aoreshkov/oracle-forms
       org.opencontainers.image.description="MCP server serving Oracle Forms module content (.fmb/.mmb/.pll/.olb) — copy-mode only, no Oracle tools bundled" \
       io.modelcontextprotocol.server.name="io.github.aoreshkov/oracle-forms-mcp"
 
-RUN useradd --create-home mcp
-USER mcp
+# Explicit numeric UID so Kubernetes `runAsNonRoot` can prove non-root from the
+# image (a bare username is not verifiable at admission time).
+RUN useradd --create-home --uid 10001 mcp
+USER 10001
 
 COPY --chown=mcp server/build/install/server /app
 

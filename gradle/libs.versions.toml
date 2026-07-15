@@ -1,6 +1,6 @@
 [versions]
 # Build tools
-kotlin = "2.4.0"
+kotlin = "2.4.10"
 kover = "0.9.8"
 
 # Third-party
