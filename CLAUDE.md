@@ -58,3 +58,18 @@ gradlew apiDump               # refresh core/api/*.api after public API changes
 gradlew :server:installDist   # launcher at server/build/install/server/bin/server(.bat)
 gradlew :server:run --args="--forms-dir sample-forms"
 ```
+
+## Claude Code setup
+
+The committed `.claude/` config is shareable (public repo); only `settings.local.json`,
+`plans/`, and `CLAUDE.local.md` are gitignored.
+
+- **Stop hook** (`.claude/hooks/stop-verify.sh`) runs `:server:compileKotlin` before a turn
+  ends, but only when `.kt/.kts` changed — a fast compile gate. Bypass a known-good stop via
+  `/hooks`.
+- **Path-scoped rules** auto-load when you edit matching sources: `.claude/rules/core.md`
+  (`core/src/**`) and `.claude/rules/server.md` (`server/src/**`).
+- **Skills:** `/release <version>` (bump the two guarded files + changelog, pre-flight, tag),
+  `/review-currency [focus]` (expert-panel currency audit → `docs/reviews/`).
+- **Agents:** six read-only `*-currency` reviewers (the review-currency panel) plus
+  `verify-build` (second-opinion Gradle build/test).
