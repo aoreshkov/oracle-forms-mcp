@@ -72,9 +72,22 @@ echo "guard OK" || echo "guard WOULD FAIL"
 
 ## 6. Commit and (on explicit request) tag
 
-Commit the version bump + changelog. **Only if the user explicitly asks**, create and push the
-`v<VERSION>` tag — pushing the tag triggers the live release, GHCR push, and MCP registry
-publish. Otherwise stop after the commit and report that the tag is ready to push.
+Commit the version bump + changelog. **Only if the user explicitly asks**, create and push an
+**annotated** `v<VERSION>` tag — pushing the tag triggers the live release, GHCR push, and MCP
+registry publish. Otherwise stop after the commit and report that the tag is ready to push.
+
+```
+git tag -a v<VERSION> -m "oracle-forms-mcp v<VERSION>"
+git push origin v<VERSION>
+```
+
+Use an annotated tag (`-a`), not a lightweight one: it carries the tagger, date, and message,
+is preferred by `git describe`, and can be signed. This matches `v0.1.0`. Note that
+`release.yml` triggers on either tag type (`on: push: tags: v*`), so this is hygiene, not a
+functional requirement.
+
+**Never re-tag or force-move an already-published tag** (e.g. `v0.1.1`, which is live on GHCR
+and the MCP registry). Fix a bad release by cutting the next version, not by moving its tag.
 
 ## 7. Report
 
