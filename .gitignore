@@ -16,6 +16,12 @@ local.properties
 # Private analysis/plan documents — never commit (see shared conventions)
 docs/
 
+# Claude Code — keep shareable config (skills/, agents/, rules/, settings.json) tracked;
+# ignore only personal/local files
+.claude/settings.local.json
+.claude/plans/
+CLAUDE.local.md
+
 # Logs & OS noise
 *.log
 .DS_Store
