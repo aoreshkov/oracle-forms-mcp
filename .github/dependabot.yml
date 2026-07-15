@@ -1,15 +1,7 @@
 version: 2
+# Ecosystem ownership is split with renovate.json to avoid competing PRs:
+# Dependabot owns docker + github-actions; Renovate owns gradle + gradle-wrapper.
 updates:
-  - package-ecosystem: gradle
-    directory: /
-    schedule:
-      interval: weekly
-    groups:
-      # Roll routine minor/patch bumps into one reviewable PR instead of many.
-      minor-and-patch:
-        update-types: ["minor", "patch"]
-    open-pull-requests-limit: 5
-
   - package-ecosystem: github-actions
     directory: /
     schedule:

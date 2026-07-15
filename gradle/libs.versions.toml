@@ -1,6 +1,6 @@
 [versions]
 # Build tools
-kotlin = "2.4.0"
+kotlin = "2.4.0"    # capped at 2.4.0: newest CodeQL (2.26.0) supports Kotlin only up to 2.4.0; bump when CodeQL catches up
 kover = "0.9.8"
 
 # Third-party
