@@ -14,7 +14,11 @@ import kotlinx.serialization.Serializable
  *
  * [ownerPath] mirrors [ObjectRef.ownerPath] — the block for a block-level trigger or an item
  * (`ORDERS`), `block.item` for an item-level one (`ORDERS.ORDER_ID`), or the owning block for an
- * [ElementKind.ITEM]; `null` at module/top level.
+ * [ElementKind.ITEM]; `null` at module/top level. Two same-kind elements may share a name across
+ * scopes (an item `ID` in two blocks, a trigger at form and block level), so the owner is part of
+ * the identity. [ElementKind.MENU_ITEM]s carry their owning menu; package
+ * [ElementKind.PROGRAM_UNIT]s carry their [ProgramUnitType] name (`PACKAGE_SPEC`/`PACKAGE_BODY`)
+ * since spec and body share a name — other unit types stay owner-less.
  */
 @Serializable
 @SerialName("ElementId")

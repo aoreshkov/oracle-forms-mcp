@@ -12,14 +12,26 @@ import kotlin.io.path.writeText
  */
 internal class PlsqlSidecars(private val moduleCacheDir: Path) {
 
+    /** Case-folded `category/name` keys already written by this parse, to detect collisions. */
+    private val used = HashSet<String>()
+
     /**
      * Writes [text] (normalized to `\n`) under `plsql/<category>/<fileName>.sql` and returns a
      * [SourceRef] covering the whole file.
+     *
+     * Distinct elements can sanitize to the same file name (a block literally named `FORM` vs
+     * the form-level fallback scope, case-variant names on case-insensitive filesystems,
+     * sanitizer-collapsed characters); colliding names get a deterministic `~2`, `~3`, … suffix
+     * in document order instead of silently overwriting an earlier body.
      */
     fun write(category: String, fileName: String, text: String): SourceRef {
         val normalized = text.replace("\r\n", "\n")
         val dir = moduleCacheDir.resolve("plsql").resolve(category).createDirectories()
-        val file = dir.resolve(sanitizeFileName(fileName) + ".sql")
+        val base = sanitizeFileName(fileName)
+        var candidate = base
+        var n = 2
+        while (!used.add("$category/${candidate.uppercase()}")) candidate = "$base~${n++}"
+        val file = dir.resolve("$candidate.sql")
         file.writeText(normalized)
         val lineCount = normalized.lineSequence().count().coerceAtLeast(1)
         return SourceRef(

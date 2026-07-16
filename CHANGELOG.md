@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Package annotation identity**: a package's spec and body are now distinct annotation targets.
+  `annotate_element`/`relate_elements`/`get_element_annotations` on a `program_unit` that exists as
+  both require `ownerPath='PACKAGE_SPEC'` or `'PACKAGE_BODY'` (mirroring `get_program_unit`'s
+  `unitType`), and the stored `ElementId` carries that owner. Package annotations stored before
+  this release (owner-less) are no longer matched by the element views but stay visible via
+  `search_annotations` and the `oracleforms://{module}/annotations` resource — re-assert them with
+  an `ownerPath`. Procedures/functions are unaffected.
+- `get_trigger` gains an optional `ownerPath` argument using the same scope vocabulary as the
+  annotation tools: `BLOCK`, `BLOCK.ITEM`, or `:FORM` for the form-level trigger (`:` cannot occur
+  in a Forms name, so the token never collides with a block named `FORM`). An exact `ownerPath`
+  match now takes precedence, so `STOCK` selects the block-level trigger even when an item in
+  `STOCK` has a same-named one. The `block`/`item` arguments keep working.
+
 ### Fixed
+- Same-named elements at different scopes are no longer silently conflated. Annotating an item,
+  menu item, or package unit whose name matches several elements now fails with an error listing
+  the candidate owners instead of binding to the first match; ambiguity errors for triggers list
+  the exact `ownerPath` tokens to pass. Form-level and block-level triggers shadowed by same-named
+  triggers at other levels are now reachable via `:FORM` / exact-owner precedence.
+- PL/SQL sidecar files no longer overwrite each other when two elements produce the same file name
+  (a block literally named `FORM` vs the form-level scope, case-variant names on case-insensitive
+  filesystems, sanitizer-collapsed characters). Colliding names get a deterministic `~2`, `~3`, …
+  suffix in document order, so every trigger/unit/menu-command body survives with its own
+  `SourceRef`.
+
+### Known limitations
+- Menu-level triggers carry no menu owner in the index, so two same-named triggers in different
+  menus of one `.mmb` cannot be told apart yet (the ambiguity is reported, not misresolved).
 - Docker: the annotation store and module cache are now writable when a volume is mounted at
   `/home/mcp/.cache`. The image runs as non-root (uid 10001); the cache tree is pre-created and
   owned by that user before the `VOLUME` is declared, so an anonymous or named volume inherits the

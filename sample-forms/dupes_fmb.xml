@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+  <FormModule Name="DUPES" Title="Duplicate names at different levels">
+    <Block Name="STOCK">
+      <Item Name="ID" ItemType="Text Item" DataType="Number"/>
+      <Item Name="QTY" ItemType="Text Item" DataType="Number">
+        <Trigger Name="KEY-NEXT-ITEM" TriggerText="-- item level: validate qty"/>
+      </Item>
+      <Trigger Name="KEY-NEXT-ITEM" TriggerText="-- block level: next stock record"/>
+    </Block>
+    <Block Name="AUDIT">
+      <Item Name="ID" ItemType="Text Item" DataType="Number"/>
+    </Block>
+    <Block Name="FORM">
+      <Item Name="NOTE" ItemType="Text Item" DataType="Char"/>
+      <Trigger Name="KEY-COMMIT" TriggerText="-- block FORM commit"/>
+    </Block>
+    <Trigger Name="KEY-NEXT-ITEM" TriggerText="-- form level: default navigation"/>
+    <Trigger Name="KEY-COMMIT" TriggerText="-- form level commit"/>
+  </FormModule>
+</Module>

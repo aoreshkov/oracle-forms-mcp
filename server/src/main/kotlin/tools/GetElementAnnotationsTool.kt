@@ -16,7 +16,11 @@ fun Server.registerGetElementAnnotationsTool(service: FormsService) {
             extraProps = mapOf(
                 "elementKind" to enumPropOf<ElementKind>("The kind of element"),
                 "name" to stringProp("Element name"),
-                "ownerPath" to stringProp("Owner scope to disambiguate (optional)"),
+                "ownerPath" to stringProp(
+                    "Owner scope to disambiguate (optional): a trigger's 'BLOCK', 'BLOCK.ITEM', " +
+                        "or ':FORM' (form level); an item's owning block; a menu item's owning " +
+                        "menu; 'PACKAGE_SPEC'/'PACKAGE_BODY' for a package program unit",
+                ),
             ),
             extraRequired = listOf("elementKind", "name"),
         ),
