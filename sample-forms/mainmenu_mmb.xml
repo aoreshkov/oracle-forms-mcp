@@ -4,6 +4,7 @@
     <ProgramUnit Name="DO_EXIT" ProgramUnitType="Procedure" ProgramUnitText="PROCEDURE do_exit IS&#10;BEGIN&#10;  EXIT_FORM;&#10;END;"/>
     <Menu Name="MAIN">
       <MenuItem Name="FILE" Label="File" CommandType="Menu" SubMenuName="FILE_MENU"/>
+      <MenuItem Name="EXIT" Label="Exit App" CommandType="PL/SQL" CommandText="exit_form;"/>
     </Menu>
     <Menu Name="FILE_MENU">
       <MenuItem Name="EXIT" Label="Exit" CommandType="PL/SQL" CommandText="do_exit;"/>

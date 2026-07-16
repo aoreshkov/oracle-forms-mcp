@@ -25,13 +25,15 @@ fun Server.registerAnnotateElementTool(service: FormsService) {
         description = "Persist a note, summary, tag, or classification about one element of a " +
             "fetched module — durable meta-information that later sessions see when they read the " +
             "same element. The element must exist (call fetch_module first). Use ownerPath to " +
-            "disambiguate, e.g. a trigger's 'block' or 'block.item', or an item's owning block.",
+            "disambiguate same-named elements at different scopes.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "elementKind" to enumPropOf<ElementKind>("The kind of element to annotate"),
                 "name" to stringProp("Element name, e.g. 'WHEN-VALIDATE-ITEM' or 'PKG_ORDERS'"),
                 "ownerPath" to stringProp(
-                    "Owner scope to disambiguate (optional), e.g. 'ORDERS' or 'ORDERS.ORDER_ID'",
+                    "Owner scope to disambiguate (optional): a trigger's 'BLOCK', 'BLOCK.ITEM', " +
+                        "or ':FORM' (form level); an item's owning block; a menu item's owning " +
+                        "menu; 'PACKAGE_SPEC'/'PACKAGE_BODY' for a package program unit",
                 ),
                 "kind" to enumPropOf<AnnotationKind>("What the annotation asserts"),
                 "body" to stringProp("The note/summary text, tag label, or classification value"),

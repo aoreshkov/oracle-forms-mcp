@@ -17,10 +17,16 @@ fun Server.registerRelateElementsTool(service: FormsService) {
             extraProps = mapOf(
                 "fromKind" to enumPropOf<ElementKind>("Kind of the source element"),
                 "fromName" to stringProp("Source element name"),
-                "fromOwner" to stringProp("Source owner scope to disambiguate (optional)"),
+                "fromOwner" to stringProp(
+                    "Source owner scope to disambiguate (optional): a trigger's 'BLOCK', " +
+                        "'BLOCK.ITEM', or ':FORM' (form level); an item's owning block; a menu " +
+                        "item's owning menu; 'PACKAGE_SPEC'/'PACKAGE_BODY' for a package unit",
+                ),
                 "toKind" to enumPropOf<ElementKind>("Kind of the target element"),
                 "toName" to stringProp("Target element name"),
-                "toOwner" to stringProp("Target owner scope to disambiguate (optional)"),
+                "toOwner" to stringProp(
+                    "Target owner scope to disambiguate (optional); same vocabulary as fromOwner",
+                ),
                 "relType" to stringProp("Relationship in active voice, e.g. 'calls', 'feeds', 'references', 'deprecated-by'"),
                 "note" to stringProp("Optional free-text detail about the relationship"),
                 "author" to enumPropOf<Author>("Who is asserting this (default: ai)"),

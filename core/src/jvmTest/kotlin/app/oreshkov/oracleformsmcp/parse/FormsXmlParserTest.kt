@@ -15,6 +15,7 @@ import kotlin.io.path.readText
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -34,6 +35,8 @@ class FormsXmlParserTest {
     }
 
     private fun ordersIndex() = parseFixture("orders_fmb.xml", ModuleKey.of("orders", ModuleType.FORM))
+
+    private fun dupesIndex() = parseFixture("dupes_fmb.xml", ModuleKey.of("dupes", ModuleType.FORM))
 
     private fun readRef(ref: SourceRef): String =
         cacheDir.resolve(ref.file).readLines().subList(ref.startLine - 1, ref.endLine).joinToString("\n")
@@ -166,6 +169,54 @@ class FormsXmlParserTest {
         // Tab contents must not leak into the form-level sections.
         assertEquals(emptyList(), index.blocks)
         assertEquals(emptyList(), index.visualAttributes)
+    }
+
+    @Test
+    fun sameTriggerNameAtThreeLevelsGetsThreeDistinctSidecars() {
+        val triggers = dupesIndex().triggers.filter { it.name == "KEY-NEXT-ITEM" }
+        assertEquals(3, triggers.size)
+        assertEquals(3, triggers.mapNotNull { it.textRef?.file }.distinct().size)
+
+        val byLevel = triggers.associateBy { it.level }
+        assertEquals(setOf(TriggerLevel.FORM, TriggerLevel.BLOCK, TriggerLevel.ITEM), byLevel.keys)
+        assertEquals("STOCK", byLevel.getValue(TriggerLevel.BLOCK).blockName)
+        assertEquals("QTY", byLevel.getValue(TriggerLevel.ITEM).itemName)
+        assertEquals(
+            "-- form level: default navigation",
+            readRef(assertNotNull(byLevel.getValue(TriggerLevel.FORM).textRef)),
+        )
+        assertEquals(
+            "-- block level: next stock record",
+            readRef(assertNotNull(byLevel.getValue(TriggerLevel.BLOCK).textRef)),
+        )
+        assertEquals(
+            "-- item level: validate qty",
+            readRef(assertNotNull(byLevel.getValue(TriggerLevel.ITEM).textRef)),
+        )
+    }
+
+    @Test
+    fun blockNamedFormDoesNotClobberFormLevelTriggerSidecar() {
+        val commits = dupesIndex().triggers.filter { it.name == "KEY-COMMIT" }
+        val blockTrigger = commits.single { it.level == TriggerLevel.BLOCK }
+        val formTrigger = commits.single { it.level == TriggerLevel.FORM }
+        assertNotEquals(
+            assertNotNull(blockTrigger.textRef).file,
+            assertNotNull(formTrigger.textRef).file,
+        )
+        assertEquals("-- block FORM commit", readRef(blockTrigger.textRef!!))
+        assertEquals("-- form level commit", readRef(formTrigger.textRef!!))
+    }
+
+    @Test
+    fun duplicateItemNamesAcrossBlocksAreBothIndexed() {
+        val index = dupesIndex()
+        assertEquals(
+            listOf("STOCK", "AUDIT"),
+            index.blocks.filter { block -> block.items.any { it.name == "ID" } }.map { it.name },
+        )
+        val idRefs = index.objectRefs.filter { it.objectType == "Item" && it.name == "ID" }
+        assertEquals(setOf("STOCK", "AUDIT"), idRefs.map { it.ownerPath }.toSet())
     }
 
     @Test

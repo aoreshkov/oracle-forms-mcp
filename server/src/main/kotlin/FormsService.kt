@@ -42,6 +42,7 @@ import app.oreshkov.oracleformsmcp.model.ModuleFingerprint
 import app.oreshkov.oracleformsmcp.model.ModuleIndex
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
+import app.oreshkov.oracleformsmcp.model.ProgramUnitInfo
 import app.oreshkov.oracleformsmcp.model.ProgramUnitType
 import app.oreshkov.oracleformsmcp.model.Relation
 import app.oreshkov.oracleformsmcp.model.ScannedModule
@@ -267,26 +268,15 @@ class FormsService(
         return TriggerList(module = key, triggers = triggers)
     }
 
-    suspend fun getTrigger(key: ModuleKey, name: String, block: String?, item: String?): TriggerSource {
+    suspend fun getTrigger(
+        key: ModuleKey,
+        name: String,
+        block: String?,
+        item: String?,
+        ownerPath: String? = null,
+    ): TriggerSource {
         val index = index(key)
-        val matches = index.triggers.filter {
-            it.name.equals(name, ignoreCase = true) &&
-                (block == null || it.blockName.equals(block, ignoreCase = true)) &&
-                (item == null || it.itemName.equals(item, ignoreCase = true))
-        }
-        val trigger = when (matches.size) {
-            1 -> matches.single()
-            0 -> throw IllegalArgumentException(
-                "No trigger '$name' in $key" +
-                    (block?.let { " for block '$it'" } ?: "") +
-                    ". Call list_triggers to see what exists.",
-            )
-            else -> throw IllegalArgumentException(
-                "Trigger '$name' exists at several scopes in $key: " +
-                    matches.joinToString(", ") { scopeOf(it.blockName, it.itemName) } +
-                    ". Narrow it down with the 'block' (and 'item') arguments.",
-            )
-        }
+        val trigger = resolveTrigger(index, name, ownerPath, block, item)
         val ref = trigger.textRef
             ?: throw IllegalStateException("Trigger '$name' has no recorded PL/SQL body")
         return TriggerSource(
@@ -336,10 +326,7 @@ class FormsService(
             name = unit.name,
             unitType = unit.unitType,
             text = readRef(key, ref),
-            annotations = elementAnnotations(
-                index,
-                ElementId(index.key, ElementKind.PROGRAM_UNIT, unit.name),
-            ),
+            annotations = elementAnnotations(index, programUnitId(index.key, unit)),
         )
     }
 
@@ -626,12 +613,6 @@ class FormsService(
         return files.sortedBy { it.toString() }
     }
 
-    private fun scopeOf(block: String?, item: String?): String = when {
-        item != null -> "$block.$item"
-        block != null -> block!!
-        else -> "form level"
-    }
-
     // --- annotation internals ---
 
     /** Notes/relations for [element], drawn from [index]'s stored annotations, with drift resolved. */
@@ -660,11 +641,79 @@ class FormsService(
         fingerprint != null && sourcePath != null && sourcePath.exists() &&
             !Fingerprints.matches(fingerprint, sourcePath)
 
-    /** Canonical owner path of a trigger: `block.item`, `block`, or `null` at form level. */
+    /**
+     * Canonical owner path of a trigger: `block.item`, `block`, or `null` at form level.
+     *
+     * Known limitation: menu-level triggers are owner-less too ([TriggerInfo] carries no menu
+     * owner), so same-named triggers in two menus of one module cannot be told apart.
+     */
     private fun triggerOwner(trigger: TriggerInfo): String? = when {
         trigger.itemName != null -> "${trigger.blockName}.${trigger.itemName}"
         else -> trigger.blockName
     }
+
+    /**
+     * Resolves one trigger of [index] by [name], shared by get_trigger and the annotation tools
+     * so both address triggers with the same vocabulary. [ownerPath] narrows the scope:
+     * [FORM_LEVEL_OWNER] selects the owner-less form-level trigger (`:` cannot occur in a Forms
+     * name, so the token never collides with a block named FORM), a block name matches the block's
+     * own and its items' triggers with an exact block-level match taking precedence, and
+     * `block.item` matches exactly. The legacy [block]/[item] filters keep get_trigger's original
+     * arguments working. Misses and residual ambiguity say what to pass instead.
+     */
+    private fun resolveTrigger(
+        index: ModuleIndex,
+        name: String,
+        ownerPath: String?,
+        block: String? = null,
+        item: String? = null,
+    ): TriggerInfo {
+        val wantsFormLevel = ownerPath?.equals(FORM_LEVEL_OWNER, ignoreCase = true) == true
+        val matches = index.triggers.filter {
+            it.name.equals(name, ignoreCase = true) &&
+                (block == null || it.blockName.equals(block, ignoreCase = true)) &&
+                (item == null || it.itemName.equals(item, ignoreCase = true)) &&
+                when {
+                    ownerPath == null -> true
+                    wantsFormLevel -> triggerOwner(it) == null
+                    else -> ownerPath.equals(it.blockName, ignoreCase = true) ||
+                        ownerPath.equals(triggerOwner(it), ignoreCase = true)
+                }
+        }
+        return when {
+            matches.size == 1 -> matches.single()
+            matches.isEmpty() -> throw IllegalArgumentException(
+                "No trigger '$name' in ${index.key}" +
+                    (ownerPath?.let { " under '$it'" } ?: block?.let { " for block '$it'" } ?: "") +
+                    ". Call list_triggers to see what exists.",
+            )
+            else -> matches.singleOrNull { ownerPath != null && ownerPath.equals(triggerOwner(it), ignoreCase = true) }
+                ?: throw IllegalArgumentException(
+                    "Trigger '$name' exists at several scopes in ${index.key}: " +
+                        matches.joinToString(", ") { ownerToken(it) } +
+                        ". Pass ownerPath with one of these to disambiguate.",
+                )
+        }
+    }
+
+    /** The ownerPath token that selects [trigger] exactly, as quoted in ambiguity errors. */
+    private fun ownerToken(trigger: TriggerInfo): String =
+        triggerOwner(trigger)?.let { "'$it'" } ?: "'$FORM_LEVEL_OWNER' (form level)"
+
+    /**
+     * Stable annotation identity of a program unit. Package spec and body share a name, so they
+     * carry their [ProgramUnitType] as the owner path; all other unit types are unique by name
+     * and stay owner-less.
+     */
+    private fun programUnitId(module: ModuleKey, unit: ProgramUnitInfo): ElementId =
+        ElementId(
+            module,
+            ElementKind.PROGRAM_UNIT,
+            unit.name,
+            ownerPath = unit.unitType
+                .takeIf { it == ProgramUnitType.PACKAGE_SPEC || it == ProgramUnitType.PACKAGE_BODY }
+                ?.name,
+        )
 
     /**
      * Resolves an annotation target against the parsed [index], validating that the element exists
@@ -684,13 +733,32 @@ class FormsService(
                 else "Known: ${known.distinct().sorted().take(50).joinToString(", ")}.") +
                 " Fetch the module and use the list_/get_ tools to see valid element names.",
         )
+        // Only for kinds whose identity is name-only (owner = null): duplicates would all map to
+        // the same ElementId, so first-match cannot mistarget. A kind with a scoped identity
+        // (item, menu item, trigger, package unit) must get its own branch instead.
         fun simple(names: List<String>): ElementId =
             names.firstOrNull { it.equals(name, ignoreCase = true) }?.let { eid(it, null) } ?: fail(names)
 
         return when (kind) {
             ElementKind.MODULE -> eid(index.key.name, null)
             ElementKind.BLOCK -> simple(index.blocks.map { it.name })
-            ElementKind.PROGRAM_UNIT -> simple(index.programUnits.map { it.name })
+            ElementKind.PROGRAM_UNIT -> {
+                val wantedType = ownerPath?.let { ProgramUnitType.fromForms(it.replace('_', ' ')) }
+                val matches = index.programUnits.filter {
+                    it.name.equals(name, ignoreCase = true) &&
+                        (wantedType == null || it.unitType == wantedType)
+                }
+                when {
+                    matches.size == 1 -> programUnitId(index.key, matches.single())
+                    matches.isEmpty() -> fail(index.programUnits.map { it.name })
+                    else -> throw IllegalArgumentException(
+                        "Program unit '$name' exists as " +
+                            matches.joinToString(" and ") { it.unitType.name } +
+                            " in ${index.key}. Pass ownerPath='PACKAGE_SPEC' or " +
+                            "ownerPath='PACKAGE_BODY' to pick one.",
+                    )
+                }
+            }
             ElementKind.LOV -> simple(index.lovs.map { it.name })
             ElementKind.RECORD_GROUP -> simple(index.recordGroups.map { it.name })
             ElementKind.CANVAS -> simple(index.canvases.map { it.name })
@@ -699,38 +767,39 @@ class FormsService(
             ElementKind.PARAMETER -> simple(index.parameters.map { it.name })
             ElementKind.MENU -> simple(index.menus.map { it.name })
             ElementKind.ITEM -> {
-                val hit = index.blocks
+                val matches = index.blocks
                     .filter { ownerPath == null || it.name.equals(ownerPath, ignoreCase = true) }
-                    .firstNotNullOfOrNull { block ->
-                        block.items.firstOrNull { it.name.equals(name, ignoreCase = true) }?.let { block to it }
+                    .flatMap { block ->
+                        block.items.filter { it.name.equals(name, ignoreCase = true) }.map { block to it }
                     }
-                hit?.let { (block, item) -> eid(item.name, block.name) }
-                    ?: fail(index.blocks.flatMap { b -> b.items.map { "${b.name}.${it.name}" } })
-            }
-            ElementKind.MENU_ITEM -> {
-                val hit = index.menus.firstNotNullOfOrNull { menu ->
-                    menu.items.firstOrNull { it.name.equals(name, ignoreCase = true) }?.let { menu to it }
-                }
-                hit?.let { (menu, item) -> eid(item.name, menu.name) }
-                    ?: fail(index.menus.flatMap { m -> m.items.map { "${m.name}.${it.name}" } })
-            }
-            ElementKind.TRIGGER -> {
-                val matches = index.triggers.filter {
-                    it.name.equals(name, ignoreCase = true) &&
-                        (ownerPath == null ||
-                            ownerPath.equals(it.blockName, ignoreCase = true) ||
-                            ownerPath.equals(triggerOwner(it), ignoreCase = true))
-                }
                 when {
-                    matches.size == 1 -> matches.single().let { eid(it.name, triggerOwner(it)) }
-                    matches.isEmpty() -> fail(index.triggers.map { it.name })
+                    matches.size == 1 -> matches.single().let { (block, item) -> eid(item.name, block.name) }
+                    matches.isEmpty() -> fail(index.blocks.flatMap { b -> b.items.map { "${b.name}.${it.name}" } })
                     else -> throw IllegalArgumentException(
-                        "Trigger '$name' exists at several scopes in ${index.key}: " +
-                            matches.joinToString(", ") { triggerOwner(it) ?: "form level" } +
-                            ". Pass ownerPath (block, or block.item) to disambiguate.",
+                        "Item '$name' exists in several blocks in ${index.key}: " +
+                            matches.joinToString(", ") { (block, _) -> block.name } +
+                            ". Pass ownerPath (the owning block) to disambiguate.",
                     )
                 }
             }
+            ElementKind.MENU_ITEM -> {
+                val matches = index.menus
+                    .filter { ownerPath == null || it.name.equals(ownerPath, ignoreCase = true) }
+                    .flatMap { menu ->
+                        menu.items.filter { it.name.equals(name, ignoreCase = true) }.map { menu to it }
+                    }
+                when {
+                    matches.size == 1 -> matches.single().let { (menu, item) -> eid(item.name, menu.name) }
+                    matches.isEmpty() -> fail(index.menus.flatMap { m -> m.items.map { "${m.name}.${it.name}" } })
+                    else -> throw IllegalArgumentException(
+                        "Menu item '$name' exists in several menus in ${index.key}: " +
+                            matches.joinToString(", ") { (menu, _) -> menu.name } +
+                            ". Pass ownerPath (the owning menu) to disambiguate.",
+                    )
+                }
+            }
+            ElementKind.TRIGGER ->
+                resolveTrigger(index, name, ownerPath).let { eid(it.name, triggerOwner(it)) }
             ElementKind.OBJECT -> {
                 val matches = index.objectRefs.filter {
                     it.name.equals(name, ignoreCase = true) &&
@@ -791,5 +860,12 @@ class FormsService(
         const val MAX_SEARCH_RESULTS = 200
         const val MAX_OBJECT_XML_CHARS = 500_000
         const val FETCH_STEPS = 3
+
+        /**
+         * The ownerPath token that selects the owner-less form-level trigger among same-named
+         * ones at other levels. `:` is illegal in Forms object names, so the token can never
+         * collide with a block that is literally named FORM.
+         */
+        const val FORM_LEVEL_OWNER = ":FORM"
     }
 }

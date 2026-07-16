@@ -68,7 +68,8 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
      `%ORACLE_HOME%\bin`: `frmf2xml` for `.fmb`/`.mmb`/`.olb` (XML), `frmcmp_batch`
      (`Module_Type=LIBRARY Script=YES`) for `.pll` (a `.pld` text dump).
    - **`ORACLE_HOME` not set** — pre-converted files are expected next to the modules
-     (`orders_fmb.xml`, `mainmenu_mmb.xml`, `objects_olb.xml`, `utils.pld`) and copied into the cache.
+     (`orders_fmb.xml`, `dupes_fmb.xml`, `mainmenu_mmb.xml`, `objects_olb.xml`, `utils.pld`) and
+     copied into the cache.
 3. A single StAX pass parses the XML into a structured index (blocks with items, triggers with
    decoded PL/SQL, program units, LOVs, record groups, windows, canvases, …). PL/SQL bodies are
    extracted to `.sql` sidecar files; every named XML element gets a line-range reference so

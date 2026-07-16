@@ -30,6 +30,8 @@ class FormsServiceIntegrationTest {
     private val formsDir: Path = Files.createDirectories(temp.resolve("forms"))
     private val ordersKey = ModuleKey.of("orders", ModuleType.FORM)
     private val utilsKey = ModuleKey.of("utils", ModuleType.LIBRARY)
+    private val dupesKey = ModuleKey.of("dupes", ModuleType.FORM)
+    private val menuKey = ModuleKey.of("mainmenu", ModuleType.MENU)
 
     private val service = FormsService(
         scanner = FormsDirectoryScannerImpl(formsDir),
@@ -44,6 +46,8 @@ class FormsServiceIntegrationTest {
     init {
         copyFixture("orders_fmb.xml")
         copyFixture("utils.pld")
+        copyFixture("dupes_fmb.xml")
+        copyFixture("mainmenu_mmb.xml")
     }
 
     @AfterTest
@@ -186,13 +190,13 @@ class FormsServiceIntegrationTest {
     fun relateSearchAndRemove() = runTest {
         service.fetchModule(ordersKey)
         service.annotate(
-            ordersKey, ElementKind.PROGRAM_UNIT, "PKG_ORDERS", null,
+            ordersKey, ElementKind.PROGRAM_UNIT, "PKG_ORDERS", "PACKAGE_BODY",
             AnnotationKind.TAG, "security-sensitive", Author.AI,
         )
         val relation = service.relate(
             key = ordersKey,
             fromKind = ElementKind.TRIGGER, fromName = "WHEN-VALIDATE-ITEM", fromOwner = null,
-            toKind = ElementKind.PROGRAM_UNIT, toName = "PKG_ORDERS", toOwner = null,
+            toKind = ElementKind.PROGRAM_UNIT, toName = "PKG_ORDERS", toOwner = "PACKAGE_BODY",
             relType = "calls", note = null, author = Author.AI,
         )
 
@@ -222,6 +226,149 @@ class FormsServiceIntegrationTest {
             )
         }
         assertTrue(error.message!!.contains("block"))
+    }
+
+    @Test
+    fun ambiguousItemAnnotationRequiresOwnerPath() = runTest {
+        service.fetchModule(dupesKey)
+
+        val error = assertFailsWith<IllegalArgumentException> {
+            service.annotate(dupesKey, ElementKind.ITEM, "ID", null, AnnotationKind.NOTE, "x", Author.AI)
+        }
+        assertTrue(error.message!!.contains("STOCK"))
+        assertTrue(error.message!!.contains("AUDIT"))
+        assertTrue(error.message!!.contains("ownerPath"))
+
+        service.annotate(dupesKey, ElementKind.ITEM, "ID", "AUDIT", AnnotationKind.NOTE, "audit id", Author.AI)
+        // Same name, different block: distinct annotation buckets.
+        assertEquals(
+            0,
+            service.getElementAnnotations(dupesKey, ElementKind.ITEM, "ID", "STOCK").annotations.notes.size,
+        )
+        assertEquals(
+            "audit id",
+            service.getElementAnnotations(dupesKey, ElementKind.ITEM, "ID", "AUDIT")
+                .annotations.notes.single().body,
+        )
+    }
+
+    @Test
+    fun packageSpecAndBodyAreDistinctAnnotationTargets() = runTest {
+        service.fetchModule(ordersKey)
+
+        val error = assertFailsWith<IllegalArgumentException> {
+            service.annotate(ordersKey, ElementKind.PROGRAM_UNIT, "PKG_ORDERS", null, AnnotationKind.NOTE, "x", Author.AI)
+        }
+        assertTrue(error.message!!.contains("PACKAGE_SPEC"))
+        assertTrue(error.message!!.contains("PACKAGE_BODY"))
+        assertTrue(error.message!!.contains("ownerPath"))
+
+        service.annotate(
+            ordersKey, ElementKind.PROGRAM_UNIT, "PKG_ORDERS", "PACKAGE_BODY",
+            AnnotationKind.NOTE, "refresh is a stub", Author.AI,
+        )
+        // Inline views agree with the resolver: the note is on the body only.
+        assertEquals(
+            1,
+            service.getProgramUnit(ordersKey, "PKG_ORDERS", "PACKAGE_BODY").annotations.notes.size,
+        )
+        assertEquals(
+            0,
+            service.getProgramUnit(ordersKey, "PKG_ORDERS", "PACKAGE_SPEC").annotations.notes.size,
+        )
+
+        // A unit type that is unique by name stays annotatable without an owner.
+        service.annotate(
+            ordersKey, ElementKind.PROGRAM_UNIT, "CALC_TOTAL", null,
+            AnnotationKind.NOTE, "sums order lines", Author.AI,
+        )
+        assertEquals(1, service.getProgramUnit(ordersKey, "CALC_TOTAL", null).annotations.notes.size)
+    }
+
+    @Test
+    fun ambiguousMenuItemAnnotationRequiresOwnerPath() = runTest {
+        service.fetchModule(menuKey)
+
+        val error = assertFailsWith<IllegalArgumentException> {
+            service.annotate(menuKey, ElementKind.MENU_ITEM, "EXIT", null, AnnotationKind.NOTE, "x", Author.AI)
+        }
+        assertTrue(error.message!!.contains("FILE_MENU"))
+        assertTrue(error.message!!.contains("ownerPath"))
+
+        service.annotate(menuKey, ElementKind.MENU_ITEM, "EXIT", "FILE_MENU", AnnotationKind.NOTE, "exits", Author.AI)
+        assertEquals(
+            1,
+            service.getElementAnnotations(menuKey, ElementKind.MENU_ITEM, "EXIT", "FILE_MENU")
+                .annotations.notes.size,
+        )
+        assertEquals(
+            0,
+            service.getElementAnnotations(menuKey, ElementKind.MENU_ITEM, "EXIT", "MAIN")
+                .annotations.notes.size,
+        )
+    }
+
+    @Test
+    fun sameTriggerNameAtThreeLevelsIsAddressableViaOwnerPath() = runTest {
+        service.fetchModule(dupesKey)
+
+        val error = assertFailsWith<IllegalArgumentException> {
+            service.getTrigger(dupesKey, "KEY-NEXT-ITEM", block = null, item = null)
+        }
+        assertTrue(error.message!!.contains("':FORM'"))
+        assertTrue(error.message!!.contains("'STOCK'"))
+        assertTrue(error.message!!.contains("'STOCK.QTY'"))
+
+        val form = service.getTrigger(dupesKey, "KEY-NEXT-ITEM", block = null, item = null, ownerPath = ":FORM")
+        assertEquals(TriggerLevel.FORM, form.level)
+        assertEquals("-- form level: default navigation", form.text)
+
+        // The exact block-level match wins over the block-wide reading of 'STOCK'.
+        val block = service.getTrigger(dupesKey, "KEY-NEXT-ITEM", block = null, item = null, ownerPath = "STOCK")
+        assertEquals(TriggerLevel.BLOCK, block.level)
+        assertEquals("-- block level: next stock record", block.text)
+
+        val item = service.getTrigger(dupesKey, "KEY-NEXT-ITEM", block = null, item = null, ownerPath = "STOCK.QTY")
+        assertEquals(TriggerLevel.ITEM, item.level)
+        assertEquals("-- item level: validate qty", item.text)
+
+        // The original block/item arguments still resolve.
+        val legacy = service.getTrigger(dupesKey, "KEY-NEXT-ITEM", block = "STOCK", item = "QTY")
+        assertEquals(TriggerLevel.ITEM, legacy.level)
+
+        // Annotations through each token land in three distinct buckets, served on the right view.
+        service.annotate(dupesKey, ElementKind.TRIGGER, "KEY-NEXT-ITEM", ":FORM", AnnotationKind.NOTE, "form nav", Author.AI)
+        service.annotate(dupesKey, ElementKind.TRIGGER, "KEY-NEXT-ITEM", "STOCK", AnnotationKind.NOTE, "block nav", Author.AI)
+        service.annotate(dupesKey, ElementKind.TRIGGER, "KEY-NEXT-ITEM", "STOCK.QTY", AnnotationKind.NOTE, "item nav", Author.AI)
+        assertEquals(
+            listOf("form nav"),
+            service.getTrigger(dupesKey, "KEY-NEXT-ITEM", block = null, item = null, ownerPath = ":FORM")
+                .annotations.notes.map { it.body },
+        )
+        assertEquals(
+            listOf("block nav"),
+            service.getTrigger(dupesKey, "KEY-NEXT-ITEM", block = null, item = null, ownerPath = "STOCK")
+                .annotations.notes.map { it.body },
+        )
+        assertEquals(
+            listOf("item nav"),
+            service.getTrigger(dupesKey, "KEY-NEXT-ITEM", block = null, item = null, ownerPath = "STOCK.QTY")
+                .annotations.notes.map { it.body },
+        )
+    }
+
+    @Test
+    fun relatingAnAmbiguousTriggerFailsWithOwnerPathHint() = runTest {
+        service.fetchModule(dupesKey)
+        val error = assertFailsWith<IllegalArgumentException> {
+            service.relate(
+                key = dupesKey,
+                fromKind = ElementKind.TRIGGER, fromName = "KEY-NEXT-ITEM", fromOwner = null,
+                toKind = ElementKind.BLOCK, toName = "STOCK", toOwner = null,
+                relType = "references", note = null, author = Author.AI,
+            )
+        }
+        assertTrue(error.message!!.contains("ownerPath"))
     }
 
     @Test
