@@ -1,12 +1,16 @@
 package app.oreshkov.oracleformsmcp.server
 
+import app.oreshkov.oracleformsmcp.core.AnnotationStore
 import app.oreshkov.oracleformsmcp.core.FormsDirectoryScanner
 import app.oreshkov.oracleformsmcp.core.ModuleCache
 import app.oreshkov.oracleformsmcp.core.ModuleConverter
 import app.oreshkov.oracleformsmcp.core.ModuleParser
 import app.oreshkov.oracleformsmcp.io.Fingerprints
+import app.oreshkov.oracleformsmcp.model.Annotation
+import app.oreshkov.oracleformsmcp.model.ModuleAnnotations
 import app.oreshkov.oracleformsmcp.model.ModuleIndex
 import app.oreshkov.oracleformsmcp.model.ModuleKey
+import app.oreshkov.oracleformsmcp.model.Relation
 import app.oreshkov.oracleformsmcp.model.ScannedModule
 import java.nio.file.Files
 import java.nio.file.Path
@@ -52,6 +56,43 @@ internal class InMemoryCache(private val root: Path) : ModuleCache {
         root.resolve(key.toString()).toString()
 }
 
+internal class InMemoryAnnotationStore : AnnotationStore {
+    private val byModule = linkedMapOf<ModuleKey, ModuleAnnotations>()
+
+    private fun current(module: ModuleKey) = byModule[module] ?: ModuleAnnotations(module)
+
+    override suspend fun addAnnotation(annotation: Annotation) {
+        val module = annotation.target.module
+        val cur = current(module)
+        byModule[module] = cur.copy(
+            annotations = cur.annotations.filterNot { it.id == annotation.id } + annotation,
+        )
+    }
+
+    override suspend fun addRelation(relation: Relation) {
+        val module = relation.from.module
+        val cur = current(module)
+        byModule[module] = cur.copy(relations = cur.relations.filterNot { it.id == relation.id } + relation)
+    }
+
+    override suspend fun forModule(module: ModuleKey): ModuleAnnotations = current(module)
+
+    override suspend fun remove(module: ModuleKey, id: String): Boolean {
+        val cur = current(module)
+        val next = cur.copy(
+            annotations = cur.annotations.filterNot { it.id == id },
+            relations = cur.relations.filterNot { it.id == id },
+        )
+        val removed = next.annotations.size != cur.annotations.size || next.relations.size != cur.relations.size
+        byModule[module] = next
+        return removed
+    }
+
+    override suspend fun clear(module: ModuleKey) {
+        byModule.remove(module)
+    }
+}
+
 internal fun minimalIndex(key: ModuleKey, sourceFile: String): ModuleIndex = ModuleIndex(
     key = key,
     sourceFile = sourceFile,
@@ -65,11 +106,13 @@ internal fun fakeService(
     scanner: FakeScanner = FakeScanner(),
     cacheRoot: Path = Files.createTempDirectory("fake-service-cache"),
     oracleConversion: Boolean = false,
+    annotationStore: AnnotationStore = InMemoryAnnotationStore(),
 ): FormsService = FormsService(
     scanner = scanner,
     converter = CopyingConverter(),
     parser = FakeParser(),
     cache = InMemoryCache(cacheRoot),
+    annotationStore = annotationStore,
     formsDir = Path.of("."),
     oracleConversion = oracleConversion,
 )

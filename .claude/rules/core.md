@@ -11,6 +11,10 @@ paths:
 - **Cache entries are fingerprinted** (size+mtime, sha256-confirmed) against the file the
   pipeline consumed. Reads throw `ModuleStaleException` on mismatch — and its message is written
   for the model: it must name the tool call that fixes the situation (e.g. re-run `fetch_module`).
+- **Annotations never go into `index.json`.** AI/user-supplied notes, tags, and relations belong
+  to the `AnnotationStore` (its own root, keyed by a stable `ElementId` — never `SourceRef` line
+  ranges), decoupled from the derived cache so they survive re-fetch. A source-fingerprint mismatch
+  is a `staleAgainstSource` drift flag on the served view, not a reason to delete the annotation.
 - **The XML parser never fails on unknown vocabulary.** Forms XML is huge and version-dependent;
   unknown elements are skipped generically, but a named element still gets an `ObjectRef`. Do not
   add hard failures for unexpected tags.

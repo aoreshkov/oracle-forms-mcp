@@ -1,15 +1,20 @@
 package app.oreshkov.oracleformsmcp.server
 
+import app.oreshkov.oracleformsmcp.annotation.OnDiskAnnotationStore
 import app.oreshkov.oracleformsmcp.cache.OnDiskModuleCache
 import app.oreshkov.oracleformsmcp.convert.ModuleConverters
+import app.oreshkov.oracleformsmcp.core.AnnotationStore
 import app.oreshkov.oracleformsmcp.core.ModuleCache
 import app.oreshkov.oracleformsmcp.parse.FormsModuleParser
 import app.oreshkov.oracleformsmcp.scan.FormsDirectoryScannerImpl
 import app.oreshkov.oracleformsmcp.server.prompts.registerExplainModulePrompt
 import app.oreshkov.oracleformsmcp.server.resources.addModuleIndexResource
+import app.oreshkov.oracleformsmcp.server.resources.registerModuleAnnotationsTemplate
 import app.oreshkov.oracleformsmcp.server.resources.registerModuleIndexTemplate
+import app.oreshkov.oracleformsmcp.server.tools.registerAnnotateElementTool
 import app.oreshkov.oracleformsmcp.server.tools.registerFetchModuleTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetBlockTool
+import app.oreshkov.oracleformsmcp.server.tools.registerGetElementAnnotationsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetModuleOverviewTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetObjectXmlTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetProgramUnitTool
@@ -18,6 +23,9 @@ import app.oreshkov.oracleformsmcp.server.tools.registerListBlocksTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListModulesTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListProgramUnitsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListTriggersTool
+import app.oreshkov.oracleformsmcp.server.tools.registerRelateElementsTool
+import app.oreshkov.oracleformsmcp.server.tools.registerRemoveAnnotationTool
+import app.oreshkov.oracleformsmcp.server.tools.registerSearchAnnotationsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchSourceTool
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
@@ -40,6 +48,7 @@ const val SERVER_NAME: String = "oracle-forms-mcp"
 data class ServerConfig(
     val formsDir: Path,
     val cacheDir: Path = OnDiskModuleCache.defaultCacheRoot(),
+    val annotationsDir: Path = OnDiskAnnotationStore.defaultRoot(),
     val oracleHome: String? = System.getenv("ORACLE_HOME"),
     val conversionTimeout: Duration = 120.seconds,
 )
@@ -52,6 +61,7 @@ class McpServerHandle(
     val server: Server,
     val service: FormsService,
     val cache: ModuleCache,
+    val annotationStore: AnnotationStore,
     private val logForwarderScope: CoroutineScope,
 ) : Closeable {
     override fun close() {
@@ -70,6 +80,7 @@ object McpServerFactory {
     fun create(config: ServerConfig): McpServerHandle {
         routeKermitToSlf4j()
         val cache = OnDiskModuleCache(config.cacheDir)
+        val annotationStore = OnDiskAnnotationStore(config.annotationsDir)
         val service = FormsService(
             scanner = FormsDirectoryScannerImpl(config.formsDir),
             converter = ModuleConverters.forEnvironment(
@@ -79,6 +90,7 @@ object McpServerFactory {
             ),
             parser = FormsModuleParser(),
             cache = cache,
+            annotationStore = annotationStore,
             formsDir = config.formsDir,
             oracleConversion = !config.oracleHome.isNullOrBlank(),
         )
@@ -100,7 +112,11 @@ object McpServerFactory {
                 "Call list_modules to discover modules and their status, then fetch_module to " +
                 "convert and index one; the other tools read the cached index (blocks, items, " +
                 "triggers, program units, PL/SQL source, search, raw object XML). A module " +
-                "reported as STALE changed on disk — call fetch_module again to re-index it.",
+                "reported as STALE changed on disk — call fetch_module again to re-index it. " +
+                "You can also record durable meta-information about elements with annotate_element " +
+                "(notes/tags/summaries/classifications) and relate_elements (cross-references); it " +
+                "persists across sessions and re-indexing and is surfaced inline by the read tools " +
+                "and via get_element_annotations / search_annotations.",
         ) {
             registerListModulesTool(service)
             registerFetchModuleTool(service) { key ->
@@ -116,10 +132,18 @@ object McpServerFactory {
             registerGetProgramUnitTool(service)
             registerSearchSourceTool(service)
             registerGetObjectXmlTool(service)
+            // Annotation layer: the model writes durable meta-information about elements, and the
+            // read tools above surface it inline (see the DTO `annotations` fields).
+            registerAnnotateElementTool(service)
+            registerRelateElementsTool(service)
+            registerGetElementAnnotationsTool(service)
+            registerSearchAnnotationsTool(service)
+            registerRemoveAnnotationTool(service)
             registerExplainModulePrompt(service)
             // Direct addressing of any cached index; the per-module resources below stay for
             // discoverability via resources/list.
             registerModuleIndexTemplate(service)
+            registerModuleAnnotationsTemplate(service)
         }
         // One index resource per already-cached module (startup snapshot).
         runBlocking { cache.list() }.forEach { server.addModuleIndexResource(service, it) }
@@ -131,6 +155,7 @@ object McpServerFactory {
             server = server,
             service = service,
             cache = cache,
+            annotationStore = annotationStore,
             logForwarderScope = logForwarderScope,
         )
     }

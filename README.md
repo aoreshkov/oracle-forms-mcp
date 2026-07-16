@@ -30,6 +30,9 @@ Oracle Forms MCP turns those modules into structured, queryable content so an AI
 - **Review & document PL/SQL** — pull decoded trigger and program-unit bodies straight into the model's context.
 - **Assist modernization** — feed decades-old business logic to an assistant for migration to APEX,
   Java, or a rewrite, and search across every module's source.
+- **Capture & retain knowledge** — let the assistant record notes, tags, and cross-references on
+  individual elements that persist across sessions and re-indexing, building up a durable map of a
+  form no one fully remembers.
 
 It is aimed at developers and teams doing Oracle Forms **modernization, reverse engineering, code
 review, and documentation** — anyone who needs to read Forms logic faster than opening it by hand.
@@ -51,6 +54,9 @@ AI →  list_triggers block=ORDER_ITEMS  → WHEN-VALIDATE-ITEM, WHEN-NEW-RECORD
 AI →  get_trigger ORDER_ITEMS WHEN-VALIDATE-ITEM  → the decoded PL/SQL body
 You:  Where else is the ADD_TAX procedure called?
 AI →  search_source "ADD_TAX" scope=plsql  → hits across triggers and program units
+You:  That validation is the legacy pre-2010 path — note it so we remember.
+AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre-2010 validation path" → saved
+      (next session)  get_trigger ORDER_ITEMS WHEN-VALIDATE-ITEM → body + the stored note inline
 ```
 
 ## How it works
@@ -69,6 +75,10 @@ AI →  search_source "ADD_TAX" scope=plsql  → hits across triggers and progra
    `get_object_xml` can slice it back out of the converted file.
 4. The other tools read the cached index. Caching is fingerprint-based (size + mtime + sha256 of
    the source file): editing a module marks it `STALE` and read tools ask for a re-fetch.
+5. `annotate_element` and `relate_elements` let the assistant write durable meta-information back
+   about individual elements (notes, tags, summaries, classifications, cross-references). This is
+   kept in a **separate** store — not the derived index — so it survives re-fetching, and the read
+   tools surface it inline. An annotation made before a source change is flagged, never dropped.
 
 ## Tools
 
@@ -86,8 +96,27 @@ AI →  search_source "ADD_TAX" scope=plsql  → hits across triggers and progra
 | `search_source` | Line search over extracted PL/SQL (`plsql`), the raw XML (`xml`), or both |
 | `get_object_xml` | The raw XML fragment of any named object — the escape hatch |
 
-Plus a resource per cached module (`oracleforms://ORDERS.fmb/index`), a
-`oracleforms://{module}/index` resource template, and an `explain_module` prompt.
+### Annotations
+
+Meta-information the assistant records back **about** an element rather than reads *from* it —
+semantic notes, tags, classifications, and cross-reference relations. It is persisted in a durable
+store, kept separate from the derived index (not in the protocol `_meta` field), so it survives
+`fetch_module` re-indexing and is served back to later sessions. Each entry carries its author and
+is flagged `staleAgainstSource` when it predates the module's current source, so a note is never
+silently dropped. The read tools above (`get_module_overview`, `get_block`, `get_trigger`,
+`get_program_unit`, `get_object_xml`) surface an element's annotations inline.
+
+| Tool | What it does |
+|---|---|
+| `annotate_element` | Store a note / summary / tag / classification about one element |
+| `relate_elements` | Record a directed cross-reference between two elements (e.g. a trigger `calls` a program unit) |
+| `get_element_annotations` | The notes and relations stored about one element |
+| `search_annotations` | Search a module's stored notes/tags/relations by text, kind, or tag |
+| `remove_annotation` | Delete a stored annotation or relation by id |
+
+Plus a resource per cached module (`oracleforms://ORDERS.fmb/index`), the
+`oracleforms://{module}/index` and `oracleforms://{module}/annotations` resource templates, and an
+`explain_module` prompt.
 
 ## Quick start
 
@@ -175,6 +204,7 @@ docker run -i -v /path/to/forms:/forms ghcr.io/aoreshkov/oracle-forms-mcp --form
 --port <int>                HTTP port (default: 3000)
 --allowed-host / --allowed-origin   Extra HTTP hosts/origins (localhost-only by default)
 --cache-dir <path>          Cache override (default: OS cache dir + /oracle-forms-mcp)
+--annotations-dir <path>    Durable annotation store (default: <cache dir>/annotations)
 --conversion-timeout <sec>  Kill a stuck conversion (default: 120)
 ```
 
@@ -192,6 +222,11 @@ ORDERS.fmb/
 ```
 
 Safe to delete at any time; modules are simply re-fetched.
+
+Annotations are **not** part of this derived cache. They live in a separate `annotations/` store
+(one `NAME.ext.json` per module, defaulting to `<cache dir>/annotations`, overridable with
+`--annotations-dir`), so deleting a module's cache entry — or re-fetching it — leaves the notes,
+tags, and relations you recorded intact.
 
 ## Notes on the Oracle tools
 

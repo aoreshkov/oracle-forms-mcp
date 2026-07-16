@@ -13,6 +13,9 @@ fun moduleIndexUri(key: ModuleKey): String = "oracleforms://$key/index"
 /** URI template matching every module index URI; see [moduleIndexUri]. */
 const val MODULE_INDEX_URI_TEMPLATE: String = "oracleforms://{module}/index"
 
+/** URI template matching every module annotations URI; see [registerModuleAnnotationsTemplate]. */
+const val MODULE_ANNOTATIONS_URI_TEMPLATE: String = "oracleforms://{module}/annotations"
+
 /** Module segment of a resource URI: `NAME.ext` — never path separators or dot-segments. */
 private val MODULE_SEGMENT = Regex("""[A-Za-z0-9_$#][A-Za-z0-9_$#\-]*\.(fmb|mmb|pll|olb)""", RegexOption.IGNORE_CASE)
 
@@ -41,6 +44,36 @@ fun Server.registerModuleIndexTemplate(service: FormsService) {
             contents = listOf(
                 TextResourceContents(
                     text = toolJson.encodeToString(service.index(key)),
+                    uri = request.uri,
+                    mimeType = "application/json",
+                )
+            )
+        )
+    }
+}
+
+/**
+ * Registers the `oracleforms://{module}/annotations` resource template: reading it returns the
+ * AI/user-supplied notes, tags, summaries, classifications, and relations stored about a module's
+ * elements (see [FormsService.moduleAnnotations]), each drift-flagged against the current source.
+ * Kept separate from the index resource so the derived index and the asserted annotations never mix.
+ */
+fun Server.registerModuleAnnotationsTemplate(service: FormsService) {
+    addResourceTemplate(
+        uriTemplate = MODULE_ANNOTATIONS_URI_TEMPLATE,
+        name = "Forms module annotations",
+        description = "AI/user-supplied notes, tags, summaries, classifications, and relations " +
+            "stored about a fetched module's elements. The segment is 'NAME.ext', e.g. 'ORDERS.fmb'.",
+        mimeType = "application/json",
+    ) { request, variables ->
+        // Template variables are attacker-controlled URI segments and end up in store paths.
+        val segment = variables.getValue("module")
+        require(MODULE_SEGMENT.matches(segment)) { "Invalid module segment in resource URI: '$segment'" }
+        val key = ModuleKey.parse(segment)
+        ReadResourceResult(
+            contents = listOf(
+                TextResourceContents(
+                    text = toolJson.encodeToString(service.moduleAnnotations(key)),
                     uri = request.uri,
                     mimeType = "application/json",
                 )

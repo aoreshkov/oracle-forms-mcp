@@ -7,12 +7,16 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
 ## Layout
 
 - `core/` — KMP library. `commonMain`: pure `@Serializable` models (`ModuleIndex`, `ModuleKey`,
-  `SourceRef`, …), DTOs (`dto/ToolResults.kt`), and ports (`ModuleConverter`, `ModuleParser`,
-  `ModuleCache`, `FormsDirectoryScanner`). `jvmMain`: implementations — `OnDiskModuleCache`,
-  `FormsDirectoryScannerImpl`, converters (`convert/`), parsers (`parse/`).
+  `SourceRef`, plus the annotation layer `ElementId`, `Annotation`/`Relation`/`ModuleAnnotations`),
+  DTOs (`dto/ToolResults.kt`), and ports (`ModuleConverter`, `ModuleParser`, `ModuleCache`,
+  `AnnotationStore`, `FormsDirectoryScanner`). `jvmMain`: implementations — `OnDiskModuleCache`,
+  `OnDiskAnnotationStore`, `FormsDirectoryScannerImpl`, converters (`convert/`), parsers (`parse/`).
 - `server/` — JVM MCP app. `FormsService` is the single logic layer; tool files in `tools/` are
-  declarative adapters (parse args → service call → `toolResult(dto)`). Transports in
-  `transport/`, resources/prompts in their packages, composition root `McpServerFactory`.
+  declarative adapters (parse args → service call → `toolResult(dto)`). The read tools plus the
+  annotation tools (`annotate_element`, `relate_elements`, `get_element_annotations`,
+  `search_annotations`, `remove_annotation`) and the `oracleforms://{module}/annotations` resource
+  live here. Transports in `transport/`, resources/prompts in their packages, composition root
+  `McpServerFactory`.
 - `build-logic/` — convention plugins `kmp-library` (toolchain 21, explicitApi, kover, BCV) and
   `jvm-application`.
 
@@ -25,6 +29,11 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
 - **Cache entries are fingerprinted** (size+mtime, sha256-confirmed) against the file the
   pipeline consumed; reads throw `ModuleStaleException` on mismatch. Exception messages are
   written for the model — they must say which tool call fixes the situation.
+- **Annotations are asserted, not derived.** They live in `AnnotationStore` (own root, separate
+  from the fingerprinted cache), keyed by a stable `ElementId` (module + kind + name + ownerPath —
+  never `SourceRef` line ranges), so they survive re-fetch and cache eviction. A source-fingerprint
+  mismatch is a `staleAgainstSource` drift flag on the served view, never a delete. Never inline
+  annotations into `ModuleIndex`.
 - **The XML parser never fails on unknown vocabulary.** Forms XML is huge and version-dependent;
   unknown elements are skipped generically (but still get an `ObjectRef` when named).
 - **Every tool** declares title, annotations, and `outputSchemaOf<Dto>()`; DTO fields are
