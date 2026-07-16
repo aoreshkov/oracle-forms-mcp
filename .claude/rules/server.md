@@ -7,8 +7,10 @@ paths:
 
 Tool files in `tools/` are **declarative adapters**: parse args → call `FormsService` →
 `toolResult(dto)`. No business logic in a tool file (or in `ToolSupport.kt`) — it belongs in
-`FormsService`. Every tool declares a `title`, behavior annotations (the shared `LOCAL_READ_ONLY`
-constant in `ToolSupport.kt`), and `outputSchemaOf<Dto>()`; `toolResult` returns JSON text **and**
+`FormsService`. Every tool declares a `title`, behavior annotations (read tools reuse the shared
+`LOCAL_READ_ONLY` constant in `ToolSupport.kt`, annotation writers `ANNOTATION_WRITE` in
+`AnnotateElementTool.kt`; `fetch_module` and `remove_annotation` declare their own hints), and
+`outputSchemaOf<Dto>()`; `toolResult` returns JSON text **and**
 matching `structuredContent`. DTO fields are defaulted so output schemas stay forward-compatible.
 `ToolRegistrationTest` enforces all of this — a new tool that skips a piece fails that test.
 

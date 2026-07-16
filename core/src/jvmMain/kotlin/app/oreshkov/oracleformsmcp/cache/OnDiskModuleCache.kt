@@ -24,7 +24,7 @@ import kotlinx.serialization.json.Json
 /**
  * Shared on-disk layout under the cache root, used by cache, converter, and parser so a
  * conversion lands directly in its cached location:
- * `<root>/<NAME.ext>/{converted/, plsql/triggers/, plsql/program-units/, index.json}`.
+ * `<root>/<NAME.ext>/{converted/, plsql/triggers/, plsql/program-units/, plsql/menu-items/, index.json}`.
  * One directory per [ModuleKey] canonical form (`ORDERS.fmb`) keeps the tree flat and
  * human-browsable.
  */
