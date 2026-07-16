@@ -17,7 +17,7 @@ you invest time.
 
 ```sh
 ./gradlew build     # compiles all modules, runs tests and API checks
-./gradlew test      # unit tests only
+./gradlew :core:jvmTest :server:test    # unit tests only (core is KMP — a bare `test` skips it)
 ./gradlew :server:run --args="--forms-dir sample-forms"   # run the MCP server locally
 ```
 
@@ -36,7 +36,10 @@ you invest time.
 - **Keep the index JSON small.** PL/SQL bodies live in `plsql/**` sidecars referenced by
   `SourceRef` line ranges — never inline code into `ModuleIndex`.
 - When adding an MCP tool, provide all three metadata pieces: `title`, behavior annotations
-  (reuse the constants in `ToolSupport.kt`), and an `outputSchema` (`outputSchemaOf<Dto>()`).
+  (reuse the shared constants — `LOCAL_READ_ONLY` in `ToolSupport.kt` for read tools,
+  `ANNOTATION_WRITE` in `AnnotateElementTool.kt` for annotation writers — or declare the
+  hints explicitly as `fetch_module`/`remove_annotation` do), and an `outputSchema`
+  (`outputSchemaOf<Dto>()`).
 
 ## Pull requests
 

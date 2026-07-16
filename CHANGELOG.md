@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ownership instead of being created root-owned (which silently failed every annotation write with
   `AccessDenied`). README documents mounting the volume to persist annotations across runs, plus the
   bind-mount `chown` caveat.
+- Docs: the README "See it work" transcript is now reproducible against the bundled
+  `sample-forms` (real module names and counts), the cache-layout tree includes the
+  `plsql/menu-items` sidecars, and the `list_triggers`/`search_source` tool descriptions mention
+  the 0.2.0 `verbosity` and `offset`/`nextOffset` pagination options.
 
 ## [0.2.0] - 2026-07-16
 

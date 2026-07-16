@@ -46,17 +46,17 @@ A typical session against the bundled `sample-forms` directory:
 
 ```text
 You:  What does ORDERS.fmb do?
-AI →  list_modules                 → ORDERS.fmb (NOT_CACHED), MAIN.mmb, UTILS.pll …
-AI →  fetch_module ORDERS.fmb      → converted + indexed (12 blocks, 47 triggers, 9 program units)
+AI →  list_modules                 → ORDERS.fmb (NOT_CACHED), MAINMENU.mmb, UTILS.pll …
+AI →  fetch_module ORDERS.fmb      → converted + indexed (2 blocks, 3 triggers, 3 program units)
 AI →  get_module_overview ORDERS   → blocks, triggers, LOVs, record groups, windows, canvases …
-You:  Show me the validation logic on the ORDER_ITEMS block.
-AI →  list_triggers block=ORDER_ITEMS  → WHEN-VALIDATE-ITEM, WHEN-NEW-RECORD-INSTANCE …
-AI →  get_trigger ORDER_ITEMS WHEN-VALIDATE-ITEM  → the decoded PL/SQL body
-You:  Where else is the ADD_TAX procedure called?
-AI →  search_source "ADD_TAX" scope=plsql  → hits across triggers and program units
+You:  Show me the validation logic on the ORDERS block.
+AI →  list_triggers block=ORDERS   → WHEN-VALIDATE-ITEM (on ORDER_ID), WHEN-VALIDATE-RECORD
+AI →  get_trigger ORDERS WHEN-VALIDATE-ITEM  → the decoded PL/SQL body
+You:  Where else is the CALC_TOTAL procedure called?
+AI →  search_source "calc_total" scope=plsql  → hits across triggers and program units
 You:  That validation is the legacy pre-2010 path — note it so we remember.
 AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre-2010 validation path" → saved
-      (next session)  get_trigger ORDER_ITEMS WHEN-VALIDATE-ITEM → body + the stored note inline
+      (next session)  get_trigger ORDERS WHEN-VALIDATE-ITEM → body + the stored note inline
 ```
 
 ## How it works
@@ -68,7 +68,7 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
      `%ORACLE_HOME%\bin`: `frmf2xml` for `.fmb`/`.mmb`/`.olb` (XML), `frmcmp_batch`
      (`Module_Type=LIBRARY Script=YES`) for `.pll` (a `.pld` text dump).
    - **`ORACLE_HOME` not set** — pre-converted files are expected next to the modules
-     (`orders_fmb.xml`, `main_mmb.xml`, `objects_olb.xml`, `utils.pld`) and copied into the cache.
+     (`orders_fmb.xml`, `mainmenu_mmb.xml`, `objects_olb.xml`, `utils.pld`) and copied into the cache.
 3. A single StAX pass parses the XML into a structured index (blocks with items, triggers with
    decoded PL/SQL, program units, LOVs, record groups, windows, canvases, …). PL/SQL bodies are
    extracted to `.sql` sidecar files; every named XML element gets a line-range reference so
@@ -89,11 +89,11 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 | `get_module_overview` | Names of every section + counts — the first call after a fetch |
 | `list_blocks` | Blocks with base table, item count, trigger count |
 | `get_block` | One block in full: items (type, column, canvas, prompt) + trigger names |
-| `list_triggers` | Triggers with level/scope/preview; filter by block, item, or level |
+| `list_triggers` | Triggers with level/scope; filter by block, item, or level (`verbosity=detailed` adds a PL/SQL preview) |
 | `get_trigger` | One trigger's decoded PL/SQL body |
 | `list_program_units` | Procedures, functions, package specs/bodies with line counts |
 | `get_program_unit` | One program unit's PL/SQL (disambiguate spec/body via `unitType`) |
-| `search_source` | Line search over extracted PL/SQL (`plsql`), the raw XML (`xml`), or both |
+| `search_source` | Line search over extracted PL/SQL (`plsql`), the raw XML (`xml`), or both; paginated via `offset`/`nextOffset` |
 | `get_object_xml` | The raw XML fragment of any named object — the escape hatch |
 
 ### Annotations
@@ -239,6 +239,7 @@ ORDERS.fmb/
   converted/orders_fmb.xml      converted (or copied) text form
   plsql/triggers/*.sql          decoded trigger bodies
   plsql/program-units/*.sql     decoded program units
+  plsql/menu-items/*.sql        menu-item command bodies (menu modules)
   index.json                    the structured index
 ```
 
