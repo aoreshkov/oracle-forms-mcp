@@ -51,3 +51,50 @@ jobs:
             **/build/reports/tests/
             **/build/test-results/
           retention-days: 7
+
+  docker-smoke:
+    name: Docker volume write-rights smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # The Dockerfile is runtime-only; it COPYs the dist rather than building it.
+      - name: Build server distribution
+        run: ./gradlew :server:installDist
+
+      - name: Build image
+        run: docker build -t oracle-forms-mcp:smoke .
+
+      # Guards the Dockerfile ownership fix: with an ANONYMOUS volume at the declared
+      # VOLUME path, the mount point must be owned by the runtime user (uid 10001) so
+      # the non-root process can create the cache + annotation store. If the
+      # mkdir/chown-before-VOLUME ordering regresses, Docker mounts the volume
+      # root-owned and the writes below fail with AccessDenied — exactly the runtime
+      # failure this reproduces. Runs as the image's default user (no --user override)
+      # and lets the VOLUME instruction auto-create the anonymous volume, as a plain
+      # `docker run` would.
+      - name: Non-root user can write the annotation store on an anonymous volume
+        run: |
+          docker run --rm --entrypoint /bin/sh oracle-forms-mcp:smoke -eu -c '
+            test "$(id -u)" = "10001" || { echo "not running as uid 10001: $(id -u)"; exit 1; }
+            owner="$(stat -c "%u" /home/mcp/.cache)"
+            test "$owner" = "10001" || { echo "cache mount point owned by uid $owner, expected 10001"; exit 1; }
+            f=/home/mcp/.cache/oracle-forms-mcp/annotations/smoke.fmb.json
+            mkdir -p "$(dirname "$f")"
+            printf "{}" > "$f"
+            test -s "$f" || { echo "annotation file not written"; exit 1; }
+            echo "OK: uid 10001 wrote $f on the anonymous volume"
+          '

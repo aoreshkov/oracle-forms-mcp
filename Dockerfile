@@ -18,17 +18,37 @@ LABEL org.opencontainers.image.source="https://github.com/aoreshkov/oracle-forms
 
 # Explicit numeric UID so Kubernetes `runAsNonRoot` can prove non-root from the
 # image (a bare username is not verifiable at admission time).
-RUN useradd --create-home --uid 10001 mcp
+#
+# Pre-create + chown the cache tree BEFORE declaring the VOLUME: a mount point that
+# already exists in the image lets an anonymous/named volume inherit its ownership
+# on first init. Without this, Docker creates the missing mount point root-owned and
+# the non-root process (uid 10001) can't write — annotations and the module cache
+# both fail with AccessDenied. ENV HOME makes `user.home` deterministic even if the
+# runtime leaves HOME unset (the JVM would otherwise fall back to getpwuid).
+RUN useradd --create-home --uid 10001 mcp \
+ && mkdir -p /home/mcp/.cache/oracle-forms-mcp/annotations \
+ && chown -R 10001:10001 /home/mcp/.cache
+ENV HOME=/home/mcp
 USER 10001
 
 COPY --chown=mcp server/build/install/server /app
 
-# Parsed module indexes; mount a volume here to persist across runs.
+# Parsed module indexes + the durable annotation store; mount a volume here to
+# persist across runs. Anonymous/named volumes inherit the 10001 ownership set above.
+# A BIND MOUNT does NOT — Docker never chowns bind targets — so the host directory
+# must be writable by uid 10001 (chown it, or run with --user $(id -u)); otherwise
+# redirect writes with --cache-dir/--annotations-dir onto a writable path.
 VOLUME ["/home/mcp/.cache"]
 
 ENTRYPOINT ["/app/bin/server"]
 # The forms dir must be supplied at runtime. Mount pre-converted modules and pass
 # --forms-dir, e.g.:
 #   docker run -i -v /path/to/forms:/forms ghcr.io/aoreshkov/oracle-forms-mcp --forms-dir /forms
+# To persist the cache + annotations across runs, add a volume. An anonymous/named
+# volume just works:
+#   docker run -i -v ofmcp-cache:/home/mcp/.cache -v /path/to/forms:/forms ... --forms-dir /forms
+# A host BIND MOUNT must be writable by uid 10001 (Docker won't chown it):
+#   chown 10001 /host/cache   # once, on the host
+#   docker run -i -v /host/cache:/home/mcp/.cache -v /path/to/forms:/forms ... --forms-dir /forms
 # stdio is the default transport; override with: --transport http --port 3000
 CMD ["--help"]

@@ -146,7 +146,8 @@ modules — see [Docker](#docker-copy-mode-only)).
   "mcpServers": {
     "oracle-forms": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "-v", "/path/to/forms:/forms",
+      "args": ["run", "-i", "--rm",
+               "-v", "ofmcp-cache:/home/mcp/.cache", "-v", "/path/to/forms:/forms",
                "ghcr.io/aoreshkov/oracle-forms-mcp", "--forms-dir", "/forms"]
     }
   }
@@ -160,12 +161,18 @@ modules — see [Docker](#docker-copy-mode-only)).
   "servers": {
     "oracle-forms": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "-v", "${workspaceFolder}/forms:/forms",
+      "args": ["run", "-i", "--rm",
+               "-v", "ofmcp-cache:/home/mcp/.cache", "-v", "${workspaceFolder}/forms:/forms",
                "ghcr.io/aoreshkov/oracle-forms-mcp", "--forms-dir", "/forms"]
     }
   }
 }
 ```
+
+The `ofmcp-cache` named volume keeps the parsed-module cache and — more importantly — the durable
+annotation store across container restarts; `--rm` removes the container but not a named volume. Drop
+it and the notes/tags/relations the assistant records won't survive the next run. See
+[Docker](#docker-copy-mode-only) for the bind-mount variant and its one-time `chown`.
 
 Prefer the native launcher? Swap `"command": "docker", "args": [...]` for
 `"command": "/abs/path/to/server/build/install/server/bin/server", "args": ["--forms-dir", "/abs/path/to/forms"]`.
@@ -195,6 +202,20 @@ conversion, run the server on a host with an Oracle Forms installation (`ORACLE_
 ```
 docker run -i -v /path/to/forms:/forms ghcr.io/aoreshkov/oracle-forms-mcp --forms-dir /forms
 ```
+
+**Persisting the cache and annotations.** Without a volume, the cache and the durable annotation
+store live in the container's writable layer and are discarded when it exits. Mount a volume at
+`/home/mcp/.cache` to keep them across runs:
+
+```
+docker run -i -v ofmcp-cache:/home/mcp/.cache -v /path/to/forms:/forms \
+  ghcr.io/aoreshkov/oracle-forms-mcp --forms-dir /forms
+```
+
+A named or anonymous volume inherits the image's non-root ownership (uid 10001) and just works.
+A host **bind mount** does not — Docker never chowns the target — so run `chown 10001 /host/cache`
+once on the host first, or redirect the writes with `--cache-dir` / `--annotations-dir` onto a path
+the container user can write.
 
 ### Options
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Docker: the annotation store and module cache are now writable when a volume is mounted at
+  `/home/mcp/.cache`. The image runs as non-root (uid 10001); the cache tree is pre-created and
+  owned by that user before the `VOLUME` is declared, so an anonymous or named volume inherits the
+  ownership instead of being created root-owned (which silently failed every annotation write with
+  `AccessDenied`). README documents mounting the volume to persist annotations across runs, plus the
+  bind-mount `chown` caveat.
+
 ## [0.2.0] - 2026-07-16
 
 ### Added
