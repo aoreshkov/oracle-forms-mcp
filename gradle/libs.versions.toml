@@ -2,13 +2,14 @@
 # Build tools
 kotlin = "2.4.0"    # capped at 2.4.0: newest CodeQL (2.26.0) supports Kotlin only up to 2.4.0; bump when CodeQL catches up
 kover = "0.9.8"
+# ABI validation is now built into the Kotlin Gradle plugin (kmp-library's `abiValidation`);
+# the standalone binary-compatibility-validator plugin has been dropped.
 
 # Third-party
 mcp-kotlin-sdk = "0.14.0"
 ktor = "3.5.1"
 kotlinx-coroutines = "1.11.0"
 kotlinx-serialization = "1.11.0"
-kotlinx-binary-compatibility-validator = "0.18.1"
 kermit = "2.1.0"
 slf4j = "2.0.18"
 kotlin-logging = "8.0.4"       # matches the MCP SDK's transitive facade; needed to silence its stdout banner
@@ -20,7 +21,6 @@ kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", v
 # Plugin marker so precompiled convention plugins can apply `org.jetbrains.kotlin.plugin.serialization` version-less.
 kotlin-serialization-gradle-plugin = { module = "org.jetbrains.kotlin.plugin.serialization:org.jetbrains.kotlin.plugin.serialization.gradle.plugin", version.ref = "kotlin" }
 kover-gradle-plugin = { module = "org.jetbrains.kotlinx:kover-gradle-plugin", version.ref = "kover" }
-bcv-gradle-plugin = { module = "org.jetbrains.kotlinx:binary-compatibility-validator", version.ref = "kotlinx-binary-compatibility-validator" }
 
 # MCP (server-only artifact — the SDK is modular since 0.9.x)
 mcp-kotlin-sdk = { module = "io.modelcontextprotocol:kotlin-sdk-server", version.ref = "mcp-kotlin-sdk" }
@@ -51,4 +51,3 @@ kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref 
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
-kotlinx-binary-compatibility-validator = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "kotlinx-binary-compatibility-validator" }

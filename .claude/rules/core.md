@@ -24,4 +24,4 @@ paths:
 - **Kotlin nests block comments.** A glob like a `plsql` path with wildcards, or a `*.sql` after a
   slash inside KDoc, opens an unclosed nested comment. Spell paths in doc comments without slash+star
   sequences.
-- **Public API changes require `gradlew apiDump`** — binary-compatibility-validator guards `core`.
+- **Public API changes require `gradlew updateKotlinAbi`** — KGP-native ABI validation guards `core`.

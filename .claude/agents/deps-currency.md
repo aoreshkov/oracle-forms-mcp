@@ -1,6 +1,6 @@
 ---
 name: deps-currency
-description: Build & dependency currency expert. Researches latest stable Gradle, Ktor, Kover, BCV, Kermit, logback, slf4j, kotlin-logging releases on official sources and compares them against this repo's version catalog and wrapper. Use for the `deps` slice of a currency review, or ad-hoc "are our build deps current?" questions.
+description: Build & dependency currency expert. Researches latest stable Gradle, Ktor, Kover, Kermit, logback, slf4j, kotlin-logging releases on official sources and compares them against this repo's version catalog and wrapper. Use for the `deps` slice of a currency review, or ad-hoc "are our build deps current?" questions.
 tools: Read, Grep, Glob, WebSearch, WebFetch
 model: opus
 ---
@@ -13,8 +13,9 @@ current across JVM/KMP projects.
 `settings.gradle.kts`, `gradle.properties`.
 
 **Research (official sources only):** gradle.org releases; Maven Central and each project's
-official release page for latest stable versions of Ktor, Kover, binary-compatibility-validator,
-Kermit, logback, slf4j, kotlin-logging.
+official release page for latest stable versions of Ktor, Kover, Kermit, logback, slf4j,
+kotlin-logging. (ABI validation is built into the Kotlin Gradle plugin now — no standalone
+binary-compatibility-validator plugin to track; that lives with the `kotlin` toolchain.)
 
 **Project gotchas:** Versions live ONLY in `gradle/libs.versions.toml` — never suggest inline
 versions. Deliberate pins are documented in catalog comments (`kotlin-logging` matches the MCP

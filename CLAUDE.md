@@ -17,7 +17,7 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   `search_annotations`, `remove_annotation`) and the `oracleforms://{module}/annotations` resource
   live here. Transports in `transport/`, resources/prompts in their packages, composition root
   `McpServerFactory`.
-- `build-logic/` — convention plugins `kmp-library` (toolchain 21, explicitApi, kover, BCV) and
+- `build-logic/` — convention plugins `kmp-library` (toolchain 21, explicitApi, kover, KGP ABI validation) and
   `jvm-application`.
 
 ## Invariants
@@ -38,7 +38,7 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   unknown elements are skipped generically (but still get an `ObjectRef` when named).
 - **Every tool** declares title, annotations, and `outputSchemaOf<Dto>()`; DTO fields are
   defaulted so schemas stay forward-compatible. `ToolRegistrationTest` enforces this.
-- Public API changes require `gradlew apiDump` (binary-compatibility-validator on `core`).
+- Public API changes require `gradlew updateKotlinAbi` (KGP ABI validation on `core`).
 
 ## Gotchas
 
@@ -48,10 +48,9 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   the previous event's end (see `startLineOf`). Pinned by `objectRefSlicesReparseAsXml`.
 - Oracle tools: `frmf2xml` writes to the process **cwd** (run it with cwd = cache `converted/`);
   exit codes are unreliable — success is judged by the output file. `frmcmp_batch` over `frmcmp`.
-- This project deliberately does NOT add a custom `SegmentTemplateMatcher`: that workaround is
-  only needed when `kotlin-compiler` shadows `kotlinx.collections.immutable`.
-  `ModuleResourcesTest.sdkDefaultMatcherExtractsTheModuleSegment` is the regression canary — if
-  it dies with NoSuchMethodError, a new dependency reintroduced the shadow.
+- This project deliberately does NOT add a custom `SegmentTemplateMatcher` (the SDK default
+  matcher works); see `.claude/rules/server.md` for the shadowing cause and the
+  `ModuleResourcesTest.sdkDefaultMatcherExtractsTheModuleSegment` regression canary.
 - Tests never require an Oracle installation: converter tests build a fake `ORACLE_HOME` with
   stub `.bat`/sh scripts (`FakeOracleHome`); the copy-mode pipeline is covered by
   `FormsServiceIntegrationTest` against `fixtures/`. Classpath fixtures under `/fixtures/**`
@@ -63,7 +62,7 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
 ```
 gradlew build                 # everything, incl. tests
 gradlew :core:jvmTest         # core tests only
-gradlew apiDump               # refresh core/api/*.api after public API changes
+gradlew updateKotlinAbi       # refresh core/api/*.api after public API changes
 gradlew :server:installDist   # launcher at server/build/install/server/bin/server(.bat)
 gradlew :server:run --args="--forms-dir sample-forms"
 ```
