@@ -1,15 +1,23 @@
 package app.oreshkov.oracleformsmcp.server
 
+import app.oreshkov.oracleformsmcp.core.AnnotationStore
 import app.oreshkov.oracleformsmcp.core.FormsDirectoryScanner
 import app.oreshkov.oracleformsmcp.core.ModuleCache
 import app.oreshkov.oracleformsmcp.core.ModuleConverter
 import app.oreshkov.oracleformsmcp.core.ModuleNotFetchedException
 import app.oreshkov.oracleformsmcp.core.ModuleParser
 import app.oreshkov.oracleformsmcp.core.ModuleStaleException
+import app.oreshkov.oracleformsmcp.dto.AnnotationCreated
+import app.oreshkov.oracleformsmcp.dto.AnnotationRemoved
+import app.oreshkov.oracleformsmcp.dto.AnnotationSearchResults
+import app.oreshkov.oracleformsmcp.dto.AnnotationView
 import app.oreshkov.oracleformsmcp.dto.BlockDetail
 import app.oreshkov.oracleformsmcp.dto.BlockList
 import app.oreshkov.oracleformsmcp.dto.BlockSummary
+import app.oreshkov.oracleformsmcp.dto.ElementAnnotationList
+import app.oreshkov.oracleformsmcp.dto.ElementAnnotations
 import app.oreshkov.oracleformsmcp.dto.FetchModuleSummary
+import app.oreshkov.oracleformsmcp.dto.ModuleAnnotationsView
 import app.oreshkov.oracleformsmcp.dto.ModuleList
 import app.oreshkov.oracleformsmcp.dto.ModuleOverview
 import app.oreshkov.oracleformsmcp.dto.ModuleStatusEntry
@@ -17,23 +25,34 @@ import app.oreshkov.oracleformsmcp.dto.ObjectXml
 import app.oreshkov.oracleformsmcp.dto.ProgramUnitList
 import app.oreshkov.oracleformsmcp.dto.ProgramUnitSource
 import app.oreshkov.oracleformsmcp.dto.ProgramUnitSummary
+import app.oreshkov.oracleformsmcp.dto.RelationCreated
+import app.oreshkov.oracleformsmcp.dto.RelationView
 import app.oreshkov.oracleformsmcp.dto.SearchHit
 import app.oreshkov.oracleformsmcp.dto.SearchResults
 import app.oreshkov.oracleformsmcp.dto.TriggerList
 import app.oreshkov.oracleformsmcp.dto.TriggerSource
 import app.oreshkov.oracleformsmcp.dto.TriggerSummary
 import app.oreshkov.oracleformsmcp.io.Fingerprints
+import app.oreshkov.oracleformsmcp.model.Annotation
+import app.oreshkov.oracleformsmcp.model.AnnotationKind
+import app.oreshkov.oracleformsmcp.model.Author
+import app.oreshkov.oracleformsmcp.model.ElementId
+import app.oreshkov.oracleformsmcp.model.ElementKind
+import app.oreshkov.oracleformsmcp.model.ModuleFingerprint
 import app.oreshkov.oracleformsmcp.model.ModuleIndex
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
 import app.oreshkov.oracleformsmcp.model.ProgramUnitType
+import app.oreshkov.oracleformsmcp.model.Relation
 import app.oreshkov.oracleformsmcp.model.ScannedModule
 import app.oreshkov.oracleformsmcp.model.SourceRef
+import app.oreshkov.oracleformsmcp.model.TriggerInfo
 import app.oreshkov.oracleformsmcp.model.TriggerLevel
 import co.touchlab.kermit.Logger
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import java.util.UUID
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
@@ -55,6 +74,7 @@ class FormsService(
     private val converter: ModuleConverter,
     private val parser: ModuleParser,
     private val cache: ModuleCache,
+    private val annotationStore: AnnotationStore,
     private val formsDir: Path,
     private val oracleConversion: Boolean,
 ) {
@@ -180,6 +200,7 @@ class FormsService(
             editors = index.editors,
             menus = index.menus.map { it.name },
             objectLibraryTabs = index.objectLibraryTabs.map { it.name },
+            annotations = elementAnnotations(index, ElementId(index.key, ElementKind.MODULE, index.key.name)),
         )
     }
 
@@ -205,7 +226,11 @@ class FormsService(
             ?: throw IllegalArgumentException(
                 "No block '$blockName' in $key. Blocks: ${index.blocks.joinToString(", ") { it.name }}",
             )
-        return BlockDetail(module = index.key, block = block)
+        return BlockDetail(
+            module = index.key,
+            block = block,
+            annotations = elementAnnotations(index, ElementId(index.key, ElementKind.BLOCK, block.name)),
+        )
     }
 
     suspend fun listTriggers(
@@ -271,6 +296,10 @@ class FormsService(
             block = trigger.blockName,
             item = trigger.itemName,
             text = readRef(key, ref),
+            annotations = elementAnnotations(
+                index,
+                ElementId(index.key, ElementKind.TRIGGER, trigger.name, triggerOwner(trigger)),
+            ),
         )
     }
 
@@ -307,6 +336,10 @@ class FormsService(
             name = unit.name,
             unitType = unit.unitType,
             text = readRef(key, ref),
+            annotations = elementAnnotations(
+                index,
+                ElementId(index.key, ElementKind.PROGRAM_UNIT, unit.name),
+            ),
         )
     }
 
@@ -391,11 +424,142 @@ class FormsService(
             xml = if (capped) xml.take(MAX_OBJECT_XML_CHARS) else xml,
             startLine = ref.ref.startLine,
             truncated = capped,
+            annotations = elementAnnotations(
+                index,
+                ElementId(index.key, ElementKind.OBJECT, ref.name, ref.ownerPath),
+            ),
         )
     }
 
     /** Every module with a cached index (feeds the MCP resources). */
     suspend fun listCached(): List<ModuleKey> = cache.list()
+
+    // --- annotation layer (AI/user-supplied meta-information persisted about elements) ---
+
+    /**
+     * Persists one [kind] annotation ([body]) about the [elementKind] element named [name]
+     * (optionally scoped by [ownerPath]). Requires the module to be freshly fetched: the element
+     * is validated against the current index, and the source fingerprint is snapshotted so a later
+     * re-index can flag the note as predating the source.
+     */
+    suspend fun annotate(
+        key: ModuleKey,
+        elementKind: ElementKind,
+        name: String,
+        ownerPath: String?,
+        kind: AnnotationKind,
+        body: String,
+        author: Author = Author.AI,
+    ): AnnotationCreated {
+        require(body.isNotBlank()) { "annotation body must not be blank" }
+        val index = index(key)
+        val target = resolveElement(index, elementKind, name, ownerPath)
+        val annotation = Annotation(
+            id = newId(),
+            target = target,
+            kind = kind,
+            body = body.trim(),
+            author = author,
+            createdAt = now(),
+            sourceFingerprint = index.fingerprint,
+        )
+        annotationStore.addAnnotation(annotation)
+        return AnnotationCreated(module = key, annotation = annotation.toView(stale = false))
+    }
+
+    /** Records a directed [relType] relation between two elements of the same module (from → to). */
+    suspend fun relate(
+        key: ModuleKey,
+        fromKind: ElementKind,
+        fromName: String,
+        fromOwner: String?,
+        toKind: ElementKind,
+        toName: String,
+        toOwner: String?,
+        relType: String,
+        note: String?,
+        author: Author = Author.AI,
+    ): RelationCreated {
+        require(relType.isNotBlank()) { "relType must not be blank" }
+        val index = index(key)
+        val from = resolveElement(index, fromKind, fromName, fromOwner)
+        val to = resolveElement(index, toKind, toName, toOwner)
+        val relation = Relation(
+            id = newId(),
+            from = from,
+            to = to,
+            relType = relType.trim(),
+            note = note?.trim()?.takeIf { it.isNotEmpty() },
+            author = author,
+            createdAt = now(),
+            sourceFingerprint = index.fingerprint,
+        )
+        annotationStore.addRelation(relation)
+        return RelationCreated(module = key, relation = relation.toView(stale = false))
+    }
+
+    /**
+     * The annotations and relations attached to one element. Served even when the module is stale
+     * (each view carries its own drift flag) so knowledge is never hidden by a source change.
+     */
+    suspend fun getElementAnnotations(
+        key: ModuleKey,
+        elementKind: ElementKind,
+        name: String,
+        ownerPath: String?,
+    ): ElementAnnotationList {
+        val cached = cache.get(key) ?: throw ModuleNotFetchedException(key)
+        val target = resolveElement(cached, elementKind, name, ownerPath)
+        return ElementAnnotationList(
+            module = key,
+            element = target,
+            annotations = elementAnnotations(cached, target),
+        )
+    }
+
+    /** Filters a module's stored notes ([text]/[kind]/[tag]) and relations ([text]) — case-insensitive. */
+    suspend fun searchAnnotations(
+        key: ModuleKey,
+        text: String?,
+        kind: AnnotationKind?,
+        tag: String?,
+    ): AnnotationSearchResults {
+        val cached = cache.get(key)
+        val (notes, relations) = storeViews(key, cached?.let { Path.of(it.sourceFile) })
+        val query = text?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        var noteHits = notes
+        if (kind != null) noteHits = noteHits.filter { it.kind == kind }
+        if (tag != null) {
+            noteHits = noteHits.filter { it.kind == AnnotationKind.TAG && it.body.equals(tag.trim(), ignoreCase = true) }
+        }
+        if (query != null) {
+            noteHits = noteHits.filter {
+                it.body.lowercase().contains(query) || it.target?.name?.lowercase()?.contains(query) == true
+            }
+        }
+        // A note-specific filter (kind/tag) excludes relations, which have neither.
+        var relationHits = if (kind != null || tag != null) emptyList() else relations
+        if (query != null) {
+            relationHits = relationHits.filter {
+                it.relType.lowercase().contains(query) ||
+                    it.note?.lowercase()?.contains(query) == true ||
+                    it.from?.name?.lowercase()?.contains(query) == true ||
+                    it.to?.name?.lowercase()?.contains(query) == true
+            }
+        }
+        return AnnotationSearchResults(module = key, notes = noteHits, relations = relationHits)
+    }
+
+    /** Removes the annotation or relation with [id] from [key]'s store. */
+    suspend fun removeAnnotation(key: ModuleKey, id: String): AnnotationRemoved =
+        AnnotationRemoved(module = key, id = id, removed = annotationStore.remove(key, id))
+
+    /** The whole annotation set for a module, for the `oracleforms://{module}/annotations` resource. */
+    suspend fun moduleAnnotations(key: ModuleKey): ModuleAnnotationsView {
+        val cached = cache.get(key)
+        val (notes, relations) = storeViews(key, cached?.let { Path.of(it.sourceFile) })
+        return ModuleAnnotationsView(module = key, notes = notes, relations = relations)
+    }
 
     /**
      * The cached index for [key], with the staleness contract every read tool relies on:
@@ -467,6 +631,149 @@ class FormsService(
         block != null -> block!!
         else -> "form level"
     }
+
+    // --- annotation internals ---
+
+    /** Notes/relations for [element], drawn from [index]'s stored annotations, with drift resolved. */
+    private suspend fun elementAnnotations(index: ModuleIndex, element: ElementId): ElementAnnotations {
+        val (notes, relations) = storeViews(index.key, Path.of(index.sourceFile))
+        val id = element.canonical()
+        return ElementAnnotations(
+            notes = notes.filter { it.target?.canonical() == id },
+            relations = relations.filter { it.from?.canonical() == id || it.to?.canonical() == id },
+        )
+    }
+
+    /** All of a module's stored annotations/relations as views, each drift-flagged against [sourcePath]. */
+    private suspend fun storeViews(
+        module: ModuleKey,
+        sourcePath: Path?,
+    ): Pair<List<AnnotationView>, List<RelationView>> {
+        val stored = annotationStore.forModule(module)
+        val notes = stored.annotations.map { it.toView(isStale(sourcePath, it.sourceFingerprint)) }
+        val relations = stored.relations.map { it.toView(isStale(sourcePath, it.sourceFingerprint)) }
+        return notes to relations
+    }
+
+    /** True when an annotation's snapshot no longer matches the live source — the note predates it. */
+    private fun isStale(sourcePath: Path?, fingerprint: ModuleFingerprint?): Boolean =
+        fingerprint != null && sourcePath != null && sourcePath.exists() &&
+            !Fingerprints.matches(fingerprint, sourcePath)
+
+    /** Canonical owner path of a trigger: `block.item`, `block`, or `null` at form level. */
+    private fun triggerOwner(trigger: TriggerInfo): String? = when {
+        trigger.itemName != null -> "${trigger.blockName}.${trigger.itemName}"
+        else -> trigger.blockName
+    }
+
+    /**
+     * Resolves an annotation target against the parsed [index], validating that the element exists
+     * and returning its canonical name and owner path so writes and reads address it identically.
+     */
+    private fun resolveElement(
+        index: ModuleIndex,
+        kind: ElementKind,
+        name: String,
+        ownerPath: String?,
+    ): ElementId {
+        fun eid(canonicalName: String, owner: String?) = ElementId(index.key, kind, canonicalName, owner)
+        fun fail(known: List<String>): Nothing = throw IllegalArgumentException(
+            "No ${kind.name.lowercase()} named '$name' in ${index.key}" +
+                (ownerPath?.let { " under '$it'" } ?: "") + ". " +
+                (if (known.isEmpty()) "This module has none of that kind."
+                else "Known: ${known.distinct().sorted().take(50).joinToString(", ")}.") +
+                " Fetch the module and use the list_/get_ tools to see valid element names.",
+        )
+        fun simple(names: List<String>): ElementId =
+            names.firstOrNull { it.equals(name, ignoreCase = true) }?.let { eid(it, null) } ?: fail(names)
+
+        return when (kind) {
+            ElementKind.MODULE -> eid(index.key.name, null)
+            ElementKind.BLOCK -> simple(index.blocks.map { it.name })
+            ElementKind.PROGRAM_UNIT -> simple(index.programUnits.map { it.name })
+            ElementKind.LOV -> simple(index.lovs.map { it.name })
+            ElementKind.RECORD_GROUP -> simple(index.recordGroups.map { it.name })
+            ElementKind.CANVAS -> simple(index.canvases.map { it.name })
+            ElementKind.WINDOW -> simple(index.windows.map { it.name })
+            ElementKind.ALERT -> simple(index.alerts.map { it.name })
+            ElementKind.PARAMETER -> simple(index.parameters.map { it.name })
+            ElementKind.MENU -> simple(index.menus.map { it.name })
+            ElementKind.ITEM -> {
+                val hit = index.blocks
+                    .filter { ownerPath == null || it.name.equals(ownerPath, ignoreCase = true) }
+                    .firstNotNullOfOrNull { block ->
+                        block.items.firstOrNull { it.name.equals(name, ignoreCase = true) }?.let { block to it }
+                    }
+                hit?.let { (block, item) -> eid(item.name, block.name) }
+                    ?: fail(index.blocks.flatMap { b -> b.items.map { "${b.name}.${it.name}" } })
+            }
+            ElementKind.MENU_ITEM -> {
+                val hit = index.menus.firstNotNullOfOrNull { menu ->
+                    menu.items.firstOrNull { it.name.equals(name, ignoreCase = true) }?.let { menu to it }
+                }
+                hit?.let { (menu, item) -> eid(item.name, menu.name) }
+                    ?: fail(index.menus.flatMap { m -> m.items.map { "${m.name}.${it.name}" } })
+            }
+            ElementKind.TRIGGER -> {
+                val matches = index.triggers.filter {
+                    it.name.equals(name, ignoreCase = true) &&
+                        (ownerPath == null ||
+                            ownerPath.equals(it.blockName, ignoreCase = true) ||
+                            ownerPath.equals(triggerOwner(it), ignoreCase = true))
+                }
+                when {
+                    matches.size == 1 -> matches.single().let { eid(it.name, triggerOwner(it)) }
+                    matches.isEmpty() -> fail(index.triggers.map { it.name })
+                    else -> throw IllegalArgumentException(
+                        "Trigger '$name' exists at several scopes in ${index.key}: " +
+                            matches.joinToString(", ") { triggerOwner(it) ?: "form level" } +
+                            ". Pass ownerPath (block, or block.item) to disambiguate.",
+                    )
+                }
+            }
+            ElementKind.OBJECT -> {
+                val matches = index.objectRefs.filter {
+                    it.name.equals(name, ignoreCase = true) &&
+                        (ownerPath == null || ownerPath.equals(it.ownerPath, ignoreCase = true))
+                }
+                when {
+                    matches.size == 1 -> matches.single().let { eid(it.name, it.ownerPath) }
+                    matches.isEmpty() -> fail(index.objectRefs.map { it.name })
+                    else -> throw IllegalArgumentException(
+                        "Object '$name' exists at several scopes in ${index.key}: " +
+                            matches.joinToString(", ") { it.ownerPath ?: "(top level)" } +
+                            ". Pass ownerPath to disambiguate.",
+                    )
+                }
+            }
+        }
+    }
+
+    private fun Annotation.toView(stale: Boolean) = AnnotationView(
+        id = id,
+        target = target,
+        kind = kind,
+        body = body,
+        author = author,
+        createdAt = createdAt.toString(),
+        staleAgainstSource = stale,
+    )
+
+    private fun Relation.toView(stale: Boolean) = RelationView(
+        id = id,
+        from = from,
+        to = to,
+        relType = relType,
+        note = note,
+        author = author,
+        createdAt = createdAt.toString(),
+        staleAgainstSource = stale,
+    )
+
+    private fun newId(): String = UUID.randomUUID().toString()
+
+    private fun now(): kotlin.time.Instant =
+        kotlin.time.Instant.fromEpochMilliseconds(System.currentTimeMillis())
 
     private fun ModuleIndex.summary(fromCache: Boolean): FetchModuleSummary = FetchModuleSummary(
         module = key,

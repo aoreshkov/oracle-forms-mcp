@@ -89,6 +89,14 @@ internal fun enumProp(description: String, values: List<String>): JsonObject = b
     put("enum", buildJsonArray { values.forEach { add(it) } })
 }
 
+/** The lowercased names of an enum's constants, the wire form accepted for enum arguments. */
+internal inline fun <reified E : Enum<E>> enumNamesLower(): List<String> =
+    enumValues<E>().map { it.name.lowercase() }
+
+/** An `enum` string property whose allowed values are the lowercased names of enum [E]. */
+internal inline fun <reified E : Enum<E>> enumPropOf(description: String): JsonObject =
+    enumProp("$description. One of: ${enumNamesLower<E>().joinToString(", ")}.", enumNamesLower<E>())
+
 // --- verbosity (shared response-size control, per Anthropic's token-efficiency guidance) ---
 
 internal const val VERBOSITY_CONCISE: String = "concise"
@@ -145,6 +153,17 @@ internal fun JsonObject.enumArg(name: String, values: List<String>): String? {
     require(raw in values) { "$name must be one of: ${values.joinToString(", ")}" }
     return raw
 }
+
+/** An enum-[E] argument parsed case-insensitively from its constant name; `null` when absent. */
+internal inline fun <reified E : Enum<E>> JsonObject.enumArgOf(name: String): E? {
+    val raw = stringArg(name) ?: return null
+    return enumValues<E>().firstOrNull { it.name.equals(raw, ignoreCase = true) }
+        ?: throw IllegalArgumentException("$name must be one of: ${enumNamesLower<E>().joinToString(", ")}")
+}
+
+/** Like [enumArgOf] but required. */
+internal inline fun <reified E : Enum<E>> JsonObject.requireEnumArg(name: String): E =
+    enumArgOf<E>(name) ?: throw IllegalArgumentException("Missing required argument '$name'")
 
 /** The raw `module` argument; resolution to a [ModuleKey] happens in `FormsService`. */
 internal fun JsonObject.moduleArg(): String = requireStringArg("module")

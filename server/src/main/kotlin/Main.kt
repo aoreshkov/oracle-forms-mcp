@@ -28,6 +28,7 @@ private val USAGE = """
                                   (default: localhost only, via DNS-rebinding protection)
       --allowed-origin <url>      Extra Origin the http transport accepts; repeatable
       --cache-dir <path>          Cache directory (default: OS cache dir + /oracle-forms-mcp)
+      --annotations-dir <path>    Durable annotation store (default: <cache dir>/annotations)
       --conversion-timeout <sec>  Kill a conversion after this many seconds (default: 120)
       --help                      Show this help and exit
 
@@ -45,6 +46,7 @@ private data class CliOptions(
     val allowedOrigins: List<String> = emptyList(),
     val formsDir: Path? = null,
     val cacheDir: Path? = null,
+    val annotationsDir: Path? = null,
     val conversionTimeoutSeconds: Int = 120,
 )
 
@@ -80,6 +82,7 @@ private fun parseArgs(args: Array<String>): CliOptions {
                 options.copy(allowedOrigins = options.allowedOrigins + value(arg))
             "--forms-dir" -> options = options.copy(formsDir = Path.of(value(arg)))
             "--cache-dir" -> options = options.copy(cacheDir = Path.of(value(arg)))
+            "--annotations-dir" -> options = options.copy(annotationsDir = Path.of(value(arg)))
             "--conversion-timeout" -> {
                 val seconds = value(arg).toIntOrNull()?.takeIf { it in 1..3600 }
                     ?: fail("Invalid --conversion-timeout (expected seconds, 1-3600)")
@@ -108,9 +111,11 @@ fun main(args: Array<String>) {
         ?: fail("Missing the forms directory (pass --forms-dir <path> or a positional argument)")
     if (!formsDir.isDirectory()) fail("Forms directory does not exist or is not a directory: $formsDir")
 
+    val cacheDir = options.cacheDir ?: ServerConfig(formsDir).cacheDir
     val config = ServerConfig(
         formsDir = formsDir.toAbsolutePath().normalize(),
-        cacheDir = options.cacheDir ?: ServerConfig(formsDir).cacheDir,
+        cacheDir = cacheDir,
+        annotationsDir = options.annotationsDir ?: cacheDir.resolve("annotations"),
         conversionTimeout = options.conversionTimeoutSeconds.seconds,
     )
     runBlocking {

@@ -1,6 +1,9 @@
 package app.oreshkov.oracleformsmcp.dto
 
+import app.oreshkov.oracleformsmcp.model.AnnotationKind
+import app.oreshkov.oracleformsmcp.model.Author
 import app.oreshkov.oracleformsmcp.model.BlockInfo
+import app.oreshkov.oracleformsmcp.model.ElementId
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
 import app.oreshkov.oracleformsmcp.model.ModuleType
@@ -73,6 +76,7 @@ public data class ModuleOverview(
     val editors: List<String> = emptyList(),
     val menus: List<String> = emptyList(),
     val objectLibraryTabs: List<String> = emptyList(),
+    val annotations: ElementAnnotations = ElementAnnotations(),
 )
 
 /** One row of `list_blocks`. */
@@ -99,6 +103,7 @@ public data class BlockList(
 public data class BlockDetail(
     val module: ModuleKey,
     val block: BlockInfo,
+    val annotations: ElementAnnotations = ElementAnnotations(),
 )
 
 /** One row of `list_triggers`. */
@@ -131,6 +136,7 @@ public data class TriggerSource(
     val block: String? = null,
     val item: String? = null,
     val text: String,
+    val annotations: ElementAnnotations = ElementAnnotations(),
 )
 
 /** One row of `list_program_units`. */
@@ -158,6 +164,7 @@ public data class ProgramUnitSource(
     val name: String,
     val unitType: ProgramUnitType,
     val text: String,
+    val annotations: ElementAnnotations = ElementAnnotations(),
 )
 
 /** One hit from `search_source`. */
@@ -197,4 +204,98 @@ public data class ObjectXml(
     val xml: String,
     val startLine: Int = 1,
     val truncated: Boolean = false,
+    val annotations: ElementAnnotations = ElementAnnotations(),
+)
+
+/*
+ * Annotation layer: AI/user-supplied meta-information persisted about elements. These are *claims*,
+ * not parsed facts — every view carries [AnnotationView.author]/[AnnotationView.createdAt] and a
+ * [AnnotationView.staleAgainstSource] flag set when the note predates the module's current source.
+ */
+
+/** One annotation as served back, with drift ([staleAgainstSource]) resolved against the source. */
+@Serializable
+@SerialName("AnnotationView")
+public data class AnnotationView(
+    val id: String = "",
+    val target: ElementId? = null,
+    val kind: AnnotationKind = AnnotationKind.NOTE,
+    val body: String = "",
+    val author: Author = Author.AI,
+    val createdAt: String = "",
+    val staleAgainstSource: Boolean = false,
+)
+
+/** One relation as served back; [staleAgainstSource] as in [AnnotationView]. */
+@Serializable
+@SerialName("RelationView")
+public data class RelationView(
+    val id: String = "",
+    val from: ElementId? = null,
+    val to: ElementId? = null,
+    val relType: String = "",
+    val note: String? = null,
+    val author: Author = Author.AI,
+    val createdAt: String = "",
+    val staleAgainstSource: Boolean = false,
+)
+
+/** Notes and relations attached to one element; embedded (defaulted-empty) in the read DTOs. */
+@Serializable
+@SerialName("ElementAnnotations")
+public data class ElementAnnotations(
+    val notes: List<AnnotationView> = emptyList(),
+    val relations: List<RelationView> = emptyList(),
+)
+
+/** `get_element_annotations` — the resolved [element] plus its [annotations]. */
+@Serializable
+@SerialName("ElementAnnotationList")
+public data class ElementAnnotationList(
+    val module: ModuleKey,
+    val element: ElementId,
+    val annotations: ElementAnnotations = ElementAnnotations(),
+)
+
+/** `annotate_element` — the annotation that was stored. */
+@Serializable
+@SerialName("AnnotationCreated")
+public data class AnnotationCreated(
+    val module: ModuleKey,
+    val annotation: AnnotationView,
+)
+
+/** `relate_elements` — the relation that was stored. */
+@Serializable
+@SerialName("RelationCreated")
+public data class RelationCreated(
+    val module: ModuleKey,
+    val relation: RelationView,
+)
+
+/** `remove_annotation` — [removed] is `false` when no annotation/relation had that [id]. */
+@Serializable
+@SerialName("AnnotationRemoved")
+public data class AnnotationRemoved(
+    val module: ModuleKey,
+    val id: String,
+    val removed: Boolean = false,
+)
+
+/** `search_annotations` — matching notes and relations across one module. */
+@Serializable
+@SerialName("AnnotationSearchResults")
+public data class AnnotationSearchResults(
+    val module: ModuleKey,
+    val notes: List<AnnotationView> = emptyList(),
+    val relations: List<RelationView> = emptyList(),
+)
+
+/** The full annotation set for a module, exposed as the `oracleforms://{module}/annotations` resource. */
+@Serializable
+@SerialName("ModuleAnnotationsView")
+public data class ModuleAnnotationsView(
+    val module: ModuleKey,
+    val notes: List<AnnotationView> = emptyList(),
+    val relations: List<RelationView> = emptyList(),
 )

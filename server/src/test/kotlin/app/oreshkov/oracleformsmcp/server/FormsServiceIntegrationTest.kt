@@ -1,7 +1,11 @@
 package app.oreshkov.oracleformsmcp.server
 
+import app.oreshkov.oracleformsmcp.annotation.OnDiskAnnotationStore
 import app.oreshkov.oracleformsmcp.cache.OnDiskModuleCache
 import app.oreshkov.oracleformsmcp.convert.PreConvertedCopyConverter
+import app.oreshkov.oracleformsmcp.model.AnnotationKind
+import app.oreshkov.oracleformsmcp.model.Author
+import app.oreshkov.oracleformsmcp.model.ElementKind
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.model.TriggerLevel
@@ -32,6 +36,7 @@ class FormsServiceIntegrationTest {
         converter = PreConvertedCopyConverter(),
         parser = FormsModuleParser(),
         cache = OnDiskModuleCache(temp.resolve("cache")),
+        annotationStore = OnDiskAnnotationStore(temp.resolve("annotations")),
         formsDir = formsDir,
         oracleConversion = false,
     )
@@ -132,6 +137,91 @@ class FormsServiceIntegrationTest {
         assertEquals(1, page2.offset)
         // Paging advances: the second page is a different match than the first.
         assertTrue(page1.hits.single() != page2.hits.single())
+    }
+
+    @Test
+    fun annotationsAttachToElementsSurviveReindexAndFlagDrift() = runTest {
+        service.fetchModule(ordersKey)
+
+        val created = service.annotate(
+            key = ordersKey,
+            elementKind = ElementKind.TRIGGER,
+            name = "WHEN-VALIDATE-ITEM",
+            ownerPath = null,
+            kind = AnnotationKind.NOTE,
+            body = "Validates the order id is present",
+            author = Author.AI,
+        )
+        assertEquals(false, created.annotation.staleAgainstSource)
+
+        // Served back through the dedicated tool...
+        val direct = service.getElementAnnotations(ordersKey, ElementKind.TRIGGER, "WHEN-VALIDATE-ITEM", null)
+        assertEquals(1, direct.annotations.notes.size)
+        assertEquals("Validates the order id is present", direct.annotations.notes.single().body)
+
+        // ...and inline in get_trigger.
+        val trigger = service.getTrigger(ordersKey, "WHEN-VALIDATE-ITEM", block = null, item = null)
+        assertEquals(1, trigger.annotations.notes.size)
+
+        // Re-fetching (unchanged source → warm hit) must not drop the annotation.
+        service.fetchModule(ordersKey)
+        assertEquals(
+            1,
+            service.getElementAnnotations(ordersKey, ElementKind.TRIGGER, "WHEN-VALIDATE-ITEM", null)
+                .annotations.notes.size,
+        )
+
+        // Changing the source (without re-indexing) flags the note as stale, but still serves it.
+        val source = formsDir.resolve("orders_fmb.xml")
+        Files.writeString(source, Files.readString(source) + "\n<!-- touched -->")
+        val afterChange = service.getElementAnnotations(ordersKey, ElementKind.TRIGGER, "WHEN-VALIDATE-ITEM", null)
+        assertEquals(1, afterChange.annotations.notes.size)
+        assertTrue(
+            afterChange.annotations.notes.single().staleAgainstSource,
+            "a note made before the source changed must be flagged staleAgainstSource",
+        )
+    }
+
+    @Test
+    fun relateSearchAndRemove() = runTest {
+        service.fetchModule(ordersKey)
+        service.annotate(
+            ordersKey, ElementKind.PROGRAM_UNIT, "PKG_ORDERS", null,
+            AnnotationKind.TAG, "security-sensitive", Author.AI,
+        )
+        val relation = service.relate(
+            key = ordersKey,
+            fromKind = ElementKind.TRIGGER, fromName = "WHEN-VALIDATE-ITEM", fromOwner = null,
+            toKind = ElementKind.PROGRAM_UNIT, toName = "PKG_ORDERS", toOwner = null,
+            relType = "calls", note = null, author = Author.AI,
+        )
+
+        // Tag filter finds the classification note.
+        val byTag = service.searchAnnotations(ordersKey, text = null, kind = null, tag = "security-sensitive")
+        assertEquals(1, byTag.notes.size)
+        // Text search matches the relation type.
+        val byText = service.searchAnnotations(ordersKey, text = "calls", kind = null, tag = null)
+        assertEquals(1, byText.relations.size)
+
+        // Removing the relation by id takes it out of subsequent searches.
+        assertTrue(service.removeAnnotation(ordersKey, relation.relation.id).removed)
+        assertEquals(
+            0,
+            service.searchAnnotations(ordersKey, text = "calls", kind = null, tag = null).relations.size,
+        )
+        assertEquals(false, service.removeAnnotation(ordersKey, "no-such-id").removed)
+    }
+
+    @Test
+    fun annotatingAMissingElementFailsWithAModelDirectedError() = runTest {
+        service.fetchModule(ordersKey)
+        val error = assertFailsWith<IllegalArgumentException> {
+            service.annotate(
+                ordersKey, ElementKind.BLOCK, "NOPE", null,
+                AnnotationKind.NOTE, "x", Author.AI,
+            )
+        }
+        assertTrue(error.message!!.contains("block"))
     }
 
     @Test

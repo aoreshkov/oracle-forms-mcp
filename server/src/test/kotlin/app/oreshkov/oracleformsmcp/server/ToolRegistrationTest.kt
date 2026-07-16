@@ -1,7 +1,9 @@
 package app.oreshkov.oracleformsmcp.server
 
+import app.oreshkov.oracleformsmcp.server.tools.registerAnnotateElementTool
 import app.oreshkov.oracleformsmcp.server.tools.registerFetchModuleTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetBlockTool
+import app.oreshkov.oracleformsmcp.server.tools.registerGetElementAnnotationsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetModuleOverviewTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetObjectXmlTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetProgramUnitTool
@@ -10,6 +12,9 @@ import app.oreshkov.oracleformsmcp.server.tools.registerListBlocksTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListModulesTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListProgramUnitsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListTriggersTool
+import app.oreshkov.oracleformsmcp.server.tools.registerRelateElementsTool
+import app.oreshkov.oracleformsmcp.server.tools.registerRemoveAnnotationTool
+import app.oreshkov.oracleformsmcp.server.tools.registerSearchAnnotationsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchSourceTool
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
@@ -29,6 +34,11 @@ class ToolRegistrationTest {
     private val readOnlyLocal = setOf(
         "list_modules", "get_module_overview", "list_blocks", "get_block", "list_triggers",
         "get_trigger", "list_program_units", "get_program_unit", "search_source", "get_object_xml",
+        "get_element_annotations", "search_annotations",
+    )
+
+    private val writeTools = setOf(
+        "fetch_module", "annotate_element", "relate_elements", "remove_annotation",
     )
 
     private fun serverWithAllTools(): Server {
@@ -50,14 +60,19 @@ class ToolRegistrationTest {
             registerGetProgramUnitTool(service)
             registerSearchSourceTool(service)
             registerGetObjectXmlTool(service)
+            registerAnnotateElementTool(service)
+            registerRelateElementsTool(service)
+            registerGetElementAnnotationsTool(service)
+            registerSearchAnnotationsTool(service)
+            registerRemoveAnnotationTool(service)
         }
     }
 
     private fun tools(): Map<String, Tool> = serverWithAllTools().tools.mapValues { it.value.tool }
 
     @Test
-    fun allElevenToolsAreRegistered() {
-        assertEquals(readOnlyLocal + "fetch_module", tools().keys)
+    fun everyToolIsRegistered() {
+        assertEquals(readOnlyLocal + writeTools, tools().keys)
     }
 
     @Test
@@ -87,6 +102,26 @@ class ToolRegistrationTest {
         val annotations = assertNotNull(tools().getValue("fetch_module").annotations)
         assertEquals(false, annotations.readOnlyHint)
         assertEquals(false, annotations.destructiveHint)
+        assertEquals(true, annotations.idempotentHint)
+        assertEquals(false, annotations.openWorldHint)
+    }
+
+    @Test
+    fun annotationWritesAreAdditiveAndLocal() {
+        listOf("annotate_element", "relate_elements").forEach { name ->
+            val annotations = assertNotNull(tools().getValue(name).annotations)
+            assertEquals(false, annotations.readOnlyHint, name)
+            assertEquals(false, annotations.destructiveHint, name)
+            assertEquals(false, annotations.idempotentHint, name)
+            assertEquals(false, annotations.openWorldHint, name)
+        }
+    }
+
+    @Test
+    fun removeAnnotationIsDestructiveIdempotentAndLocal() {
+        val annotations = assertNotNull(tools().getValue("remove_annotation").annotations)
+        assertEquals(false, annotations.readOnlyHint)
+        assertEquals(true, annotations.destructiveHint)
         assertEquals(true, annotations.idempotentHint)
         assertEquals(false, annotations.openWorldHint)
     }

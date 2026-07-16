@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Annotation layer: `annotate_element`, `relate_elements`, `get_element_annotations`,
+  `search_annotations`, and `remove_annotation` tools let the model persist durable
+  meta-information (notes, tags, summaries, classifications, and cross-reference relations) about
+  Forms elements. Stored outside the fingerprinted cache in a separate `AnnotationStore` keyed by a
+  stable `ElementId`, so annotations survive `fetch_module` re-indexing and are flagged
+  `staleAgainstSource` (never deleted) when they predate the current source. Surfaced inline by the
+  read tools, exposed as the `oracleforms://{module}/annotations` resource, with a
+  `--annotations-dir` option (default `<cache dir>/annotations`).
 - `search_source` pagination via `offset`/`nextOffset` (`SearchResults` gains `offset` + `nextOffset`).
 - `list_triggers` verbosity control: `concise` (default) omits the PL/SQL preview, `detailed` includes it.
 
