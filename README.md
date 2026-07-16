@@ -244,7 +244,7 @@ tags, and relations you recorded intact.
 
 ```
 gradlew build          # compile + all tests (no Oracle installation needed)
-gradlew apiDump        # refresh the binary-compatibility dump after public API changes
+gradlew updateKotlinAbi   # refresh the ABI dump (core/api/*.api) after public API changes
 gradlew :server:run --args="--forms-dir sample-forms"
 ```
 

@@ -16,8 +16,10 @@ tab → **Report a vulnerability** (or use
 [this link](https://github.com/aoreshkov/oracle-forms-mcp/security/advisories/new)).
 
 You can expect an initial response within a few days. Please include reproduction steps and
-the affected version. Once a fix is released, the advisory will be published with credit to
-the reporter (unless you prefer to stay anonymous).
+the affected version. We aim to validate the report, ship a fix, and publish the advisory
+within 90 days of disclosure, and will keep you updated if a fix legitimately needs longer.
+Once a fix is released, the advisory will be published with credit to the reporter (unless
+you prefer to stay anonymous).
 
 ## Scope notes
 

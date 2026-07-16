@@ -13,7 +13,7 @@ change under review and report a crisp verdict — not to fix code.
 - Kotlin source changed only in `core/` → `./gradlew :core:jvmTest` (or `:core:build`)
 - Kotlin source changed in `server/` (or `core/` consumed by it) → `./gradlew :server:build`
   (`:server` depends on `:core`, so this covers both)
-- Public API of `core` changed → `./gradlew apiCheck` (binary-compatibility-validator)
+- Public API of `core` changed → `./gradlew checkKotlinAbi` (KGP-native ABI validation)
 - Build logic / version catalog / cross-cutting change → `./gradlew build`
 - Only a fast compile sanity check is wanted → `./gradlew :server:compileKotlin -q`
   (transitively compiles `:core`)
@@ -25,8 +25,8 @@ is cross-cutting.
 - Versions live only in `gradle/libs.versions.toml`; never edit inline versions.
 - Tests never require an Oracle installation — converter tests build a fake `ORACLE_HOME` with
   stub scripts; a converter-test failure is usually a fixture/stub issue, not a missing Oracle.
-- Public API changes need `./gradlew apiDump`; an `apiCheck` failure right after an API change
-  means the `.api` dump is stale, not that the code is wrong.
+- Public API changes need `./gradlew updateKotlinAbi`; a `checkKotlinAbi` failure right after an
+  API change means the `.api` dump is stale, not that the code is wrong.
 - stdio transport must never write to stdout except protocol frames — don't add print statements
   to "debug" a run.
 

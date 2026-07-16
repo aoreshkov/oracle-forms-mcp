@@ -8,5 +8,6 @@ dependencies {
     implementation(libs.kotlin.gradle.plugin)
     implementation(libs.kotlin.serialization.gradle.plugin)
     implementation(libs.kover.gradle.plugin)
-    implementation(libs.bcv.gradle.plugin)
+    // ABI validation is built into the Kotlin Gradle plugin (see kmp-library's `abiValidation`),
+    // so no separate binary-compatibility-validator artifact is needed on the classpath.
 }

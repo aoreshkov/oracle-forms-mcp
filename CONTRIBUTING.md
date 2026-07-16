@@ -26,8 +26,8 @@ you invest time.
 - **Dependency versions live only in `gradle/libs.versions.toml`.** Never hard-code a version
   in a build script.
 - **Public API of `core` is validated.** If you intentionally change it, run
-  `./gradlew apiDump` and commit the updated `core/api/core.api`; `./gradlew build` fails
-  otherwise.
+  `./gradlew updateKotlinAbi` and commit the updated `core/api/core.api`; `./gradlew build`
+  fails otherwise.
 - **stdio transport: never write to stdout.** Only MCP protocol frames may go to stdout —
   all logging goes to stderr/file (Kermit → SLF4J → Logback). A stray `println` corrupts
   the protocol stream.

@@ -1,3 +1,5 @@
+@file:OptIn(org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation::class)
+
 import org.gradle.api.artifacts.VersionCatalogsExtension
 
 plugins {
@@ -7,7 +9,6 @@ plugins {
     // version at the subproject level. Every kmp-library module returns `@Serializable` DTOs.
     id("org.jetbrains.kotlin.plugin.serialization")
     id("org.jetbrains.kotlinx.kover")
-    id("org.jetbrains.kotlinx.binary-compatibility-validator")
 }
 
 // `libs` type-safe accessor is unavailable in precompiled script plugins on Gradle 9;
@@ -19,9 +20,15 @@ kotlin {
     jvmToolchain(21)
 
     // Published-library policy: every public declaration must carry an explicit visibility and
-    // return type. Pairs with the binary-compatibility-validator applied above so the ABI is
-    // intentional, not inferred.
+    // return type. Pairs with the ABI validation below so the surface is intentional, not inferred.
     explicitApi()
+
+    // KGP-native ABI validation (the standalone binary-compatibility-validator plugin is
+    // discontinued and folded into the Kotlin Gradle plugin). Experimental in Kotlin 2.4.x, hence
+    // the file-level opt-in. Wires `checkKotlinAbi` into `check` and keeps the reference dump in
+    // `api/core.api` (task `updateKotlinAbi` refreshes it).
+    abiValidation {
+    }
 
     sourceSets {
         getByName("commonTest") {

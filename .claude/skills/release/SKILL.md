@@ -54,8 +54,8 @@ sets `generate_release_notes: true`, but the curated changelog is the human-faci
   on a fresh checkout. Verify: `git ls-files -s gradlew` shows mode `100755`.
 - **No private paths leak:** confirm nothing under `docs/` (private) is referenced from
   released files, and `docs/` is gitignored (`git check-ignore docs/`).
-- **Public API is in sync:** `./gradlew apiCheck` passes (run `apiDump` first if it fails and the
-  change was intentional).
+- **Public API is in sync:** `./gradlew checkKotlinAbi` passes (run `updateKotlinAbi` first if it
+  fails and the change was intentional).
 - **Build is green:** `./gradlew build` passes, and `./gradlew :server:installDist` produces
   the distribution the release zip is built from.
 
@@ -92,5 +92,5 @@ and the MCP registry). Fix a bad release by cutting the next version, not by mov
 ## 7. Report
 
 Summarize: old → new version, the two files updated, changelog entry, pre-flight results
-(description length, gradlew mode, apiCheck, build status, local guard simulation), and whether
+(description length, gradlew mode, checkKotlinAbi, build status, local guard simulation), and whether
 a tag was pushed or is pending.
