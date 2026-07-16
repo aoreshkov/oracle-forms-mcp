@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-16
+
 ### Changed
 - **Package annotation identity**: a package's spec and body are now distinct annotation targets.
   `annotate_element`/`relate_elements`/`get_element_annotations` on a `program_unit` that exists as
@@ -32,10 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filesystems, sanitizer-collapsed characters). Colliding names get a deterministic `~2`, `~3`, …
   suffix in document order, so every trigger/unit/menu-command body survives with its own
   `SourceRef`.
-
-### Known limitations
-- Menu-level triggers carry no menu owner in the index, so two same-named triggers in different
-  menus of one `.mmb` cannot be told apart yet (the ambiguity is reported, not misresolved).
 - Docker: the annotation store and module cache are now writable when a volume is mounted at
   `/home/mcp/.cache`. The image runs as non-root (uid 10001); the cache tree is pre-created and
   owned by that user before the `VOLUME` is declared, so an anonymous or named volume inherits the
@@ -46,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sample-forms` (real module names and counts), the cache-layout tree includes the
   `plsql/menu-items` sidecars, and the `list_triggers`/`search_source` tool descriptions mention
   the 0.2.0 `verbosity` and `offset`/`nextOffset` pagination options.
+
+### Known limitations
+- Menu-level triggers carry no menu owner in the index, so two same-named triggers in different
+  menus of one `.mmb` cannot be told apart yet (the ambiguity is reported, not misresolved).
 
 ## [0.2.0] - 2026-07-16
 
@@ -79,7 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/aoreshkov/oracle-forms-mcp/releases/tag/v0.1.0
