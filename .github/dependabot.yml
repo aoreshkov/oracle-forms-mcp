@@ -6,6 +6,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # init/analyze/upload-sarif are separate Dependabot dependencies, but CodeQL
+      # errors out when they run at different versions ("Loaded a configuration file
+      # for version X, but running version Y"). Group them so they bump in one PR.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
 
   # Keeps the digest-pinned eclipse-temurin base image fresh (JRE CVE patches).
   - package-ecosystem: docker
