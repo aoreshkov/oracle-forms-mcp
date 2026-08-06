@@ -121,6 +121,12 @@ Plus a resource per cached module (`oracleforms://ORDERS.fmb/index`), the
 
 ## Quick start
 
+Three ways to run it: build from source (below), the one-click
+[`.mcpb` bundle](#claude-desktop-one-click-bundle) for Claude Desktop, or the
+[Docker image](#docker-copy-mode-only). The server is published to the
+[official MCP Registry](https://registry.modelcontextprotocol.io) as
+`io.github.aoreshkov/oracle-forms-mcp`.
+
 Requires a JRE 21+. Build and install:
 
 ```
@@ -133,8 +139,23 @@ Register with Claude Code (stdio):
 claude mcp add oracle-forms -- server/build/install/server/bin/server --forms-dir C:\path\to\forms
 ```
 
+### Claude Desktop (one-click bundle)
+
+Download `oracle-forms-mcp-<version>.mcpb` from the
+[latest release](https://github.com/aoreshkov/oracle-forms-mcp/releases/latest) and open it. Claude
+Desktop installs it as a connector and prompts for your forms directory with a native folder picker
+— no JSON editing, no local build.
+
+> **Requires a JRE 21+ on your `PATH`.** The bundle ships the server, not a Java runtime. The
+> [MCPB](https://github.com/modelcontextprotocol/mcpb) manifest format can only declare Node and
+> Python runtimes, so this cannot be checked at install time: if the connector fails to start,
+> confirm `java -version` works in a terminal.
+
+The same copy-mode caveat as [Docker](#docker-copy-mode-only) applies unless the machine has an
+Oracle Forms installation (`ORACLE_HOME`) for live `.fmb`/`.pll` conversion.
+
 <details>
-<summary><b>Other MCP clients</b> (Claude Desktop, Cursor, VS Code) — via the Docker image</summary>
+<summary><b>Other MCP clients</b> (Cursor, VS Code, Claude Desktop without the bundle) — via the Docker image</summary>
 
 The published image runs the server over stdio with no local build. Point the volume mount at
 your forms directory (copy-mode: the pre-converted `*_fmb.xml`/`*.pld` files must sit next to the
@@ -269,6 +290,7 @@ tags, and relations you recorded intact.
 gradlew build          # compile + all tests (no Oracle installation needed)
 gradlew updateKotlinAbi   # refresh the ABI dump (core/api/*.api) after public API changes
 gradlew :server:run --args="--forms-dir sample-forms"
+gradlew :server:packageMcpb  # build the installable .mcpb bundle
 ```
 
 Converter behavior is tested against a fake `ORACLE_HOME` (stub scripts); the full copy-mode

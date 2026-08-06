@@ -9,12 +9,16 @@ permissions:
 
 jobs:
   github-release:
-    name: GitHub Release (server zip)
+    name: GitHub Release (server zip + MCPB bundle)
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
       attestations: write
+    outputs:
+      # Consumed by publish-mcp-registry: the MCP Registry requires `fileSha256` on MCPB
+      # packages, and clients verify it before installing.
+      mcpb_sha256: ${{ steps.mcpb.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,7 +32,20 @@ jobs:
           jq -e --arg v "$VERSION" '.version == $v' server.json > /dev/null || {
             echo "Tag ${GITHUB_REF_NAME} does not match version in server.json"; exit 1; }
           # The MCP `Implementation` version is baked from gradle.properties at build time
-          # (see ServerVersion / generateVersionResource), so the check above covers it.
+          # (see ServerVersion / generateVersionResource), so the check above covers it. The
+          # MCPB manifest version likewise comes from project.version via generateMcpbManifest.
+
+          # Registry metadata invariants, checked here so a bad listing fails before anything
+          # is published (registry entries are immutable once accepted).
+          jq -e '(.title | length) > 0 and (.title | length) <= 100' server.json > /dev/null || {
+            echo "server.json .title must be present and <= 100 characters"; exit 1; }
+          jq -e '(.description | length) <= 100' server.json > /dev/null || {
+            echo "server.json .description exceeds the registry's 100-character limit"; exit 1; }
+          # Icon URLs must be pinned to a version tag, never to a branch: a mutable ref would
+          # silently repoint the icons of already-published (immutable) versions. The publish
+          # job rewrites the tag itself, so this only asserts the *shape*.
+          jq -e 'all(.icons[].src; test("/v[0-9]+[.][0-9]+[.][0-9]+[^/]*/assets/"))' server.json > /dev/null || {
+            echo "server.json .icons[].src must be pinned to a vX.Y.Z tag, not a branch"; exit 1; }
 
       - name: Set up JDK 21
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
@@ -44,8 +61,28 @@ jobs:
       - name: Build and test
         run: ./gradlew build
 
-      - name: Build server distribution
-        run: ./gradlew :server:installDist
+      # packageMcpb consumes the installDist tree, so it must run before the zip step below
+      # renames that directory.
+      - name: Build server distribution and MCPB bundle
+        run: ./gradlew :server:installDist :server:packageMcpb
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Validate MCPB manifest
+        # Schema-checks the generated manifest against the MCPB spec. Gradle still builds the
+        # archive itself (a .mcpb is a plain zip); the CLI is used only as a validator.
+        run: npx --yes @anthropic-ai/mcpb@2.1.2 validate server/build/mcpb-manifest/manifest.json
+
+      - name: Hash MCPB bundle
+        id: mcpb
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BUNDLE="server/build/mcpb/oracle-forms-mcp-${VERSION}.mcpb"
+          test -f "$BUNDLE" || { echo "Missing ${BUNDLE}"; exit 1; }
+          echo "sha256=$(sha256sum "$BUNDLE" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Package distribution
         run: |
@@ -54,15 +91,19 @@ jobs:
           mv server "oracle-forms-mcp-server-${VERSION}"
           zip -qr "oracle-forms-mcp-server-${VERSION}.zip" "oracle-forms-mcp-server-${VERSION}"
 
-      - name: Attest build provenance (release zip)
+      - name: Attest build provenance (release artifacts)
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
-          subject-path: server/build/install/oracle-forms-mcp-server-*.zip
+          subject-path: |
+            server/build/install/oracle-forms-mcp-server-*.zip
+            server/build/mcpb/oracle-forms-mcp-*.mcpb
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
-          files: server/build/install/oracle-forms-mcp-server-*.zip
+          files: |
+            server/build/install/oracle-forms-mcp-server-*.zip
+            server/build/mcpb/oracle-forms-mcp-*.mcpb
           generate_release_notes: true
           fail_on_unmatched_files: true
 
@@ -159,12 +200,31 @@ jobs:
           echo "${MCP_PUBLISHER_SHA256}  mcp-publisher_linux_amd64.tar.gz" | sha256sum -c -
           tar -xzf mcp-publisher_linux_amd64.tar.gz mcp-publisher
 
-      - name: Sync server.json version with tag
+      - name: Sync server.json with the tag and add the MCPB package
+        env:
+          MCPB_SHA256: ${{ needs.github-release.outputs.mcpb_sha256 }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          jq --arg v "$VERSION" \
-             '.version = $v | .packages[0].identifier = "ghcr.io/aoreshkov/oracle-forms-mcp:" + $v' \
-             server.json > server.json.tmp && mv server.json.tmp server.json
+          test -n "$MCPB_SHA256" || { echo "Missing MCPB sha256 from the release job"; exit 1; }
+          # Packages are matched by registryType, never by index, so adding one can't silently
+          # rewrite another. The MCPB entry is built here rather than committed because
+          # `fileSha256` is a strict 64-hex pattern with no honest placeholder value.
+          jq --arg v "$VERSION" --arg tag "$GITHUB_REF_NAME" --arg sha "$MCPB_SHA256" '
+              .version = $v
+            | .icons = [.icons[] | .src |= sub("/v[^/]+/assets/"; "/" + $tag + "/assets/")]
+            | .packages = [
+                (.packages[] | if .registryType == "oci"
+                   then .identifier = "ghcr.io/aoreshkov/oracle-forms-mcp:" + $v
+                   else . end),
+                {
+                  registryType: "mcpb",
+                  identifier: ("https://github.com/aoreshkov/oracle-forms-mcp/releases/download/"
+                               + $tag + "/oracle-forms-mcp-" + $v + ".mcpb"),
+                  fileSha256: $sha,
+                  version: $v,
+                  transport: { type: "stdio" }
+                }
+              ]' server.json > server.json.tmp && mv server.json.tmp server.json
           cat server.json
 
       - name: Login and publish

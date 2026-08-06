@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **One-click desktop install**: releases now ship an `.mcpb`
+  ([MCP Bundle](https://github.com/modelcontextprotocol/mcpb)) alongside the server zip and the
+  container image. Opening it in Claude Desktop installs the connector and asks for the forms
+  directory with a native folder picker. The bundle carries the server, not a Java runtime, so a
+  **JRE 21+ must be on `PATH`** — MCPB manifests can only declare Node/Python runtimes, so this is
+  documented rather than enforced. Built by `gradlew :server:packageMcpb`; its manifest version is
+  generated from `project.version`, so there is still no extra file to bump at release time.
+- The `.mcpb` is published as a second package in the MCP Registry listing (`registryType: mcpb`)
+  with the `fileSha256` clients verify before installing, and carries build-provenance attestation
+  like the other release artifacts.
+- Registry listing metadata: `title`, `websiteUrl`, and `icons` (a new square mark in `assets/`)
+  in `server.json`, plus a `publisher-provided` `_meta` block spelling out the runtime
+  requirements of each distribution channel. The release workflow now guards these fields and
+  re-pins the icon URLs to the tag being released.
+
 ## [0.3.0] - 2026-07-16
 
 ### Changed

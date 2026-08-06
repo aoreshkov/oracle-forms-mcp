@@ -1,12 +1,26 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.aoreshkov/oracle-forms-mcp",
+  "title": "Oracle Forms",
   "description": "Serves Oracle Forms module content (.fmb/.mmb/.pll/.olb) from a directory to MCP clients.",
   "version": "0.3.0",
+  "websiteUrl": "https://github.com/aoreshkov/oracle-forms-mcp",
   "repository": {
     "url": "https://github.com/aoreshkov/oracle-forms-mcp",
     "source": "github"
   },
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/aoreshkov/oracle-forms-mcp/v0.3.0/assets/icon-512.png",
+      "mimeType": "image/png",
+      "sizes": ["512x512"]
+    },
+    {
+      "src": "https://raw.githubusercontent.com/aoreshkov/oracle-forms-mcp/v0.3.0/assets/icon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
   "packages": [
     {
       "registryType": "oci",
@@ -25,5 +39,14 @@
         }
       ]
     }
-  ]
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "runtimeRequirements": {
+        "oci": "None — the image is self-contained, but it is copy-mode only: it serves modules that have already been converted to text (*_fmb.xml / *.pld) next to the modules in the mounted directory.",
+        "mcpb": "A JRE 21+ must be on PATH. MCPB manifests can only declare Node/Python runtimes, so this cannot be expressed in the bundle itself.",
+        "liveConversion": "Converting binary .fmb/.pll in place needs an Oracle Forms installation (ORACLE_HOME) on the host; Oracle's frmf2xml/frmcmp tools are proprietary and are never bundled."
+      }
+    }
+  }
 }

@@ -19,6 +19,10 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   `McpServerFactory`.
 - `build-logic/` — convention plugins `kmp-library` (toolchain 21, explicitApi, kover, KGP ABI validation) and
   `jvm-application`.
+- Distribution — three channels, all cut by `.github/workflows/release.yml` from a `v*` tag: the
+  GHCR image, the release zip, and an `.mcpb` desktop bundle (`server/mcpb/manifest.template.json`
+  → `packageMcpb`). `server.json` is the MCP Registry listing; the publish job rewrites its
+  version, icon tag, and appends the `mcpb` package with the bundle's sha256.
 
 ## Invariants
 
@@ -38,6 +42,10 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   unknown elements are skipped generically (but still get an `ObjectRef` when named).
 - **Every tool** declares title, annotations, and `outputSchemaOf<Dto>()`; DTO fields are
   defaulted so schemas stay forward-compatible. `ToolRegistrationTest` enforces this.
+- **Exactly two files carry the version by hand**: `gradle.properties` and `server.json` (the
+  release tag guard checks both). Everything else derives it — the MCP `Implementation` version
+  via `generateVersionResource`, the MCPB manifest via the `@version@` token in
+  `server/mcpb/manifest.template.json`. Never add a third.
 - Public API changes require `gradlew updateKotlinAbi` (KGP ABI validation on `core`).
 
 ## Gotchas
@@ -64,7 +72,9 @@ gradlew build                 # everything, incl. tests
 gradlew :core:jvmTest         # core tests only
 gradlew updateKotlinAbi       # refresh core/api/*.api after public API changes
 gradlew :server:installDist   # launcher at server/build/install/server/bin/server(.bat)
+gradlew :server:packageMcpb   # .mcpb desktop bundle at server/build/mcpb/
 gradlew :server:run --args="--forms-dir sample-forms"
+java scripts/icon/GenerateIcon.java   # re-render assets/icon-512.png after editing assets/icon.svg
 ```
 
 ## Claude Code setup
