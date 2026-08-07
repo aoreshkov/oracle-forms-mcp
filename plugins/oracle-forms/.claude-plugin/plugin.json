@@ -19,6 +19,20 @@
       "description": "Directory containing the Oracle Forms modules to serve. Scanned non-recursively; in copy-mode the pre-converted *_fmb.xml / *.pld files are read from here too.",
       "required": true
     },
+    "convert_command": {
+      "type": "file",
+      "title": "Custom converter command",
+      "description": "Optional. Script or executable run instead of Oracle's frmf2xml, as `<command> <module>` with the working directory set to the module's cache directory. Leave empty to use an ORACLE_HOME installation, or pre-converted files next to the modules.",
+      "default": "",
+      "required": false
+    },
+    "converted_dir": {
+      "type": "directory",
+      "title": "Converted XML directory",
+      "description": "Optional. Where to keep the converted XML / .pld text forms — one flat directory for all modules, each file named after its module (orders_fmb.xml, utils.pld). Leave empty to keep them inside the cache. Must not be the forms directory.",
+      "default": "",
+      "required": false
+    },
     "server_version": {
       "type": "string",
       "title": "Server version",

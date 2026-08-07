@@ -36,6 +36,36 @@
           "isRequired": true,
           "format": "string",
           "value": "/forms"
+        },
+        {
+          "type": "named",
+          "name": "--converted-dir",
+          "description": "Optional. Directory the converted XML / .pld text forms are kept in — one flat directory for all modules, each file named after its module (orders_fmb.xml, utils.pld). Mount a writable volume and point this at it to keep the text forms outside the cache. Must not be the forms directory. Also settable as OFMCP_CONVERTED_DIR.",
+          "isRequired": false,
+          "format": "filepath",
+          "placeholder": "/converted"
+        },
+        {
+          "type": "named",
+          "name": "--convert-command",
+          "description": "Optional. Site-supplied converter run instead of Oracle's frmf2xml, as `<command> <module>` with the working directory set to the module's cache directory. Mount the script into the container and point this at it. Also settable as OFMCP_CONVERT_COMMAND.",
+          "isRequired": false,
+          "format": "filepath",
+          "placeholder": "/opt/forms/convert.sh"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "OFMCP_CONVERTED_DIR",
+          "description": "Same as --converted-dir, for clients that set environment variables rather than arguments. The flag wins when both are given.",
+          "isRequired": false,
+          "format": "filepath"
+        },
+        {
+          "name": "OFMCP_CONVERT_COMMAND",
+          "description": "Same as --convert-command, for clients that set environment variables rather than arguments. The flag wins when both are given.",
+          "isRequired": false,
+          "format": "filepath"
         }
       ]
     }

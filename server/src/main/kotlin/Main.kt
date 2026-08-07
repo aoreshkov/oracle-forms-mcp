@@ -3,6 +3,7 @@ package app.oreshkov.oracleformsmcp.server
 import app.oreshkov.oracleformsmcp.server.transport.runHttpServer
 import app.oreshkov.oracleformsmcp.server.transport.runStdioServer
 import java.nio.file.Path
+import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.seconds
@@ -27,6 +28,10 @@ private val USAGE = """
                                   `<path> <module>` with the cwd set to the module's cache dir.
                                   It must write the same text forms there (*_fmb.xml etc., .pld
                                   for .pll). Takes precedence over ORACLE_HOME.
+      --converted-dir <path>      Where to keep the converted XML/.pld text forms: one flat
+                                  directory for all modules, each file named after its module
+                                  (orders_fmb.xml, utils.pld). Created if missing.
+                                  Default: inside each module's own cache entry.
       --transport stdio|http      Transport to run (default: stdio)
       --port <int>                Port for the http transport (default: $DEFAULT_PORT)
       --allowed-host <host>       Extra Host header the http transport accepts; repeatable
@@ -37,14 +42,24 @@ private val USAGE = """
       --conversion-timeout <sec>  Kill a conversion after this many seconds (default: 120)
       --help                      Show this help and exit
 
+    Environment (a flag always wins over its variable):
+      ORACLE_HOME                 Oracle Forms installation providing frmf2xml/frmcmp
+      $ENV_CONVERT_COMMAND       Same as --convert-command
+      $ENV_CONVERTED_DIR         Same as --converted-dir
+
     Examples:
       server C:\forms
       server --forms-dir /srv/forms --transport http --port 3000   # http://127.0.0.1:3000/mcp
+      server --forms-dir C:\forms --convert-command C:\tools\fmb2xml.bat --converted-dir C:\forms-xml
 """.trimIndent()
 
-private enum class TransportKind { STDIO, HTTP }
+/** Environment variables mirroring the two converter flags, for launchers that can only set env. */
+internal const val ENV_CONVERT_COMMAND: String = "OFMCP_CONVERT_COMMAND"
+internal const val ENV_CONVERTED_DIR: String = "OFMCP_CONVERTED_DIR"
 
-private data class CliOptions(
+internal enum class TransportKind { STDIO, HTTP }
+
+internal data class CliOptions(
     val transport: TransportKind = TransportKind.STDIO,
     val port: Int = DEFAULT_PORT,
     val allowedHosts: List<String> = emptyList(),
@@ -54,10 +69,26 @@ private data class CliOptions(
     val annotationsDir: Path? = null,
     val conversionTimeoutSeconds: Int = 120,
     val convertCommand: String? = null,
+    val convertedDir: Path? = null,
 )
 
-/** Tiny hand-rolled parser — a handful of flags don't warrant a dependency. [fail]s on anything unknown. */
-private fun parseArgs(args: Array<String>): CliOptions {
+/**
+ * A configured value, or `null` when the option was left unset.
+ *
+ * Blank counts as unset, and so does a leftover `${user_config.…}` template: the MCPB bundle and
+ * the Claude Code plugin fill their arguments in from user configuration, and an optional entry the
+ * user never filled in reaches the process either empty or with its placeholder unsubstituted.
+ * Neither is a path, and failing every conversion over it would be a poor trade for an option
+ * whose whole point is to be optional.
+ */
+internal fun configured(value: String?): String? =
+    value?.trim()?.takeIf { it.isNotEmpty() && !it.contains("\${") }
+
+/**
+ * Tiny hand-rolled parser — a handful of flags don't warrant a dependency. [fail]s on anything
+ * unknown. [env] is injected so the environment fallbacks are testable.
+ */
+internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::getenv): CliOptions {
     var options = CliOptions()
     var i = 0
 
@@ -86,11 +117,11 @@ private fun parseArgs(args: Array<String>): CliOptions {
                 options.copy(allowedHosts = options.allowedHosts + value(arg))
             "--allowed-origin" -> options =
                 options.copy(allowedOrigins = options.allowedOrigins + value(arg))
-            "--forms-dir" -> options = options.copy(formsDir = Path.of(value(arg)))
-            // Blank is treated as "not configured" so a launcher template that always passes the
-            // flag (an unset picker in an MCPB bundle, an empty env var in a wrapper script)
-            // falls back to ORACLE_HOME instead of failing every conversion.
-            "--convert-command" -> options = options.copy(convertCommand = value(arg).ifBlank { null })
+            "--forms-dir" -> options = options.copy(formsDir = configured(value(arg))?.let(Path::of))
+            // An unset optional option (see `configured`) falls back to ORACLE_HOME / the cache
+            // instead of failing every conversion.
+            "--convert-command" -> options = options.copy(convertCommand = configured(value(arg)))
+            "--converted-dir" -> options = options.copy(convertedDir = configured(value(arg))?.let(Path::of))
             "--cache-dir" -> options = options.copy(cacheDir = Path.of(value(arg)))
             "--annotations-dir" -> options = options.copy(annotationsDir = Path.of(value(arg)))
             "--conversion-timeout" -> {
@@ -102,12 +133,38 @@ private fun parseArgs(args: Array<String>): CliOptions {
                 // A single positional argument is the forms directory.
                 if (arg.startsWith("--")) fail("Unknown option '$arg'")
                 if (options.formsDir != null) fail("Unexpected extra argument '$arg'")
-                options = options.copy(formsDir = Path.of(arg))
+                options = options.copy(formsDir = configured(arg)?.let(Path::of))
             }
         }
         i++
     }
-    return options
+    // Environment fallbacks for clients that can set variables but not arguments (docker run -e,
+    // an MCPB `env` block). A flag always wins.
+    return options.copy(
+        convertCommand = options.convertCommand ?: configured(env(ENV_CONVERT_COMMAND)),
+        convertedDir = options.convertedDir ?: configured(env(ENV_CONVERTED_DIR))?.let(Path::of),
+    )
+}
+
+/**
+ * Validates `--converted-dir`. It may not exist yet (it is created at the first conversion), but it
+ * must not be a file, and it must not be the forms directory itself: converted files are named
+ * exactly like the pre-converted modules the scanner reads from there, so pointing it at the forms
+ * directory would have the server overwrite its own inputs.
+ */
+private fun convertedDir(dir: Path, formsDir: Path): Path {
+    val resolved = dir.toAbsolutePath().normalize()
+    if (resolved.exists() && !resolved.isDirectory()) {
+        fail("--converted-dir is set to '$dir' but that is an existing file, not a directory")
+    }
+    if (resolved == formsDir.toAbsolutePath().normalize()) {
+        fail(
+            "--converted-dir must not be the forms directory ('$dir'). Converted files are named " +
+                "like the pre-converted modules read from there, so the server would overwrite " +
+                "its own inputs. Point it at a separate directory.",
+        )
+    }
+    return resolved
 }
 
 private fun fail(message: String): Nothing {
@@ -128,6 +185,7 @@ fun main(args: Array<String>) {
         annotationsDir = options.annotationsDir ?: cacheDir.resolve("annotations"),
         conversionTimeout = options.conversionTimeoutSeconds.seconds,
         convertCommand = options.convertCommand,
+        convertedDir = options.convertedDir?.let { convertedDir(it, formsDir) },
     )
     runBlocking {
         McpServerFactory.create(config).use { handle ->

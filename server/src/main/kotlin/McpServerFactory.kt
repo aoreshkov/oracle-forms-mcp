@@ -57,6 +57,12 @@ data class ServerConfig(
      * [oracleHome] when set.
      */
     val convertCommand: String? = null,
+    /**
+     * One flat directory keeping every module's converted XML (and `.pld`) text form, from
+     * `--converted-dir`. Operator configuration only. `null` keeps each text form inside its
+     * module's own cache entry under [cacheDir].
+     */
+    val convertedDir: Path? = null,
 )
 
 /**
@@ -101,6 +107,7 @@ object McpServerFactory {
             formsDir = config.formsDir,
             // Either configured converter can read binaries; only copy-mode cannot.
             binaryConversion = !config.convertCommand.isNullOrBlank() || !config.oracleHome.isNullOrBlank(),
+            convertedDir = config.convertedDir,
         )
 
         val server = Server(

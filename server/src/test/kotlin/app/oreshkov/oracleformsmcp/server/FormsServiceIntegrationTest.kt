@@ -33,14 +33,17 @@ class FormsServiceIntegrationTest {
     private val dupesKey = ModuleKey.of("dupes", ModuleType.FORM)
     private val menuKey = ModuleKey.of("mainmenu", ModuleType.MENU)
 
-    private val service = FormsService(
+    private val service = newService(convertedDir = null)
+
+    private fun newService(convertedDir: Path?) = FormsService(
         scanner = FormsDirectoryScannerImpl(formsDir),
         converter = PreConvertedCopyConverter(),
         parser = FormsModuleParser(),
-        cache = OnDiskModuleCache(temp.resolve("cache")),
+        cache = OnDiskModuleCache(temp.resolve(if (convertedDir == null) "cache" else "cache-relocated")),
         annotationStore = OnDiskAnnotationStore(temp.resolve("annotations")),
         formsDir = formsDir,
         binaryConversion = false,
+        convertedDir = convertedDir,
     )
 
     init {
@@ -369,6 +372,40 @@ class FormsServiceIntegrationTest {
             )
         }
         assertTrue(error.message!!.contains("ownerPath"))
+    }
+
+    @Test
+    fun aConfiguredConvertedDirHoldsEveryModulesTextFormAndStillServesReads() = runTest {
+        val convertedDir = temp.resolve("forms-xml")
+        val relocated = newService(convertedDir)
+
+        relocated.fetchModule(ordersKey)
+        relocated.fetchModule(utilsKey)
+
+        // One flat directory, each text form named canonically after its module.
+        assertEquals(
+            listOf("orders_fmb.xml", "utils.pld"),
+            Files.list(convertedDir).use { it.map { path -> path.fileName.toString() }.sorted().toList() },
+        )
+        // ...and nothing left behind in the cache entry it was converted in.
+        assertTrue(
+            Files.notExists(Path.of(OnDiskModuleCache(temp.resolve("cache-relocated")).moduleDir(ordersKey))
+                .resolve("converted").resolve("orders_fmb.xml")),
+            "the converted file must be moved into the converted dir, not copied",
+        )
+
+        // The index addresses it by the same stable ref either way, and every read resolves.
+        assertEquals("converted/orders_fmb.xml", relocated.index(ordersKey).convertedFile)
+        assertTrue(relocated.getObjectXml(ordersKey, "Block", "CONTROL", owner = null).xml.contains("<Block"))
+        assertTrue(relocated.getTrigger(ordersKey, "WHEN-VALIDATE-ITEM", block = null, item = null).text.isNotEmpty())
+        assertTrue(relocated.getProgramUnit(utilsKey, "PKG_UTIL", "PACKAGE_BODY").text.isNotEmpty())
+
+        // Searching a module scans its own text form only, never a sibling's in the shared dir.
+        val xmlHits = relocated.searchSource(ordersKey, "QueryDataSourceName", regex = false, scope = "xml", maxResults = 50)
+        assertTrue(xmlHits.hits.isNotEmpty())
+        assertTrue(xmlHits.hits.all { it.path == "converted/orders_fmb.xml" })
+        val libraryHits = relocated.searchSource(utilsKey, "QueryDataSourceName", regex = false, scope = "all", maxResults = 50)
+        assertTrue(libraryHits.hits.isEmpty(), "a library must not match text from another module's XML")
     }
 
     @Test

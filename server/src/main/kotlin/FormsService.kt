@@ -52,11 +52,12 @@ import app.oreshkov.oracleformsmcp.model.TriggerLevel
 import co.touchlab.kermit.Logger
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.util.UUID
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
-import kotlin.io.path.name
 import kotlin.io.path.readLines
 import kotlin.streams.asSequence
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +84,19 @@ class FormsService(
      * converted elsewhere.
      */
     private val binaryConversion: Boolean,
+    /**
+     * Where converted XML (and `.pld`) files are kept, from `--converted-dir`. One flat directory
+     * shared by every module, each file named canonically after its [ModuleKey]
+     * (`orders_fmb.xml`, `utils.pld`), so the text forms are browsable and reusable outside the
+     * cache. `null` keeps them inside the module's own cache directory.
+     *
+     * Conversion itself always runs in the module's private cache directory and the result is
+     * moved here afterwards: converters are driven with the working directory as their output
+     * directory and success is judged by "newest matching file written after the run started", so
+     * letting two modules convert in one shared directory could attribute one module's output to
+     * another.
+     */
+    private val convertedDir: Path? = null,
 ) {
     private val log = Logger.withTag("FormsService")
 
@@ -172,11 +186,12 @@ class FormsService(
         val converted = converter.convert(
             key = key,
             sourcePath = conversionSource(scanned).toString(),
-            targetDir = Path.of(moduleDir).resolve("converted").toString(),
+            targetDir = Path.of(moduleDir).resolve(CONVERTED_DIR).toString(),
         )
+        val textForm = relocateConverted(key, Path.of(converted))
         onProgress(FetchProgress(2, FETCH_STEPS, "Parsing $key"))
         // Parsing a large form is CPU-bound; keep it off the caller's dispatcher.
-        val parsed = withContext(Dispatchers.Default) { parser.parse(key, converted, moduleDir) }
+        val parsed = withContext(Dispatchers.Default) { parser.parse(key, textForm.toString(), moduleDir) }
         onProgress(FetchProgress(3, FETCH_STEPS, "Caching the index of $key"))
         val index = parsed.copy(
             sourceFile = source.toString(),
@@ -343,7 +358,7 @@ class FormsService(
         maxResults: Int,
         offset: Int = 0,
     ): SearchResults {
-        index(key) // staleness/fetched check before touching files
+        val index = index(key) // staleness/fetched check before touching files
         val includePlsql: Boolean
         val includeXml: Boolean
         when (scope?.lowercase() ?: "plsql") {
@@ -352,7 +367,6 @@ class FormsService(
             "all" -> { includePlsql = true; includeXml = true }
             else -> throw IllegalArgumentException("scope must be one of: plsql, xml, all")
         }
-        val moduleDir = Path.of(cache.moduleDir(key))
         val cap = maxResults.coerceIn(1, MAX_SEARCH_RESULTS)
         val start = offset.coerceAtLeast(0)
         val pattern = if (regex) Regex(query) else null
@@ -360,8 +374,8 @@ class FormsService(
         var seen = 0 // total matches scanned across all files, for stable offset paging
         var truncated = false
 
-        val files = withContext(Dispatchers.IO) { searchableFiles(moduleDir, includePlsql, includeXml) }
-        outer@ for (file in files) {
+        val files = withContext(Dispatchers.IO) { searchableFiles(index, includePlsql, includeXml) }
+        outer@ for ((refPath, file) in files) {
             val lines = withContext(Dispatchers.IO) { file.readLines() }
             for ((lineIndex, line) in lines.withIndex()) {
                 val matches = pattern?.containsMatchIn(line) ?: line.contains(query)
@@ -372,7 +386,7 @@ class FormsService(
                     break@outer
                 }
                 hits += SearchHit(
-                    path = moduleDir.relativize(file).joinToString("/"),
+                    path = refPath,
                     line = lineIndex + 1,
                     snippet = line.trim().take(200),
                 )
@@ -581,9 +595,7 @@ class FormsService(
 
     /** Reads the line range of [ref], guarded against paths escaping the module's cache dir. */
     private suspend fun readRef(key: ModuleKey, ref: SourceRef): String {
-        val moduleDir = Path.of(cache.moduleDir(key)).normalize()
-        val file = moduleDir.resolve(ref.file).normalize()
-        require(file.startsWith(moduleDir)) { "Path escapes the module cache dir: ${ref.file}" }
+        val file = resolveRef(key, ref.file)
         if (!file.exists()) {
             throw IllegalStateException(
                 "Cached file ${ref.file} of $key is missing. Call fetch_module to re-index it.",
@@ -595,27 +607,79 @@ class FormsService(
         return lines.subList(ref.startLine - 1, end).joinToString("\n")
     }
 
-    private fun searchableFiles(moduleDir: Path, plsql: Boolean, xml: Boolean): List<Path> {
-        val files = mutableListOf<Path>()
-        val plsqlDir = moduleDir.resolve("plsql")
+    /**
+     * The file a [SourceRef.file] path addresses. `converted/…` resolves against [convertedDirOf]
+     * (which is the module's own cache subdirectory unless [convertedDir] relocated it), everything
+     * else against the module's cache directory. Either way the result must stay inside the root it
+     * was resolved against.
+     */
+    private fun resolveRef(key: ModuleKey, refFile: String): Path {
+        val prefix = "$CONVERTED_DIR/"
+        val (root, relative) =
+            if (refFile.startsWith(prefix)) convertedDirOf(key) to refFile.removePrefix(prefix)
+            else Path.of(cache.moduleDir(key)) to refFile
+        val base = root.normalize()
+        val file = base.resolve(relative).normalize()
+        require(file.startsWith(base)) { "Path escapes the module cache dir: $refFile" }
+        return file
+    }
+
+    /** Where [key]'s converted text form lives: the configured [convertedDir], else in its cache entry. */
+    private fun convertedDirOf(key: ModuleKey): Path =
+        convertedDir ?: Path.of(cache.moduleDir(key)).resolve(CONVERTED_DIR)
+
+    /**
+     * Moves a freshly converted file into [convertedDir] under its canonical name
+     * (`orders_fmb.xml`, `utils.pld`), and returns where it ended up. A no-op when no converted
+     * directory is configured — the file is already in the module's cache entry.
+     *
+     * The canonical name matters in a directory shared by every module: a site converter is free
+     * to name its output whatever it likes (`output.xml`), and two modules writing the same name
+     * would otherwise overwrite each other.
+     */
+    private suspend fun relocateConverted(key: ModuleKey, produced: Path): Path {
+        val root = convertedDir ?: return produced
+        return withContext(Dispatchers.IO) {
+            val target = root.createDirectories().resolve(canonicalConvertedName(key))
+            if (target.normalize() == produced.normalize()) return@withContext target
+            Files.move(produced, target, StandardCopyOption.REPLACE_EXISTING)
+            log.i { "Converted $key kept at $target" }
+            target
+        }
+    }
+
+    /** Oracle's own naming for [key]'s text form: `ORDERS.fmb` → `orders_fmb.xml`, `UTILS.pll` → `utils.pld`. */
+    private fun canonicalConvertedName(key: ModuleKey): String =
+        key.name.lowercase() + key.type.convertedSuffix
+
+    /**
+     * The files `search_source` scans, each with the [SourceRef]-style path a hit reports: the
+     * PL/SQL sidecars under the module's cache entry, and the module's own converted text form
+     * (never a sibling module's — the converted directory can be shared by all of them).
+     */
+    private fun searchableFiles(
+        index: ModuleIndex,
+        plsql: Boolean,
+        xml: Boolean,
+    ): List<Pair<String, Path>> {
+        val moduleDir = Path.of(cache.moduleDir(index.key)).normalize()
+        val files = mutableListOf<Pair<String, Path>>()
+        val plsqlDir = moduleDir.resolve(PLSQL_DIR)
         if (plsql && plsqlDir.exists()) {
             Files.walk(plsqlDir).use { stream ->
-                files += stream.asSequence().filter { it.isRegularFile() }.toList()
+                files += stream.asSequence()
+                    .filter { it.isRegularFile() }
+                    .map { moduleDir.relativize(it).joinToString("/") to it }
+                    .toList()
             }
         }
-        val convertedDir = moduleDir.resolve("converted")
-        if (convertedDir.exists()) {
-            Files.walk(convertedDir).use { stream ->
-                files += stream.asSequence().filter { file ->
-                    file.isRegularFile() && when {
-                        // A .pld is the PL/SQL itself; XML is the raw document.
-                        file.name.endsWith(".pld", ignoreCase = true) -> plsql
-                        else -> xml
-                    }
-                }.toList()
-            }
+        // A .pld is the PL/SQL itself; XML is the raw document.
+        val wanted = if (index.convertedFile.endsWith(".pld", ignoreCase = true)) plsql else xml
+        if (wanted) {
+            val converted = runCatching { resolveRef(index.key, index.convertedFile) }.getOrNull()
+            if (converted != null && converted.exists()) files += index.convertedFile to converted
         }
-        return files.sortedBy { it.toString() }
+        return files.sortedBy { it.first }
     }
 
     // --- annotation internals ---
@@ -865,6 +929,10 @@ class FormsService(
         const val MAX_SEARCH_RESULTS = 200
         const val MAX_OBJECT_XML_CHARS = 500_000
         const val FETCH_STEPS = 3
+
+        /** Cache subdirectory of a module's converted text form, and the prefix its refs carry. */
+        const val CONVERTED_DIR = "converted"
+        const val PLSQL_DIR = "plsql"
 
         /**
          * The ownerPath token that selects the owner-less form-level trigger among same-named

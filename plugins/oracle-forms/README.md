@@ -26,13 +26,20 @@ Claude Code then asks for the **Forms directory**. Point it at the folder holdin
 
 ## Configuration
 
-Both values are set in `/plugin` → **Oracle Forms** → configure, and stored in your user
+Set these in `/plugin` → **Oracle Forms** → configure; they are stored in your user
 `settings.json` under `pluginConfigs`.
 
 | Option | Default | What it does |
 |---|---|---|
 | `forms_dir` | — (required) | The directory of Forms modules to serve. Scanned non-recursively. |
+| `convert_command` | — (optional) | A site-supplied converter to run instead of Oracle's `frmf2xml`, as `<command> <module>` with the working directory set to the module's cache directory. Takes precedence over `ORACLE_HOME`. |
+| `converted_dir` | — (optional) | Where to keep the converted XML / `.pld` text forms: one flat directory for all modules, each file named after its module (`orders_fmb.xml`, `utils.pld`). Must not be the forms directory. Defaults to inside the cache. |
 | `server_version` | `latest` | Which released server build to run. Set a version such as `0.4.0` to pin. |
+
+The two optional ones are handed to the server as `OFMCP_CONVERT_COMMAND` and
+`OFMCP_CONVERTED_DIR` (see the [escape hatches](#escape-hatches) table) rather than as command-line
+arguments, so leaving them unset can never shift the argument list. Details on both in the
+[main README](https://github.com/aoreshkov/oracle-forms-mcp#using-your-own-converter).
 
 ## How the server gets here
 
@@ -61,6 +68,8 @@ verifiable with `gh attestation verify <zip> --repo aoreshkov/oracle-forms-mcp`.
 |---|---|
 | `OFMCP_SERVER_HOME` | Path to an existing server distribution (a `gradlew :server:installDist` tree or an unpacked release zip). Nothing is downloaded. |
 | `OFMCP_SERVER_VERSION` | Same as the `server_version` option; the plugin sets it from your configuration. |
+| `OFMCP_CONVERT_COMMAND` | Same as the `convert_command` option (the server's `--convert-command`). |
+| `OFMCP_CONVERTED_DIR` | Same as the `converted_dir` option (the server's `--converted-dir`). |
 
 To wipe the downloaded distributions, delete the plugin's data directory
 (`~/.claude/plugins/data/oracle-forms-oracle-forms-mcp/`); the next session re-fetches.
