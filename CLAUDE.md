@@ -20,9 +20,17 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
 - `build-logic/` — convention plugins `kmp-library` (toolchain 21, explicitApi, kover, KGP ABI validation) and
   `jvm-application`.
 - Distribution — three channels, all cut by `.github/workflows/release.yml` from a `v*` tag: the
-  GHCR image, the release zip, and an `.mcpb` desktop bundle (`server/mcpb/manifest.template.json`
-  → `packageMcpb`). `server.json` is the MCP Registry listing; the publish job rewrites its
-  version, icon tag, and appends the `mcpb` package with the bundle's sha256.
+  GHCR image, the release zip (plus its `.zip.sha256`), and an `.mcpb` desktop bundle
+  (`server/mcpb/manifest.template.json` → `packageMcpb`). `server.json` is the MCP Registry
+  listing; the publish job rewrites its version, icon tag, and appends the `mcpb` package with the
+  bundle's sha256.
+- `plugins/oracle-forms/` + `.claude-plugin/marketplace.json` — the Claude Code plugin channel,
+  served straight from the repo by `/plugin marketplace add aoreshkov/oracle-forms-mcp`. The plugin
+  carries no jars: `.mcp.json` runs `launcher/OracleFormsMcpLauncher.java` in Java single-file
+  source mode (hence **JDK** 21+, not JRE), which downloads the release zip, verifies its published
+  sha256, unpacks it under `${CLAUDE_PLUGIN_DATA}`, and loads it in-process. The
+  `claude-code-plugin` CI job validates the manifests and compiles the launcher — nothing else
+  stands between a commit on main and a user's install.
 
 ## Invariants
 
@@ -45,7 +53,10 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
 - **Exactly two files carry the version by hand**: `gradle.properties` and `server.json` (the
   release tag guard checks both). Everything else derives it — the MCP `Implementation` version
   via `generateVersionResource`, the MCPB manifest via the `@version@` token in
-  `server/mcpb/manifest.template.json`. Never add a third.
+  `server/mcpb/manifest.template.json`. Never add a third. The Claude Code plugin's `version` is
+  **not** an exception: it versions the plugin's own files (manifest + launcher), which change on
+  their own schedule, and the server build it runs is resolved at runtime — never bump it as part
+  of a release.
 - Public API changes require `gradlew updateKotlinAbi` (KGP ABI validation on `core`).
 
 ## Gotchas
@@ -81,6 +92,17 @@ gradlew :server:installDist   # launcher at server/build/install/server/bin/serv
 gradlew :server:packageMcpb   # .mcpb desktop bundle at server/build/mcpb/
 gradlew :server:run --args="--forms-dir sample-forms"
 java scripts/icon/GenerateIcon.java   # re-render assets/icon-512.png after editing assets/icon.svg
+
+claude plugin validate . --strict                        # the marketplace manifest
+claude plugin validate ./plugins/oracle-forms --strict   # the Claude Code plugin manifest
+```
+
+Test the plugin end to end without installing it — `--plugin-dir` loads it straight from the
+worktree, and `OFMCP_SERVER_HOME` makes the launcher use a local `installDist` tree instead of
+downloading a release:
+
+```
+claude --plugin-dir ./plugins/oracle-forms
 ```
 
 ## Claude Code setup

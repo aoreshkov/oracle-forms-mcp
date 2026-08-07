@@ -121,11 +121,31 @@ Plus a resource per cached module (`oracleforms://ORDERS.fmb/index`), the
 
 ## Quick start
 
-Three ways to run it: build from source (below), the one-click
-[`.mcpb` bundle](#claude-desktop-one-click-bundle) for Claude Desktop, or the
-[Docker image](#docker-copy-mode-only). The server is published to the
+Pick the channel that matches your client: the [plugin](#claude-code-one-command-plugin) for Claude
+Code, the [`.mcpb` bundle](#claude-desktop-one-click-bundle) for Claude Desktop, the
+[Docker image](#docker-copy-mode-only) for everything else, or a
+[build from source](#build-from-source). The server is published to the
 [official MCP Registry](https://registry.modelcontextprotocol.io) as
 `io.github.aoreshkov/oracle-forms-mcp`.
+
+### Claude Code (one-command plugin)
+
+```
+/plugin marketplace add aoreshkov/oracle-forms-mcp
+/plugin install oracle-forms@oracle-forms-mcp
+```
+
+Claude Code prompts for your forms directory, then fetches and checksum-verifies the released
+server into the plugin's data directory on first use — no clone, no build, no JSON to edit. The
+tools are live after `/reload-plugins`.
+
+> **Requires a JDK 21+ on your `PATH`** (`javac -version`), because the plugin's bootstrap runs in
+> Java's single-file source mode. With only a JRE, use the `.mcpb` bundle or `claude mcp add` below.
+
+Details, configuration options, and the escape hatches are in the
+[plugin README](plugins/oracle-forms/README.md).
+
+### Build from source
 
 Requires a JRE 21+. Build and install:
 

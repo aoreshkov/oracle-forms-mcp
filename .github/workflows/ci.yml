@@ -52,6 +52,46 @@ jobs:
             **/build/test-results/
           retention-days: 7
 
+  claude-code-plugin:
+    name: Claude Code plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # The plugin is consumed straight from the repository by `/plugin marketplace add`, so a
+      # broken manifest or launcher ships the moment it lands on main — there is no build step
+      # between here and the user. These checks are that build step.
+      - name: Validate the marketplace and plugin manifests
+        run: |
+          MARKET=.claude-plugin/marketplace.json
+          PLUGIN=plugins/oracle-forms/.claude-plugin/plugin.json
+          jq -e '.name and .owner.name and (.plugins | length > 0)' "$MARKET" > /dev/null
+          # Every marketplace entry must point at a directory that actually holds a plugin.
+          for src in $(jq -r '.plugins[].source' "$MARKET"); do
+            test -f "${src}/.claude-plugin/plugin.json" || {
+              echo "Marketplace source ${src} has no .claude-plugin/plugin.json"; exit 1; }
+          done
+          jq -e '.name and .version and .userConfig.forms_dir.required == true' "$PLUGIN" > /dev/null
+          # The MCP entry must keep resolving the launcher through ${CLAUDE_PLUGIN_ROOT}: a bare
+          # relative path would resolve against the session's working directory instead.
+          jq -e '.mcpServers["oracle-forms"].args[0]
+                 | startswith("${CLAUDE_PLUGIN_ROOT}/")' plugins/oracle-forms/.mcp.json > /dev/null
+          test -f "$(jq -r '.mcpServers["oracle-forms"].args[0]' plugins/oracle-forms/.mcp.json \
+                     | sed 's|${CLAUDE_PLUGIN_ROOT}|plugins/oracle-forms|')"
+
+      # The launcher runs in single-file source mode on the user's machine, where a compile error
+      # surfaces only as an MCP server that fails to connect.
+      - name: Compile the plugin launcher
+        run: javac -Xlint:all -d "${RUNNER_TEMP}/launcher" plugins/oracle-forms/launcher/*.java
+
   docker-smoke:
     name: Docker volume write-rights smoke
     runs-on: ubuntu-latest
