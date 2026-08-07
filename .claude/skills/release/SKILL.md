@@ -27,7 +27,10 @@ The tag guard checks these two exact patterns (keep the formatting identical):
    Note: the publish job later rewrites `server.json` `.version` and `.packages[0].identifier`
    from the tag, but the guard still requires the committed value to match, so set it here.
 
-**There is no third file.** The MCP `Implementation` version is baked at build time from
+**There is no third file.** The Claude Code plugin manifest
+(`plugins/oracle-forms/.claude-plugin/plugin.json`) has a `version` too, but it is the *plugin's*
+version, not the project's — bump it only when the plugin's own files change, never as part of a
+release. The MCP `Implementation` version is baked at build time from
 `project.version` into a classpath resource (`generateVersionResource` in
 `server/build.gradle.kts` → `ServerVersion.kt`), and the MCPB bundle's manifest version comes from
 the same place via the `@version@` token in `server/mcpb/manifest.template.json` — so neither can
@@ -59,6 +62,11 @@ sets `generate_release_notes: true`, but the curated changelog is the human-faci
   `server/build/mcpb/oracle-forms-mcp-<VERSION>.mcpb`. Its sha256 is computed in CI and written
   into the registry listing, so a broken bundle fails the release. Sanity-check the archive has
   `manifest.json` at the root and an executable `server/bin/server` (`unzip -Z <bundle>`).
+- **Claude Code plugin channel:** the plugin's launcher installs the release zip by checking it
+  against the `oracle-forms-mcp-server-<VERSION>.zip.sha256` asset the release workflow publishes,
+  so a release missing that asset breaks `/plugin install` for everyone on `server_version=latest`.
+  Confirm the "Package distribution" step still writes it, and after the release confirm the asset
+  is attached (`gh release view v<VERSION> --json assets`).
 - **`gradlew` executable bit:** the wrapper must stay executable in git or the CI build fails
   on a fresh checkout. Verify: `git ls-files -s gradlew` shows mode `100755`.
 - **No private paths leak:** confirm nothing under `docs/` (private) is referenced from
@@ -103,4 +111,6 @@ and the MCP registry). Fix a bad release by cutting the next version, not by mov
 Summarize: old → new version, the two files updated, changelog entry, pre-flight results
 (description/title length, MCPB bundle build, gradlew mode, checkKotlinAbi, build status, local
 guard simulation), and whether a tag was pushed or is pending. Note that the tag publishes four
-things: the GitHub release (zip + `.mcpb`), the GHCR image, and the MCP Registry listing.
+things: the GitHub release (zip + its `.sha256` + `.mcpb`), the GHCR image, and the MCP Registry
+listing. The Claude Code plugin channel is not tagged — it serves from `main` — but it *consumes*
+the release, so it only picks up the new server once the release assets are live.

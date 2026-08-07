@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "oracle-forms": {
+      "command": "java",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/launcher/OracleFormsMcpLauncher.java",
+        "--forms-dir",
+        "${user_config.forms_dir}"
+      ],
+      "env": {
+        "OFMCP_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}",
+        "OFMCP_SERVER_VERSION": "${user_config.server_version}"
+      }
+    }
+  }
+}

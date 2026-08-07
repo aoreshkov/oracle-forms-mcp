@@ -16,7 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Precedence is `--convert-command` → `ORACLE_HOME` → copy-mode; a blank value counts as unset.
   The command is operator configuration and is never reachable from a tool argument; it is spawned
   with an argv list, never through a shell.
-
+- **One-command Claude Code install**: the repository is now a Claude Code plugin marketplace.
+  `/plugin marketplace add aoreshkov/oracle-forms-mcp` + `/plugin install
+  oracle-forms@oracle-forms-mcp` registers the MCP server, prompts for the forms directory
+  (`userConfig`, the plugin equivalent of the MCPB folder picker), and fetches the released server
+  on first use. A plugin ships as a git checkout and cannot carry the jars, so
+  `plugins/oracle-forms/launcher/OracleFormsMcpLauncher.java` resolves the release (`latest`, cached
+  for 24 h, or a pinned `server_version`), verifies its published SHA-256, unpacks it into the
+  plugin's data directory, and loads it into its own JVM so the stdio pipes stay unbroken. It runs
+  in Java single-file source mode, so this channel needs a **JDK 21+** rather than a JRE.
+- Releases now publish `oracle-forms-mcp-server-<version>.zip.sha256` next to the zip; the plugin
+  launcher refuses to install a distribution that doesn't match it.
 - **One-click desktop install**: releases now ship an `.mcpb`
   ([MCP Bundle](https://github.com/modelcontextprotocol/mcpb)) alongside the server zip and the
   container image. Opening it in Claude Desktop installs the connector and asks for the forms

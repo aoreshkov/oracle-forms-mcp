@@ -90,6 +90,11 @@ jobs:
           cd server/build/install
           mv server "oracle-forms-mcp-server-${VERSION}"
           zip -qr "oracle-forms-mcp-server-${VERSION}.zip" "oracle-forms-mcp-server-${VERSION}"
+          # Published alongside the zip because the Claude Code plugin's launcher fetches it and
+          # refuses to install a distribution that doesn't match. Keep the sha256sum format
+          # ("<hex>  <file>") — the launcher reads the first whitespace-separated token.
+          sha256sum "oracle-forms-mcp-server-${VERSION}.zip" \
+            > "oracle-forms-mcp-server-${VERSION}.zip.sha256"
 
       - name: Attest build provenance (release artifacts)
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
@@ -103,6 +108,7 @@ jobs:
         with:
           files: |
             server/build/install/oracle-forms-mcp-server-*.zip
+            server/build/install/oracle-forms-mcp-server-*.zip.sha256
             server/build/mcpb/oracle-forms-mcp-*.mcpb
           generate_release_notes: true
           fail_on_unmatched_files: true

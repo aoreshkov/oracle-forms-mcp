@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "oracle-forms",
+  "displayName": "Oracle Forms",
+  "version": "1.0.0",
+  "description": "Read Oracle Forms modules (.fmb/.mmb/.pll/.olb) from a directory — blocks, items, triggers, program units, PL/SQL, and durable annotations. Needs a JDK 21+ on PATH.",
+  "author": {
+    "name": "Atanas Oreshkov",
+    "url": "https://github.com/aoreshkov"
+  },
+  "homepage": "https://github.com/aoreshkov/oracle-forms-mcp#readme",
+  "repository": "https://github.com/aoreshkov/oracle-forms-mcp",
+  "license": "Apache-2.0",
+  "keywords": ["oracle", "forms", "fmb", "plsql", "legacy", "modernization"],
+  "userConfig": {
+    "forms_dir": {
+      "type": "directory",
+      "title": "Forms directory",
+      "description": "Directory containing the Oracle Forms modules to serve. Scanned non-recursively; in copy-mode the pre-converted *_fmb.xml / *.pld files are read from here too.",
+      "required": true
+    },
+    "server_version": {
+      "type": "string",
+      "title": "Server version",
+      "description": "Which released server build to run: 'latest' (checked once a day) or a pinned version such as 0.4.0.",
+      "default": "latest",
+      "required": false
+    }
+  }
+}

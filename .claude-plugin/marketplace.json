@@ -1,0 +1,21 @@
+{
+  "name": "oracle-forms-mcp",
+  "description": "Oracle Forms tooling for Claude Code.",
+  "owner": {
+    "name": "Atanas Oreshkov",
+    "url": "https://github.com/aoreshkov"
+  },
+  "plugins": [
+    {
+      "name": "oracle-forms",
+      "source": "./plugins/oracle-forms",
+      "displayName": "Oracle Forms",
+      "description": "Read Oracle Forms modules (.fmb/.mmb/.pll/.olb) from a directory — blocks, items, triggers, program units, PL/SQL, and durable annotations. Needs a JDK 21+ on PATH.",
+      "category": "development",
+      "keywords": ["oracle", "forms", "fmb", "plsql", "legacy", "modernization"],
+      "homepage": "https://github.com/aoreshkov/oracle-forms-mcp#readme",
+      "repository": "https://github.com/aoreshkov/oracle-forms-mcp",
+      "license": "Apache-2.0"
+    }
+  ]
+}
