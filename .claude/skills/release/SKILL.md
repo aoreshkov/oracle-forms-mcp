@@ -29,8 +29,12 @@ The tag guard checks these two exact patterns (keep the formatting identical):
 
 **There is no third file.** The MCP `Implementation` version is baked at build time from
 `project.version` into a classpath resource (`generateVersionResource` in
-`server/build.gradle.kts` → `ServerVersion.kt`), so it can never drift from `gradle.properties`
-— do not hand-edit a version constant in the Kotlin sources. Confirm the two files:
+`server/build.gradle.kts` → `ServerVersion.kt`), and the MCPB bundle's manifest version comes from
+the same place via the `@version@` token in `server/mcpb/manifest.template.json` — so neither can
+drift from `gradle.properties`. Do not hand-edit a version constant in the Kotlin sources or the
+manifest template. The `icons[].src` URLs in `server.json` also need no hand-editing: the publish
+job re-pins them to the tag (the guard only checks they point at a `vX.Y.Z` tag, never a branch).
+Confirm the two files:
 
 ```
 grep -n "version=" gradle.properties
@@ -47,9 +51,14 @@ sets `generate_release_notes: true`, but the curated changelog is the human-faci
 
 ## 4. Pre-flight checks (catch the known release-pipeline gotchas)
 
-- **MCP registry description cap:** the server description in `server.json` must be **≤ 100
-  characters** or the registry publish rejects it. Verify:
-  `jq -r '.description | length' server.json` → must be ≤ 100.
+- **MCP registry field caps:** in `server.json`, both `.description` and `.title` must be **≤ 100
+  characters** or the registry publish rejects the listing. Verify:
+  `jq -r '.description | length, (.title | length)' server.json` → both ≤ 100. (The release
+  workflow's guard step re-checks this, along with the icon URLs being tag-pinned.)
+- **MCPB bundle builds:** `./gradlew :server:packageMcpb` produces
+  `server/build/mcpb/oracle-forms-mcp-<VERSION>.mcpb`. Its sha256 is computed in CI and written
+  into the registry listing, so a broken bundle fails the release. Sanity-check the archive has
+  `manifest.json` at the root and an executable `server/bin/server` (`unzip -Z <bundle>`).
 - **`gradlew` executable bit:** the wrapper must stay executable in git or the CI build fails
   on a fresh checkout. Verify: `git ls-files -s gradlew` shows mode `100755`.
 - **No private paths leak:** confirm nothing under `docs/` (private) is referenced from
@@ -92,5 +101,6 @@ and the MCP registry). Fix a bad release by cutting the next version, not by mov
 ## 7. Report
 
 Summarize: old → new version, the two files updated, changelog entry, pre-flight results
-(description length, gradlew mode, checkKotlinAbi, build status, local guard simulation), and whether
-a tag was pushed or is pending.
+(description/title length, MCPB bundle build, gradlew mode, checkKotlinAbi, build status, local
+guard simulation), and whether a tag was pushed or is pending. Note that the tag publishes four
+things: the GitHub release (zip + `.mcpb`), the GHCR image, and the MCP Registry listing.

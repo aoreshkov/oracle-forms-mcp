@@ -1,0 +1,68 @@
+{
+  "manifest_version": "0.3",
+  "name": "oracle-forms-mcp",
+  "display_name": "Oracle Forms",
+  "version": "@version@",
+  "description": "Read Oracle Forms modules (.fmb/.mmb/.pll/.olb) from a directory. Requires a JRE 21+ on PATH.",
+  "long_description": "Serves the content of Oracle Forms modules — `.fmb` forms, `.mmb` menus, `.pll` PL/SQL libraries, `.olb` object libraries — so an assistant can inspect blocks, items, triggers, program units, and raw object XML without opening Forms Builder, and record durable notes and relations on individual elements.\n\n**Requires a Java runtime (JRE 21 or newer) on your PATH.** The MCPB manifest format can only declare Node and Python runtimes, so this prerequisite cannot be checked at install time — if the server fails to start, verify `java -version` works in a terminal.\n\nThis bundle is copy-mode capable only where the modules have already been converted to text (`*_fmb.xml` / `*.pld` sitting next to the modules). Converting binary `.fmb`/`.pll` in place additionally requires an Oracle Forms installation (`ORACLE_HOME`) on the machine; Oracle's `frmf2xml`/`frmcmp` tools are proprietary and are never bundled.",
+  "author": {
+    "name": "Atanas Oreshkov",
+    "url": "https://github.com/aoreshkov"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aoreshkov/oracle-forms-mcp"
+  },
+  "homepage": "https://github.com/aoreshkov/oracle-forms-mcp",
+  "documentation": "https://github.com/aoreshkov/oracle-forms-mcp#readme",
+  "support": "https://github.com/aoreshkov/oracle-forms-mcp/issues",
+  "license": "Apache-2.0",
+  "keywords": ["oracle", "forms", "fmb", "plsql", "legacy", "modernization"],
+  "icons": [
+    { "src": "assets/icon-512.png", "size": "512x512" }
+  ],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/bin/server",
+    "mcp_config": {
+      "command": "${__dirname}/server/bin/server",
+      "args": ["--forms-dir", "${user_config.forms_dir}"],
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/server/bin/server.bat"
+        }
+      }
+    }
+  },
+  "user_config": {
+    "forms_dir": {
+      "type": "directory",
+      "title": "Forms directory",
+      "description": "Directory containing the Oracle Forms modules to serve. Pre-converted *_fmb.xml / *.pld files are read from here too.",
+      "required": true
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"]
+  },
+  "tools_generated": false,
+  "prompts_generated": false,
+  "tools": [
+    { "name": "list_modules", "description": "List Forms modules" },
+    { "name": "fetch_module", "description": "Fetch and index a module" },
+    { "name": "get_module_overview", "description": "Module overview" },
+    { "name": "list_blocks", "description": "List blocks" },
+    { "name": "get_block", "description": "Get block detail" },
+    { "name": "list_triggers", "description": "List triggers" },
+    { "name": "get_trigger", "description": "Get trigger PL/SQL" },
+    { "name": "list_program_units", "description": "List program units" },
+    { "name": "get_program_unit", "description": "Get program unit PL/SQL" },
+    { "name": "get_object_xml", "description": "Get raw object XML" },
+    { "name": "search_source", "description": "Search module source" },
+    { "name": "annotate_element", "description": "Annotate an element" },
+    { "name": "relate_elements", "description": "Relate two elements" },
+    { "name": "get_element_annotations", "description": "Get element annotations" },
+    { "name": "search_annotations", "description": "Search annotations" },
+    { "name": "remove_annotation", "description": "Remove an annotation" }
+  ]
+}
