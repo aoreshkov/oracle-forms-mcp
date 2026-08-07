@@ -56,6 +56,12 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   the previous event's end (see `startLineOf`). Pinned by `objectRefSlicesReparseAsXml`.
 - Oracle tools: `frmf2xml` writes to the process **cwd** (run it with cwd = cache `converted/`);
   exit codes are unreliable — success is judged by the output file. `frmcmp_batch` over `frmcmp`.
+  `--convert-command` swaps in a site-supplied converter on the same cwd convention
+  (`CustomCommandModuleConverter`); precedence is command → `ORACLE_HOME` → copy-mode. The command
+  is **operator config only** — never reachable from a tool argument — and is spawned with an argv
+  list, never a shell. Shared output/exit-code handling lives in `ConversionSupport.kt`: an output
+  file older than `startedAt` (minus 2s FAT slack) is rejected as a leftover, so a converter that
+  copies with preserved mtimes (`copy`, `cp -p`) reads as having produced nothing.
 - This project deliberately does NOT add a custom `SegmentTemplateMatcher` (the SDK default
   matcher works); see `.claude/rules/server.md` for the shadowing cause and the
   `ModuleResourcesTest.sdkDefaultMatcherExtractsTheModuleSegment` regression canary.

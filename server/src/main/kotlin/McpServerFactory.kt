@@ -51,6 +51,12 @@ data class ServerConfig(
     val annotationsDir: Path = OnDiskAnnotationStore.defaultRoot(),
     val oracleHome: String? = System.getenv("ORACLE_HOME"),
     val conversionTimeout: Duration = 120.seconds,
+    /**
+     * Site-supplied converter run instead of `frmf2xml`, from `--convert-command`. Operator
+     * configuration only — never reachable from a tool argument. Takes precedence over
+     * [oracleHome] when set.
+     */
+    val convertCommand: String? = null,
 )
 
 /**
@@ -87,12 +93,14 @@ object McpServerFactory {
                 oracleHome = config.oracleHome,
                 formsDir = config.formsDir,
                 timeout = config.conversionTimeout,
+                convertCommand = config.convertCommand,
             ),
             parser = FormsModuleParser(),
             cache = cache,
             annotationStore = annotationStore,
             formsDir = config.formsDir,
-            oracleConversion = !config.oracleHome.isNullOrBlank(),
+            // Either configured converter can read binaries; only copy-mode cannot.
+            binaryConversion = !config.convertCommand.isNullOrBlank() || !config.oracleHome.isNullOrBlank(),
         )
 
         val server = Server(

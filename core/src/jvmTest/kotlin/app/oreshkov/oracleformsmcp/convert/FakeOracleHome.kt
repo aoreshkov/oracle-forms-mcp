@@ -20,15 +20,25 @@ object FakeOracleHome {
      * Lines may use `%CD%` / `$PWD` for the working directory.
      */
     fun stubTool(oracleHome: Path, name: String, batchLines: List<String>, shellLines: List<String>) {
-        val bin = binDir(oracleHome)
-        if (isWindows) {
-            bin.resolve("$name.bat").writeText(
-                (listOf("@echo off") + batchLines).joinToString("\r\n") + "\r\n",
-            )
+        stubScript(binDir(oracleHome), name, batchLines, shellLines)
+    }
+
+    /**
+     * Writes an executable stub script [name] into [dir] and returns its path — the same stubs as
+     * [stubTool] but at an arbitrary location, for converters that are configured by full path
+     * rather than discovered under `ORACLE_HOME/bin`.
+     */
+    fun stubScript(dir: Path, name: String, batchLines: List<String>, shellLines: List<String>): Path {
+        dir.createDirectories()
+        return if (isWindows) {
+            dir.resolve("$name.bat").apply {
+                writeText((listOf("@echo off") + batchLines).joinToString("\r\n") + "\r\n")
+            }
         } else {
-            val script = bin.resolve(name)
-            script.writeText((listOf("#!/bin/sh") + shellLines).joinToString("\n") + "\n")
-            script.toFile().setExecutable(true)
+            dir.resolve(name).apply {
+                writeText((listOf("#!/bin/sh") + shellLines).joinToString("\n") + "\n")
+                toFile().setExecutable(true)
+            }
         }
     }
 

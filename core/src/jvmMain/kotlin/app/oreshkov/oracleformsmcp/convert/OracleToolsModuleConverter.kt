@@ -1,20 +1,13 @@
 package app.oreshkov.oracleformsmcp.convert
 
-import app.oreshkov.oracleformsmcp.core.ConversionFailedException
-import app.oreshkov.oracleformsmcp.core.ConversionTimeoutException
 import app.oreshkov.oracleformsmcp.core.ConverterNotFoundException
 import app.oreshkov.oracleformsmcp.core.ModuleConverter
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
-import co.touchlab.kermit.Logger
-import java.io.File
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
-import kotlin.io.path.exists
 import kotlin.io.path.fileSize
-import kotlin.io.path.getLastModifiedTime
 import kotlin.io.path.isRegularFile
-import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -35,8 +28,6 @@ public class OracleToolsModuleConverter(
     private val formsDir: Path? = null,
     private val timeout: Duration = 120.seconds,
 ) : ModuleConverter {
-
-    private val log = Logger.withTag("OracleToolsModuleConverter")
 
     override val description: String = "Oracle tools conversion (ORACLE_HOME=$oracleHome)"
 
@@ -60,7 +51,7 @@ public class OracleToolsModuleConverter(
             command = listOf(tool.toString(), source.toAbsolutePath().toString(), "OVERWRITE=YES", "USE_PROPERTY_IDS=NO"),
             workingDir = target,
             timeout = timeout,
-            extraEnv = formsPathEnv(),
+            extraEnv = formsPathEnv(formsDir),
         )
         return checkOutput(key, tool, result, startedAt) {
             // frmf2xml derives the output name from the input basename; casing varies, so glob.
@@ -84,7 +75,7 @@ public class OracleToolsModuleConverter(
             ),
             workingDir = target,
             timeout = timeout,
-            extraEnv = formsPathEnv(),
+            extraEnv = formsPathEnv(formsDir),
         )
         return checkOutput(key, tool, result, startedAt) {
             // Some frmcmp versions ignore Output_File and write into the cwd instead.
@@ -112,52 +103,14 @@ public class OracleToolsModuleConverter(
         )
     }
 
-    private inline fun checkOutput(
+    private fun checkOutput(
         key: ModuleKey,
         tool: Path,
         result: ExternalTool.Result,
         startedAt: Long,
         findOutput: () -> Path?,
-    ): Path {
-        if (result.timedOut) {
-            throw ConversionTimeoutException(
-                "Converting $key with ${tool.name} exceeded ${timeout.inWholeSeconds}s and was killed. " +
-                    "Output tail:\n${result.output}",
-            )
-        }
-        val output = findOutput()
-        if (output == null || !output.isRegularFile() || output.fileSize() == 0L) {
-            throw ConversionFailedException(
-                "Converting $key with ${tool.name} produced no output file " +
-                    "(exit code ${result.exitCode}). Output tail:\n${result.output}",
-            )
-        }
-        if (result.exitCode != 0) {
-            log.w { "$tool exited with ${result.exitCode} for $key but produced $output; using it" }
-        }
-        // `startedAt` guards against picking up a leftover of a previous failed run.
-        check(output.getLastModifiedTime().toMillis() >= startedAt - STALE_OUTPUT_GRACE_MILLIS) {
-            "Converted file $output predates the conversion run"
-        }
-        return output
-    }
+    ): Path = ConversionOutput.check(key, tool.name, result, startedAt, timeout, findOutput)
 
     private fun newestMatching(dir: Path, startedAt: Long, predicate: (String) -> Boolean): Path? =
-        dir.takeIf { it.exists() }
-            ?.listDirectoryEntries()
-            ?.filter { it.isRegularFile() && predicate(it.name) }
-            ?.filter { it.getLastModifiedTime().toMillis() >= startedAt - STALE_OUTPUT_GRACE_MILLIS }
-            ?.maxByOrNull { it.getLastModifiedTime().toMillis() }
-
-    private fun formsPathEnv(): Map<String, String> {
-        val dir = formsDir ?: return emptyMap()
-        val existing = System.getenv("FORMS_PATH")
-        val value = if (existing.isNullOrBlank()) dir.toString() else existing + File.pathSeparator + dir
-        return mapOf("FORMS_PATH" to value)
-    }
-
-    private companion object {
-        /** Filesystem mtime granularity slack (FAT stores 2s resolution). */
-        const val STALE_OUTPUT_GRACE_MILLIS: Long = 2_000
-    }
+        ConversionOutput.newestMatching(dir, startedAt, predicate)
 }

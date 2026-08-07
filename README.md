@@ -243,6 +243,7 @@ the container user can write.
 
 ```
 --forms-dir <path>          Directory containing the Forms modules (or pass it positionally)
+--convert-command <path>    Site-supplied converter to run instead of frmf2xml
 --transport stdio|http      Transport (default: stdio)
 --port <int>                HTTP port (default: 3000)
 --allowed-host / --allowed-origin   Extra HTTP hosts/origins (localhost-only by default)
@@ -250,6 +251,38 @@ the container user can write.
 --annotations-dir <path>    Durable annotation store (default: <cache dir>/annotations)
 --conversion-timeout <sec>  Kill a stuck conversion (default: 120)
 ```
+
+### Using your own converter
+
+If your site wraps the Forms tools — its own environment setup, logon handling, a patched
+`frmf2xml`, or a different converter entirely — point the server at it:
+
+```
+server --forms-dir C:\forms --convert-command C:\tools\fmb2xml.bat
+```
+
+The server runs it as `<command> <absolute-path-to-module>` with the **working directory set to
+that module's cache directory**, and expects the text form to be written there. This mirrors how
+`frmf2xml` is driven, so a script that already wraps it needs no changes. Emit the same formats
+the parser reads: XML for `.fmb`/`.mmb`/`.olb`, a `.pld` dump for `.pll`. Oracle's
+`<name>_fmb.xml` naming is preferred but not required — any `.xml` (or `.pld` for a library)
+written into the working directory is picked up.
+
+Precedence is `--convert-command` → `ORACLE_HOME` → copy-mode, so an explicitly configured
+command wins even on a machine with a Forms installation. A blank value counts as unset. Like
+`ORACLE_HOME`, the path is validated at the first conversion rather than at startup, so a stale
+setting still leaves cached modules readable; the error then names the flag to fix.
+
+> **The output must be freshly written.** Because Forms-era tools return unreliable exit codes,
+> a run is judged by its output file, and a file older than the run is treated as a leftover from
+> a previous failed attempt. A script that *copies* a pre-generated file with `copy`, `xcopy`, or
+> `cp -p` preserves the source's timestamp and will be rejected with "produced no output file".
+> Redirect or rewrite instead (`type src > out`, `cat src > out`), or `touch` the result.
+
+The command is **operator configuration only** — no tool argument can choose or extend it. Tool
+callers supply a module name, which is resolved against the scanned forms directory before the
+converter sees it, and the command is spawned directly with an argv list rather than through a
+shell.
 
 ## Cache
 

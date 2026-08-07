@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`--convert-command <path>`**: run a site-supplied converter instead of `frmf2xml`, for
+  installations that wrap the Forms tools with their own environment setup or logon handling. It
+  is invoked as `<command> <module>` with the working directory set to the module's cache dir —
+  the same convention `frmf2xml` already follows — and must emit the formats the parser reads
+  (XML for fmb/mmb/olb, `.pld` for pll). Oracle's `_fmb.xml` naming is preferred but not required.
+  Precedence is `--convert-command` → `ORACLE_HOME` → copy-mode; a blank value counts as unset.
+  The command is operator configuration and is never reachable from a tool argument; it is spawned
+  with an argv list, never through a shell.
+
 - **One-click desktop install**: releases now ship an `.mcpb`
   ([MCP Bundle](https://github.com/modelcontextprotocol/mcpb)) alongside the server zip and the
   container image. Opening it in Claude Desktop installs the connector and asks for the forms
@@ -22,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `server.json`, plus a `publisher-provided` `_meta` block spelling out the runtime
   requirements of each distribution channel. The release workflow now guards these fields and
   re-pins the icon URLs to the tag being released.
+
+### Changed
+- `ModuleConverters.forEnvironment` takes an additional (defaulted, trailing) `convertCommand`
+  parameter. Source-compatible, but the JVM signature changed — embedders compiling against
+  `core` should recompile.
 
 ## [0.3.0] - 2026-07-16
 
