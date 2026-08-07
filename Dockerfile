@@ -54,7 +54,9 @@ ENTRYPOINT ["/app/bin/server"]
 # To keep the converted XML/.pld text forms in a directory of your own (one flat directory for all
 # modules), mount it and point --converted-dir at it — as a flag or, for clients that can only set
 # variables, as OFMCP_CONVERTED_DIR. Same for a site converter: --convert-command /
-# OFMCP_CONVERT_COMMAND, with the script mounted in. Both mounts must be writable by uid 10001:
+# OFMCP_CONVERT_COMMAND, with the converter mounted in. That one takes a whole command line, so
+# quote it as one argument: --convert-command "/opt/forms/convert.sh --xml {}". Both mounts must be
+# writable by uid 10001:
 #   chown 10001 /host/converted
 #   docker run -i -v /host/converted:/converted -v /path/to/forms:/forms \
 #     ghcr.io/aoreshkov/oracle-forms-mcp --forms-dir /forms --converted-dir /converted

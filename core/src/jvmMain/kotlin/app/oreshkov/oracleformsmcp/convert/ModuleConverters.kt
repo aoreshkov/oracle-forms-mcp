@@ -10,12 +10,13 @@ public object ModuleConverters {
 
     /**
      * In precedence order: [CustomCommandModuleConverter] when [convertCommand] is a non-blank
-     * path, [OracleToolsModuleConverter] when [oracleHome] is, else [PreConvertedCopyConverter].
-     * An explicitly configured command wins over `ORACLE_HOME` — an operator who names a converter
-     * means it, even on a machine that also has a Forms installation.
+     * command line, [OracleToolsModuleConverter] when [oracleHome] is, else
+     * [PreConvertedCopyConverter]. An explicitly configured command wins over `ORACLE_HOME` — an
+     * operator who names a converter means it, even on a machine that also has a Forms
+     * installation.
      *
-     * A bad command or `ORACLE_HOME` fails lazily at first conversion (with a clear message), not
-     * at startup, so cached modules stay readable.
+     * A malformed or stale command, or a bad `ORACLE_HOME`, fails lazily at first conversion (with
+     * a clear message), not at startup, so cached modules stay readable.
      */
     public fun forEnvironment(
         oracleHome: String?,
@@ -24,7 +25,7 @@ public object ModuleConverters {
         convertCommand: String? = null,
     ): ModuleConverter = when {
         !convertCommand.isNullOrBlank() ->
-            CustomCommandModuleConverter(Path.of(convertCommand), formsDir, timeout)
+            CustomCommandModuleConverter(convertCommand, formsDir, timeout)
         oracleHome.isNullOrBlank() -> PreConvertedCopyConverter()
         else -> OracleToolsModuleConverter(Path.of(oracleHome), formsDir, timeout)
     }

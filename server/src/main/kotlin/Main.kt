@@ -17,17 +17,22 @@ private val USAGE = """
     Usage: server [options] [<forms-dir>]
 
     The forms directory (required) may be given with --forms-dir or as the positional argument.
-    Conversion of .fmb/.mmb/.olb/.pll binaries uses, in order: the --convert-command script if
+    Conversion of .fmb/.mmb/.olb/.pll binaries uses, in order: the --convert-command command if
     given, else the frmf2xml/frmcmp tools under ORACLE_HOME if that is set; otherwise
     pre-converted files (*_fmb.xml, *_mmb.xml, *_olb.xml, *.pld) are expected next to the
     modules and copied into the cache.
 
     Options:
       --forms-dir <path>          Directory containing the Forms modules
-      --convert-command <path>    Site-supplied converter run instead of frmf2xml, as
-                                  `<path> <module>` with the cwd set to the module's cache dir.
-                                  It must write the same text forms there (*_fmb.xml etc., .pld
-                                  for .pll). Takes precedence over ORACLE_HOME.
+      --convert-command <cmd>     Site-supplied converter run instead of frmf2xml: a whole command
+                                  line with its arguments, quoting any part that contains spaces
+                                  ("C:\tools\my conv.bat" -xml), or a JSON array of arguments
+                                  (["wine","f2x.exe","-xml"]). It is spawned directly, never
+                                  through a shell. The module's absolute path replaces {} and is
+                                  appended as the last argument when {} does not appear. Runs with
+                                  the cwd set to the module's cache dir and must write the text
+                                  forms there (*_fmb.xml etc., .pld for .pll). Takes precedence
+                                  over ORACLE_HOME.
       --converted-dir <path>      Where to keep the converted XML/.pld text forms: one flat
                                   directory for all modules, each file named after its module
                                   (orders_fmb.xml, utils.pld). Created if missing.
@@ -51,6 +56,7 @@ private val USAGE = """
       server C:\forms
       server --forms-dir /srv/forms --transport http --port 3000   # http://127.0.0.1:3000/mcp
       server --forms-dir C:\forms --convert-command C:\tools\fmb2xml.bat --converted-dir C:\forms-xml
+      server --forms-dir /srv/forms --convert-command "/opt/forms/convert.sh --xml {}"
 """.trimIndent()
 
 /** Environment variables mirroring the two converter flags, for launchers that can only set env. */

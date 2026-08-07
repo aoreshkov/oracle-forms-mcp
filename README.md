@@ -263,7 +263,7 @@ the container user can write.
 
 ```
 --forms-dir <path>          Directory containing the Forms modules (or pass it positionally)
---convert-command <path>    Site-supplied converter to run instead of frmf2xml
+--convert-command <cmd>     Site-supplied converter command (with its arguments) instead of frmf2xml
 --converted-dir <path>      Where to keep the converted XML/.pld (default: inside the cache)
 --transport stdio|http      Transport (default: stdio)
 --port <int>                HTTP port (default: 3000)
@@ -318,12 +318,37 @@ If your site wraps the Forms tools — its own environment setup, logon handling
 server --forms-dir C:\forms --convert-command C:\tools\fmb2xml.bat
 ```
 
-The server runs it as `<command> <absolute-path-to-module>` with the **working directory set to
-that module's cache directory**, and expects the text form to be written there. This mirrors how
-`frmf2xml` is driven, so a script that already wraps it needs no changes. Emit the same formats
-the parser reads: XML for `.fmb`/`.mmb`/`.olb`, a `.pld` dump for `.pll`. Oracle's
-`<name>_fmb.xml` naming is preferred but not required — any `.xml` (or `.pld` for a library)
-written into the working directory is picked up.
+The value is a **whole command line, not just an executable**, so a wrapper that needs arguments
+of its own — an interpreter, a container, a compatibility layer — is configured directly:
+
+```
+server --forms-dir /srv/forms --convert-command "/opt/forms/convert.sh --xml --quiet"
+server --forms-dir C:\forms  --convert-command "\"C:\tools\my tools\f2x.bat\" /nologon"
+server --forms-dir /srv/forms --convert-command '["wine", "/opt/forms/frmf2xml.exe", "{}"]'
+```
+
+Two syntaxes are accepted, and neither is ever handed to a shell — the command is split here and
+spawned with an argv list:
+
+- **A quoted string.** Split on whitespace, with `"…"` or `'…'` grouping a part that contains
+  spaces. Backslashes are literal, so Windows paths need no doubling.
+- **A JSON array** — `["wine", "f2x.exe", "-xml"]` — one element per argument, the same shape MCP
+  clients use for `command`/`args`. Prefer it when quoting gets awkward, and note that JSON itself
+  requires `\\` for a backslash.
+
+A value that names an existing file is taken whole, spaces and all, so a plain path configured
+before this option accepted arguments keeps working unquoted.
+
+The module's absolute path goes wherever you write **`{}`**; with no `{}` in the command it is
+appended as the last argument, which is what the earlier `<command> <module>` convention did. The
+command runs with the **working directory set to that module's cache directory** and is expected to
+write the text form there. This mirrors how `frmf2xml` is driven, so a script that already wraps it
+needs no changes. Emit the same formats the parser reads: XML for `.fmb`/`.mmb`/`.olb`, a `.pld`
+dump for `.pll`. Oracle's `<name>_fmb.xml` naming is preferred but not required — any `.xml` (or
+`.pld` for a library) written into the working directory is picked up.
+
+The program itself may be a path (absolute or relative to where the server was started) or a bare
+name, which is looked up on `PATH`.
 
 With [`--converted-dir`](#keeping-the-converted-xml) the working directory is unchanged — the
 command still writes into the module's cache directory, and the server moves the result into your
@@ -331,8 +356,8 @@ directory afterwards under the module's canonical name. Scripts need no adjustme
 
 Precedence is `--convert-command` → `ORACLE_HOME` → copy-mode, so an explicitly configured
 command wins even on a machine with a Forms installation. A blank value counts as unset. Like
-`ORACLE_HOME`, the path is validated at the first conversion rather than at startup, so a stale
-setting still leaves cached modules readable; the error then names the flag to fix.
+`ORACLE_HOME`, the command is parsed and validated at the first conversion rather than at startup,
+so a stale setting still leaves cached modules readable; the error then names the flag to fix.
 
 > **The output must be freshly written.** Because Forms-era tools return unreliable exit codes,
 > a run is judged by its output file, and a file older than the run is treated as a leftover from
@@ -343,7 +368,7 @@ setting still leaves cached modules readable; the error then names the flag to f
 The command is **operator configuration only** — no tool argument can choose or extend it. Tool
 callers supply a module name, which is resolved against the scanned forms directory before the
 converter sees it, and the command is spawned directly with an argv list rather than through a
-shell.
+shell, so nothing in a module's path or in your own quoting can turn into a second command.
 
 ## Cache
 

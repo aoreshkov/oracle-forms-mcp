@@ -32,7 +32,7 @@ Set these in `/plugin` → **Oracle Forms** → configure; they are stored in yo
 | Option | Default | What it does |
 |---|---|---|
 | `forms_dir` | — (required) | The directory of Forms modules to serve. Scanned non-recursively. |
-| `convert_command` | — (optional) | A site-supplied converter to run instead of Oracle's `frmf2xml`, as `<command> <module>` with the working directory set to the module's cache directory. Takes precedence over `ORACLE_HOME`. |
+| `convert_command` | — (optional) | A site-supplied converter to run instead of Oracle's `frmf2xml` — a whole command line with its arguments (`/opt/forms/convert.sh --xml {}`), quoted where a part contains spaces, or a JSON array. It runs with the working directory set to the module's cache directory; the module's path replaces `{}`, or is appended when `{}` is absent. Never goes through a shell. Takes precedence over `ORACLE_HOME`. |
 | `converted_dir` | — (optional) | Where to keep the converted XML / `.pld` text forms: one flat directory for all modules, each file named after its module (`orders_fmb.xml`, `utils.pld`). Must not be the forms directory. Defaults to inside the cache. |
 | `server_version` | `latest` | Which released server build to run. Set a version such as `0.4.0` to pin. |
 

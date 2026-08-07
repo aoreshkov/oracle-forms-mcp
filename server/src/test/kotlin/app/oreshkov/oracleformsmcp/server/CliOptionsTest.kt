@@ -75,6 +75,20 @@ class CliOptionsTest {
         assertNull(fromEnv.convertedDir)
     }
 
+    /**
+     * `--convert-command` is a whole command line, so it reaches the server as one argument (or one
+     * variable) and is passed to the converter unsplit — the argv split belongs to the converter,
+     * which does it without a shell.
+     */
+    @Test
+    fun keepsAConverterCommandLineWithArgumentsIntact() {
+        val command = "\"/opt/my tools/f2x.sh\" --xml {}"
+        assertEquals(command, parse("/srv/forms", "--convert-command", command).convertCommand)
+
+        val env = mapOf(ENV_CONVERT_COMMAND to """["wine", "f2x.exe", "{}"]""")
+        assertEquals("""["wine", "f2x.exe", "{}"]""", parse("/srv/forms", env = env::get).convertCommand)
+    }
+
     @Test
     fun anUnsetOptionalOptionDoesNotShadowTheEnvironment() {
         // The flag is present but empty (a bundle always passes it); the variable still applies.

@@ -31,10 +31,22 @@ class CustomCommandModuleConverterTest {
         temp.toFile().deleteRecursively()
     }
 
-    private fun converter(command: Path, timeoutSeconds: Int = 30) =
+    private fun converter(command: String, timeoutSeconds: Int = 30) =
         CustomCommandModuleConverter(command, formsDir, timeoutSeconds.seconds)
 
+    private fun converter(command: Path, timeoutSeconds: Int = 30) =
+        converter(command.toString(), timeoutSeconds)
+
     private fun fakeBinary(name: String): Path = formsDir.resolve(name).also { it.writeText("binary") }
+
+    private suspend fun convertOrders(converter: CustomCommandModuleConverter): Path =
+        Path.of(
+            converter.convert(
+                ModuleKey.of("orders", ModuleType.FORM),
+                fakeBinary("ORDERS.fmb").toString(),
+                targetDir.toString(),
+            ),
+        )
 
     /** A stub converter that drops [fixture] into its working directory under [outputName]. */
     private fun copyingScript(fixture: Path, outputName: String): Path = FakeOracleHome.stubScript(
@@ -44,17 +56,37 @@ class CustomCommandModuleConverterTest {
         shellLines = listOf("cp \"$fixture\" \"\$PWD/$outputName\""),
     )
 
+    /** As [copyingScript], but also records the argument list it was invoked with. */
+    private fun argumentRecordingScript(fixture: Path, dir: Path = scriptDir): Path =
+        FakeOracleHome.stubScript(
+            dir,
+            "convert",
+            batchLines = listOf(
+                "echo %* >\"%CD%\\args.txt\"",
+                "copy /Y \"$fixture\" \"%CD%\\orders_fmb.xml\" >nul",
+            ),
+            shellLines = listOf(
+                "echo \"\$@\" >\"\$PWD/args.txt\"",
+                "cp \"$fixture\" \"\$PWD/orders_fmb.xml\"",
+            ),
+        )
+
+    /** The recorded argv, quote-stripped: `cmd.exe` echoes the quoting `ProcessBuilder` applied. */
+    private fun recordedArguments(): String =
+        targetDir.resolve("args.txt").readText().replace("\"", "").trim()
+
+    private fun jsonArrayOf(vararg argv: String): String =
+        argv.joinToString(prefix = "[", postfix = "]") { "\"${it.replace("\\", "\\\\")}\"" }
+
     @Test
     fun convertsFormWithTheConfiguredCommand() = runTest {
         val fixture = copyFixture("orders_fmb.xml", temp)
         val script = copyingScript(fixture, "orders_fmb.xml")
 
-        val output = converter(script).convert(
-            ModuleKey.of("orders", ModuleType.FORM), fakeBinary("ORDERS.fmb").toString(), targetDir.toString(),
-        )
+        val output = convertOrders(converter(script))
 
-        assertEquals("orders_fmb.xml", Path.of(output).name)
-        assertTrue(Path.of(output).readText().contains("FormModule"))
+        assertEquals("orders_fmb.xml", output.name)
+        assertTrue(output.readText().contains("FormModule"))
     }
 
     @Test
@@ -75,11 +107,61 @@ class CustomCommandModuleConverterTest {
         val fixture = copyFixture("orders_fmb.xml", temp)
         val script = copyingScript(fixture, "ORDERS.xml")
 
-        val output = converter(script).convert(
-            ModuleKey.of("orders", ModuleType.FORM), fakeBinary("ORDERS.fmb").toString(), targetDir.toString(),
+        assertEquals("ORDERS.xml", convertOrders(converter(script)).name)
+    }
+
+    /** The whole point of the option: a wrapper is a command *with parameters*, not a bare path. */
+    @Test
+    fun passesTheConfiguredArgumentsAndAppendsTheModulePath() = runTest {
+        val script = argumentRecordingScript(copyFixture("orders_fmb.xml", temp))
+
+        convertOrders(converter("$script -xml OVERWRITE=YES"))
+
+        assertEquals("-xml OVERWRITE=YES ${fakeBinary("ORDERS.fmb")}", recordedArguments())
+    }
+
+    @Test
+    fun substitutesTheModulePathAtThePlaceholder() = runTest {
+        val script = argumentRecordingScript(copyFixture("orders_fmb.xml", temp))
+
+        convertOrders(converter("$script --in {} --xml"))
+
+        assertEquals("--in ${fakeBinary("ORDERS.fmb")} --xml", recordedArguments())
+    }
+
+    @Test
+    fun acceptsACommandGivenAsAJsonArray() = runTest {
+        val script = argumentRecordingScript(copyFixture("orders_fmb.xml", temp))
+
+        convertOrders(converter(jsonArrayOf(script.toString(), "--in={}", "--xml")))
+
+        assertEquals("--in=${fakeBinary("ORDERS.fmb")} --xml", recordedArguments())
+    }
+
+    /** A quoted program with spaces stays one argument rather than becoming program + argument. */
+    @Test
+    fun runsAQuotedProgramPathThatContainsSpaces() = runTest {
+        val script = argumentRecordingScript(
+            copyFixture("orders_fmb.xml", temp),
+            dir = temp.resolve("program files"),
         )
 
-        assertEquals("ORDERS.xml", Path.of(output).name)
+        convertOrders(converter("\"$script\" --xml"))
+
+        assertEquals("--xml ${fakeBinary("ORDERS.fmb")}", recordedArguments())
+    }
+
+    /** Configurations written against the older "one executable" contract keep working unquoted. */
+    @Test
+    fun runsAnUnquotedProgramPathThatContainsSpaces() = runTest {
+        val script = argumentRecordingScript(
+            copyFixture("orders_fmb.xml", temp),
+            dir = temp.resolve("program files"),
+        )
+
+        convertOrders(converter(script))
+
+        assertEquals(fakeBinary("ORDERS.fmb").toString(), recordedArguments())
     }
 
     @Test
@@ -87,13 +169,31 @@ class CustomCommandModuleConverterTest {
         val missing = scriptDir.resolve("nope")
 
         val error = assertFailsWith<ConverterNotFoundException> {
-            converter(missing).convert(
-                ModuleKey.of("orders", ModuleType.FORM), fakeBinary("ORDERS.fmb").toString(), targetDir.toString(),
-            )
+            convertOrders(converter("$missing --xml"))
         }
 
         assertTrue("--convert-command" in error.message!!)
         assertTrue("ORACLE_HOME" in error.message!!)
+    }
+
+    /** A bare program name is a PATH lookup; failing to find it must not surface as a raw IO error. */
+    @Test
+    fun failsWithAnActionableMessageWhenTheProgramIsNotOnThePath() = runTest {
+        val error = assertFailsWith<ConverterNotFoundException> {
+            convertOrders(converter("ofmcp-no-such-program --xml"))
+        }
+
+        assertTrue("--convert-command" in error.message!!)
+        assertTrue("PATH" in error.message!!)
+    }
+
+    @Test
+    fun failsWithAnActionableMessageOnAMalformedCommand() = runTest {
+        val error = assertFailsWith<ConverterNotFoundException> {
+            convertOrders(converter("\"$scriptDir/conv.bat --xml"))
+        }
+
+        assertTrue("unterminated" in error.message!!)
     }
 
     /** Exit codes are unreliable in this family of tools — success is judged by the output file. */
@@ -106,11 +206,7 @@ class CustomCommandModuleConverterTest {
             shellLines = listOf("echo nothing to do", "exit 0"),
         )
 
-        val error = assertFailsWith<ConversionFailedException> {
-            converter(script).convert(
-                ModuleKey.of("orders", ModuleType.FORM), fakeBinary("ORDERS.fmb").toString(), targetDir.toString(),
-            )
-        }
+        val error = assertFailsWith<ConversionFailedException> { convertOrders(converter(script)) }
 
         assertTrue("no output file" in error.message!!)
     }
@@ -125,9 +221,7 @@ class CustomCommandModuleConverterTest {
         )
 
         assertFailsWith<ConversionTimeoutException> {
-            converter(script, timeoutSeconds = 1).convert(
-                ModuleKey.of("orders", ModuleType.FORM), fakeBinary("ORDERS.fmb").toString(), targetDir.toString(),
-            )
+            convertOrders(converter(script, timeoutSeconds = 1))
         }
     }
 

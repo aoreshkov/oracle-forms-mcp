@@ -32,8 +32,8 @@ public final class app/oreshkov/oracleformsmcp/cache/OnDiskModuleCache$Companion
 }
 
 public final class app/oreshkov/oracleformsmcp/convert/CustomCommandModuleConverter : app/oreshkov/oracleformsmcp/core/ModuleConverter {
-	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/nio/file/Path;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/nio/file/Path;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/nio/file/Path;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/nio/file/Path;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun convert (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun getDescription ()Ljava/lang/String;
 }
