@@ -77,7 +77,12 @@ class FormsService(
     private val cache: ModuleCache,
     private val annotationStore: AnnotationStore,
     private val formsDir: Path,
-    private val oracleConversion: Boolean,
+    /**
+     * The configured [converter] can turn a binary module into its text form (ORACLE_HOME tools or
+     * a `--convert-command` script), as opposed to copy-mode which can only read files that were
+     * converted elsewhere.
+     */
+    private val binaryConversion: Boolean,
 ) {
     private val log = Logger.withTag("FormsService")
 
@@ -134,7 +139,7 @@ class FormsService(
         }
         return ModuleList(
             formsDir = formsDir.toAbsolutePath().toString(),
-            oracleHomeConversion = oracleConversion,
+            oracleHomeConversion = binaryConversion,
             modules = entries + orphans,
         )
     }
@@ -568,7 +573,7 @@ class FormsService(
     private fun fingerprintSource(module: ScannedModule): Path = Path.of(conversionSource(module))
 
     private fun conversionSource(module: ScannedModule): String =
-        if (oracleConversion) {
+        if (binaryConversion) {
             module.binaryPath ?: module.preConvertedPath!!
         } else {
             module.preConvertedPath ?: module.binaryPath!!

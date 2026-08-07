@@ -105,7 +105,7 @@ internal fun minimalIndex(key: ModuleKey, sourceFile: String): ModuleIndex = Mod
 internal fun fakeService(
     scanner: FakeScanner = FakeScanner(),
     cacheRoot: Path = Files.createTempDirectory("fake-service-cache"),
-    oracleConversion: Boolean = false,
+    binaryConversion: Boolean = false,
     annotationStore: AnnotationStore = InMemoryAnnotationStore(),
 ): FormsService = FormsService(
     scanner = scanner,
@@ -114,5 +114,5 @@ internal fun fakeService(
     cache = InMemoryCache(cacheRoot),
     annotationStore = annotationStore,
     formsDir = Path.of("."),
-    oracleConversion = oracleConversion,
+    binaryConversion = binaryConversion,
 )

@@ -16,12 +16,17 @@ private val USAGE = """
     Usage: server [options] [<forms-dir>]
 
     The forms directory (required) may be given with --forms-dir or as the positional argument.
-    If the ORACLE_HOME environment variable is set, .fmb/.mmb/.olb/.pll binaries are converted
-    with its frmf2xml/frmcmp tools; otherwise pre-converted files (*_fmb.xml, *_mmb.xml,
-    *_olb.xml, *.pld) are expected next to the modules and copied into the cache.
+    Conversion of .fmb/.mmb/.olb/.pll binaries uses, in order: the --convert-command script if
+    given, else the frmf2xml/frmcmp tools under ORACLE_HOME if that is set; otherwise
+    pre-converted files (*_fmb.xml, *_mmb.xml, *_olb.xml, *.pld) are expected next to the
+    modules and copied into the cache.
 
     Options:
       --forms-dir <path>          Directory containing the Forms modules
+      --convert-command <path>    Site-supplied converter run instead of frmf2xml, as
+                                  `<path> <module>` with the cwd set to the module's cache dir.
+                                  It must write the same text forms there (*_fmb.xml etc., .pld
+                                  for .pll). Takes precedence over ORACLE_HOME.
       --transport stdio|http      Transport to run (default: stdio)
       --port <int>                Port for the http transport (default: $DEFAULT_PORT)
       --allowed-host <host>       Extra Host header the http transport accepts; repeatable
@@ -48,6 +53,7 @@ private data class CliOptions(
     val cacheDir: Path? = null,
     val annotationsDir: Path? = null,
     val conversionTimeoutSeconds: Int = 120,
+    val convertCommand: String? = null,
 )
 
 /** Tiny hand-rolled parser — a handful of flags don't warrant a dependency. [fail]s on anything unknown. */
@@ -81,6 +87,10 @@ private fun parseArgs(args: Array<String>): CliOptions {
             "--allowed-origin" -> options =
                 options.copy(allowedOrigins = options.allowedOrigins + value(arg))
             "--forms-dir" -> options = options.copy(formsDir = Path.of(value(arg)))
+            // Blank is treated as "not configured" so a launcher template that always passes the
+            // flag (an unset picker in an MCPB bundle, an empty env var in a wrapper script)
+            // falls back to ORACLE_HOME instead of failing every conversion.
+            "--convert-command" -> options = options.copy(convertCommand = value(arg).ifBlank { null })
             "--cache-dir" -> options = options.copy(cacheDir = Path.of(value(arg)))
             "--annotations-dir" -> options = options.copy(annotationsDir = Path.of(value(arg)))
             "--conversion-timeout" -> {
@@ -117,6 +127,7 @@ fun main(args: Array<String>) {
         cacheDir = cacheDir,
         annotationsDir = options.annotationsDir ?: cacheDir.resolve("annotations"),
         conversionTimeout = options.conversionTimeoutSeconds.seconds,
+        convertCommand = options.convertCommand,
     )
     runBlocking {
         McpServerFactory.create(config).use { handle ->

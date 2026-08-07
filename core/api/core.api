@@ -31,10 +31,17 @@ public final class app/oreshkov/oracleformsmcp/cache/OnDiskModuleCache$Companion
 	public final fun defaultCacheRoot ()Ljava/nio/file/Path;
 }
 
+public final class app/oreshkov/oracleformsmcp/convert/CustomCommandModuleConverter : app/oreshkov/oracleformsmcp/core/ModuleConverter {
+	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/nio/file/Path;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/nio/file/Path;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun convert (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getDescription ()Ljava/lang/String;
+}
+
 public final class app/oreshkov/oracleformsmcp/convert/ModuleConverters {
 	public static final field INSTANCE Lapp/oreshkov/oracleformsmcp/convert/ModuleConverters;
-	public final fun forEnvironment-SxA4cEA (Ljava/lang/String;Ljava/nio/file/Path;J)Lapp/oreshkov/oracleformsmcp/core/ModuleConverter;
-	public static synthetic fun forEnvironment-SxA4cEA$default (Lapp/oreshkov/oracleformsmcp/convert/ModuleConverters;Ljava/lang/String;Ljava/nio/file/Path;JILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/core/ModuleConverter;
+	public final fun forEnvironment-exY8QGI (Ljava/lang/String;Ljava/nio/file/Path;JLjava/lang/String;)Lapp/oreshkov/oracleformsmcp/core/ModuleConverter;
+	public static synthetic fun forEnvironment-exY8QGI$default (Lapp/oreshkov/oracleformsmcp/convert/ModuleConverters;Ljava/lang/String;Ljava/nio/file/Path;JLjava/lang/String;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/core/ModuleConverter;
 }
 
 public final class app/oreshkov/oracleformsmcp/convert/OracleToolsModuleConverter : app/oreshkov/oracleformsmcp/core/ModuleConverter {

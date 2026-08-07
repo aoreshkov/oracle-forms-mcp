@@ -40,7 +40,7 @@ class FormsServiceIntegrationTest {
         cache = OnDiskModuleCache(temp.resolve("cache")),
         annotationStore = OnDiskAnnotationStore(temp.resolve("annotations")),
         formsDir = formsDir,
-        oracleConversion = false,
+        binaryConversion = false,
     )
 
     init {
