@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`--convert-command` now takes a command *with its arguments*, not just an executable.** Site
+  wrappers are rarely a bare script — they are an interpreter, a container, or a compatibility
+  layer that needs arguments of its own (`wine frmf2xml.exe`, `convert.sh --xml --quiet`) — and
+  those were impossible to express. The value is now parsed into an argv list, either as a quoted
+  string (`"C:\tools\my conv.bat" -xml`, backslashes literal so Windows paths need no doubling) or
+  as a JSON array (`["wine", "f2x.exe", "-xml"]`, the shape MCP clients use for `command`/`args`).
+  It is still spawned directly, never through a shell. The module's absolute path is substituted
+  for `{}` anywhere in the command, and appended as the last argument when `{}` does not appear —
+  the earlier `<command> <module>` convention — so existing wrappers need no changes. A value that
+  names an existing file is taken whole, spaces and all, so an unquoted `C:\Program Files\…` path
+  configured before this change keeps working. The program may also be a bare name looked up on
+  `PATH`, and a command that cannot be started now fails with a message naming the flag instead of
+  a raw IO error.
+- The same option in every installation channel accepts the full command line: the `.mcpb` bundle
+  and the Claude Code plugin now declare `convert_command` as a text field rather than a file
+  picker (which could only ever yield one path), and the MCP Registry listing declares
+  `--convert-command` / `OFMCP_CONVERT_COMMAND` as a string rather than a filepath.
+
 ## [0.5.0] - 2026-08-07
 
 ### Added

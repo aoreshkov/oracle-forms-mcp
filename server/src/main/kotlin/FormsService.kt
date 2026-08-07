@@ -80,7 +80,7 @@ class FormsService(
     private val formsDir: Path,
     /**
      * The configured [converter] can turn a binary module into its text form (ORACLE_HOME tools or
-     * a `--convert-command` script), as opposed to copy-mode which can only read files that were
+     * a `--convert-command` command line), as opposed to copy-mode which can only read files that were
      * converted elsewhere.
      */
     private val binaryConversion: Boolean,

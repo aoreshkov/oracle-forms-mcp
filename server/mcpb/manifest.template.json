@@ -46,9 +46,9 @@
       "required": true
     },
     "convert_command": {
-      "type": "file",
+      "type": "string",
       "title": "Custom converter command (optional)",
-      "description": "Script or executable run instead of Oracle's frmf2xml, as `<command> <module>` with the working directory set to the module's cache directory. Leave empty to use an ORACLE_HOME installation, or pre-converted files next to the modules.",
+      "description": "Command run instead of Oracle's frmf2xml, with its arguments — quote any part containing spaces (\"C:\\tools\\my conv.bat\" -xml), or give a JSON array ([\"wine\",\"f2x.exe\",\"-xml\"]). It is spawned directly, never through a shell. The module's path replaces {}, or is appended when {} is absent; the working directory is the module's cache directory. Leave empty to use an ORACLE_HOME installation, or pre-converted files next to the modules.",
       "required": false,
       "default": ""
     },

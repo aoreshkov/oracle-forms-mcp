@@ -52,8 +52,9 @@ data class ServerConfig(
     val oracleHome: String? = System.getenv("ORACLE_HOME"),
     val conversionTimeout: Duration = 120.seconds,
     /**
-     * Site-supplied converter run instead of `frmf2xml`, from `--convert-command`. Operator
-     * configuration only — never reachable from a tool argument. Takes precedence over
+     * Site-supplied converter run instead of `frmf2xml`, from `--convert-command` — a whole command
+     * line with its arguments, split into argv by the converter and spawned without a shell.
+     * Operator configuration only — never reachable from a tool argument. Takes precedence over
      * [oracleHome] when set.
      */
     val convertCommand: String? = null,

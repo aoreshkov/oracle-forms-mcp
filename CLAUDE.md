@@ -72,9 +72,14 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
 - Oracle tools: `frmf2xml` writes to the process **cwd** (run it with cwd = cache `converted/`);
   exit codes are unreliable — success is judged by the output file. `frmcmp_batch` over `frmcmp`.
   `--convert-command` swaps in a site-supplied converter on the same cwd convention
-  (`CustomCommandModuleConverter`); precedence is command → `ORACLE_HOME` → copy-mode. The command
-  is **operator config only** — never reachable from a tool argument — and is spawned with an argv
-  list, never a shell. `--converted-dir` does **not** change that cwd: conversion always runs in the
+  (`CustomCommandModuleConverter`); precedence is command → `ORACLE_HOME` → copy-mode. It is a
+  **whole command line**, not an executable: `ConvertCommandSpec` splits it into argv (quoted
+  string with literal backslashes, or a JSON array) and substitutes the module path for `{}`,
+  appending it when `{}` is absent. A value naming an existing file is taken whole — that is what
+  keeps unquoted `C:\Program Files\…` configs working, so keep that check ahead of tokenizing. The
+  command is **operator config only** — never reachable from a tool argument — and is spawned with
+  an argv list, never a shell. All four channels pass it as one string (flag, env var, two
+  `user_config` text fields), so the split has to live in the server. `--converted-dir` does **not** change that cwd: conversion always runs in the
   module's private cache dir and `FormsService.relocateConverted` moves the result into the shared
   flat directory under its canonical name, because the output-file heuristic cannot tell two
   modules converting into one directory apart. Both options also read `OFMCP_CONVERT_COMMAND` /
