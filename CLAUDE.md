@@ -38,6 +38,10 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   (`routeKermitToSlf4j()` runs before the SDK creates any logger; `logback.xml` targets stderr).
 - **Index JSON stays small.** PL/SQL bodies live in `plsql/**` sidecars (or the `.pld` itself),
   referenced by 1-based inclusive `SourceRef` line ranges. Never inline code into `ModuleIndex`.
+- **`SourceRef` paths are cache-relative and layout-independent.** The converted text form is
+  always addressed as `converted/<name>` even when `--converted-dir` has moved it out of the cache
+  entry; `FormsService.resolveRef` maps that prefix to the configured directory and re-checks
+  containment against whichever root it used. Never put an absolute path in a `SourceRef`.
 - **Cache entries are fingerprinted** (size+mtime, sha256-confirmed) against the file the
   pipeline consumed; reads throw `ModuleStaleException` on mismatch. Exception messages are
   written for the model — they must say which tool call fixes the situation.
@@ -70,7 +74,12 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   `--convert-command` swaps in a site-supplied converter on the same cwd convention
   (`CustomCommandModuleConverter`); precedence is command → `ORACLE_HOME` → copy-mode. The command
   is **operator config only** — never reachable from a tool argument — and is spawned with an argv
-  list, never a shell. Shared output/exit-code handling lives in `ConversionSupport.kt`: an output
+  list, never a shell. `--converted-dir` does **not** change that cwd: conversion always runs in the
+  module's private cache dir and `FormsService.relocateConverted` moves the result into the shared
+  flat directory under its canonical name, because the output-file heuristic cannot tell two
+  modules converting into one directory apart. Both options also read `OFMCP_CONVERT_COMMAND` /
+  `OFMCP_CONVERTED_DIR` (flag wins), and `Main.configured()` treats blank *and* an unsubstituted
+  `${user_config.…}` template as unset — that is how the MCPB/plugin channels pass "not set". Shared output/exit-code handling lives in `ConversionSupport.kt`: an output
   file older than `startedAt` (minus 2s FAT slack) is rejected as a leftover, so a converter that
   copies with preserved mtimes (`copy`, `cp -p`) reads as having produced nothing.
 - This project deliberately does NOT add a custom `SegmentTemplateMatcher` (the SDK default

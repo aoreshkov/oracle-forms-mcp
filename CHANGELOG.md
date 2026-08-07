@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`--converted-dir <path>`**: keep the converted XML / `.pld` text forms in a directory of your
+  own instead of inside the cache — one flat directory for all modules, each file named the way
+  Oracle names it (`orders_fmb.xml`, `utils.pld`), so a re-fetch replaces a module's file rather
+  than accumulating copies. The directory is created if missing and may not be the forms directory
+  (the names would collide with the pre-converted modules read from there). Conversion still runs
+  in the module's own cache directory and the result is moved into place afterwards: converters are
+  driven with their working directory as the output directory and judged by "newest matching file
+  written after the run started", so converting two modules directly into one shared directory
+  could attribute one module's output to another. The index addresses the text form by a stable
+  `converted/<name>` path either way, so a cache stays valid whether or not the option is set.
+- Both converter options are now settable through **every distribution channel**, not just the
+  command line: `OFMCP_CONVERT_COMMAND` / `OFMCP_CONVERTED_DIR` environment variables (a flag wins
+  over its variable) for containers and `env`-based MCP configs, `userConfig` entries in the Claude
+  Code plugin, `user_config` entries in the `.mcpb` bundle, and declared arguments plus environment
+  variables in the MCP Registry listing. Optional values are passed to the server through the
+  environment rather than as arguments, so an unset one can never shift the argument list; an empty
+  value — or an unsubstituted `${user_config.…}` placeholder from a launcher — counts as "not
+  configured" rather than failing every conversion.
+
+### Changed
+- `search_source` now scans the module's own converted text form rather than every file in its
+  converted directory, which keeps a shared `--converted-dir` from leaking one module's hits into
+  another's results.
+
 ## [0.4.0] - 2026-08-07
 
 ### Added

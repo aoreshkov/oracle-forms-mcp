@@ -50,5 +50,13 @@ ENTRYPOINT ["/app/bin/server"]
 # A host BIND MOUNT must be writable by uid 10001 (Docker won't chown it):
 #   chown 10001 /host/cache   # once, on the host
 #   docker run -i -v /host/cache:/home/mcp/.cache -v /path/to/forms:/forms ... --forms-dir /forms
+#
+# To keep the converted XML/.pld text forms in a directory of your own (one flat directory for all
+# modules), mount it and point --converted-dir at it — as a flag or, for clients that can only set
+# variables, as OFMCP_CONVERTED_DIR. Same for a site converter: --convert-command /
+# OFMCP_CONVERT_COMMAND, with the script mounted in. Both mounts must be writable by uid 10001:
+#   chown 10001 /host/converted
+#   docker run -i -v /host/converted:/converted -v /path/to/forms:/forms \
+#     ghcr.io/aoreshkov/oracle-forms-mcp --forms-dir /forms --converted-dir /converted
 # stdio is the default transport; override with: --transport http --port 3000
 CMD ["--help"]

@@ -27,6 +27,10 @@
     "mcp_config": {
       "command": "${__dirname}/server/bin/server",
       "args": ["--forms-dir", "${user_config.forms_dir}"],
+      "env": {
+        "OFMCP_CONVERT_COMMAND": "${user_config.convert_command}",
+        "OFMCP_CONVERTED_DIR": "${user_config.converted_dir}"
+      },
       "platform_overrides": {
         "win32": {
           "command": "${__dirname}/server/bin/server.bat"
@@ -40,6 +44,20 @@
       "title": "Forms directory",
       "description": "Directory containing the Oracle Forms modules to serve. Pre-converted *_fmb.xml / *.pld files are read from here too.",
       "required": true
+    },
+    "convert_command": {
+      "type": "file",
+      "title": "Custom converter command (optional)",
+      "description": "Script or executable run instead of Oracle's frmf2xml, as `<command> <module>` with the working directory set to the module's cache directory. Leave empty to use an ORACLE_HOME installation, or pre-converted files next to the modules.",
+      "required": false,
+      "default": ""
+    },
+    "converted_dir": {
+      "type": "directory",
+      "title": "Converted XML directory (optional)",
+      "description": "Where to keep the converted XML / .pld text forms — one flat directory for all modules, each file named after its module (orders_fmb.xml, utils.pld). Leave empty to keep them inside the cache. Must not be the forms directory.",
+      "required": false,
+      "default": ""
     }
   },
   "compatibility": {

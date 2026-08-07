@@ -264,6 +264,7 @@ the container user can write.
 ```
 --forms-dir <path>          Directory containing the Forms modules (or pass it positionally)
 --convert-command <path>    Site-supplied converter to run instead of frmf2xml
+--converted-dir <path>      Where to keep the converted XML/.pld (default: inside the cache)
 --transport stdio|http      Transport (default: stdio)
 --port <int>                HTTP port (default: 3000)
 --allowed-host / --allowed-origin   Extra HTTP hosts/origins (localhost-only by default)
@@ -271,6 +272,42 @@ the container user can write.
 --annotations-dir <path>    Durable annotation store (default: <cache dir>/annotations)
 --conversion-timeout <sec>  Kill a stuck conversion (default: 120)
 ```
+
+The two converter options can also be set as environment variables, for clients that configure a
+server with variables rather than arguments (`docker run -e`, the `env` block of an MCP config).
+A flag always wins over its variable:
+
+| Flag | Variable |
+| --- | --- |
+| `--convert-command` | `OFMCP_CONVERT_COMMAND` |
+| `--converted-dir` | `OFMCP_CONVERTED_DIR` |
+
+Both are also exposed as configuration in the [Claude Code plugin](plugins/oracle-forms/README.md)
+(`/plugin` → Oracle Forms), the `.mcpb` bundle (Claude Desktop's connector settings), and the
+registry listing for the Docker image — so whichever channel you install from, you can point the
+server at your own converter and your own output directory without editing JSON by hand. Leaving
+either unset is always valid: an empty value counts as "not configured".
+
+### Keeping the converted XML
+
+By default a module's converted text form lives inside its cache entry. Point `--converted-dir` at
+a directory of your own to keep the XML where you can read, diff, or feed it to other tooling:
+
+```
+server --forms-dir C:\forms --converted-dir C:\forms-xml
+```
+
+All modules share that one flat directory, each file named the way Oracle names it —
+`orders_fmb.xml`, `mainmenu_mmb.xml`, `utils.pld` — so a re-fetch replaces a module's file rather
+than accumulating copies. The directory is created if missing, and it must not be the forms
+directory itself (the names would collide with the pre-converted modules read from there).
+
+Conversion still runs inside the module's own cache directory and the result is moved into place
+afterwards. That is deliberate: converters are driven with their working directory as the output
+directory and are judged by "the newest matching file written after the run started", so converting
+two modules directly into one shared directory could attribute one module's output to another.
+The index records the text form by a stable `converted/<name>` path either way, so it stays valid
+whether or not this option is set.
 
 ### Using your own converter
 
@@ -287,6 +324,10 @@ that module's cache directory**, and expects the text form to be written there. 
 the parser reads: XML for `.fmb`/`.mmb`/`.olb`, a `.pld` dump for `.pll`. Oracle's
 `<name>_fmb.xml` naming is preferred but not required — any `.xml` (or `.pld` for a library)
 written into the working directory is picked up.
+
+With [`--converted-dir`](#keeping-the-converted-xml) the working directory is unchanged — the
+command still writes into the module's cache directory, and the server moves the result into your
+directory afterwards under the module's canonical name. Scripts need no adjustment either way.
 
 Precedence is `--convert-command` → `ORACLE_HOME` → copy-mode, so an explicitly configured
 command wins even on a machine with a Forms installation. A blank value counts as unset. Like
@@ -318,7 +359,9 @@ ORDERS.fmb/
   index.json                    the structured index
 ```
 
-Safe to delete at any time; modules are simply re-fetched.
+Safe to delete at any time; modules are simply re-fetched. With
+[`--converted-dir`](#keeping-the-converted-xml) the `converted/` file moves out to the directory
+you name and the rest of the entry stays here.
 
 Annotations are **not** part of this derived cache. They live in a separate `annotations/` store
 (one `NAME.ext.json` per module, defaulting to `<cache dir>/annotations`, overridable with

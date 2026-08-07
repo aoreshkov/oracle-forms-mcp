@@ -34,16 +34,23 @@ public class FormsModuleParser : ModuleParser {
 }
 
 /**
- * [file] as a cache-relative path string for [SourceRef]s, falling back to the bare file name
- * when [file] lives outside [cacheDir] (only happens in tests).
+ * [file] as the cache-relative path string a [SourceRef] addresses it by.
+ *
+ * A file outside [cacheDir] is addressed by the virtual `converted/<name>` form rather than by an
+ * absolute path: the server can be configured to keep converted XML in its own directory
+ * (`--converted-dir`), and the index must stay portable, so where the text form physically lives
+ * is resolved at read time instead of being baked into the index.
  */
 internal fun cacheRelative(file: Path, cacheDir: Path): String {
     val relative = runCatching {
         cacheDir.toAbsolutePath().normalize().relativize(file.toAbsolutePath().normalize())
     }.getOrNull()
-    if (relative == null || relative.startsWith("..")) return file.name
+    if (relative == null || relative.startsWith("..")) return "$CONVERTED_DIR/${file.name}"
     return relative.joinToString("/")
 }
+
+/** Cache subdirectory (and virtual [SourceRef] prefix) of a module's converted text form. */
+internal const val CONVERTED_DIR: String = "converted"
 
 /** Replaces characters that are invalid in Windows file names. */
 internal fun sanitizeFileName(name: String): String =
