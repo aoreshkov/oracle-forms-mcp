@@ -30,12 +30,14 @@ private val USAGE = """
                                   (["wine","f2x.exe","-xml"]). It is spawned directly, never
                                   through a shell. The module's absolute path replaces {} and is
                                   appended as the last argument when {} does not appear. Runs with
-                                  the cwd set to the module's cache dir and must write the text
-                                  forms there (*_fmb.xml etc., .pld for .pll). Takes precedence
-                                  over ORACLE_HOME.
-      --converted-dir <path>      Where to keep the converted XML/.pld text forms: one flat
-                                  directory for all modules, each file named after its module
-                                  (orders_fmb.xml, utils.pld). Created if missing.
+                                  the cwd set to the converted directory (--converted-dir, else the
+                                  module's cache dir) and must write the text forms there
+                                  (*_fmb.xml etc., .pld for .pll). Takes precedence over
+                                  ORACLE_HOME.
+      --converted-dir <path>      Directory the converted XML/.pld text forms are written into:
+                                  one flat directory for all modules, each file named after its
+                                  module (orders_fmb.xml, utils.pld). The converter runs with this
+                                  as its working directory. Created if missing.
                                   Default: inside each module's own cache entry.
       --transport stdio|http      Transport to run (default: stdio)
       --port <int>                Port for the http transport (default: $DEFAULT_PORT)
@@ -154,9 +156,12 @@ internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::g
 
 /**
  * Validates `--converted-dir`. It may not exist yet (it is created at the first conversion), but it
- * must not be a file, and it must not be the forms directory itself: converted files are named
- * exactly like the pre-converted modules the scanner reads from there, so pointing it at the forms
- * directory would have the server overwrite its own inputs.
+ * must not be a file, and it must not be the forms directory itself: conversion output is *written*
+ * there under names identical to the pre-converted modules the scanner reads from the forms
+ * directory, so pointing it at the forms directory would have the server overwrite its own inputs.
+ *
+ * Equality, not containment: a subdirectory of the forms directory is fine, because the scanner
+ * reads the forms directory non-recursively.
  */
 private fun convertedDir(dir: Path, formsDir: Path): Path {
     val resolved = dir.toAbsolutePath().normalize()
@@ -165,9 +170,10 @@ private fun convertedDir(dir: Path, formsDir: Path): Path {
     }
     if (resolved == formsDir.toAbsolutePath().normalize()) {
         fail(
-            "--converted-dir must not be the forms directory ('$dir'). Converted files are named " +
-                "like the pre-converted modules read from there, so the server would overwrite " +
-                "its own inputs. Point it at a separate directory.",
+            "--converted-dir must not be the forms directory ('$dir'). Conversion output is " +
+                "written there, named like the pre-converted modules read from the forms " +
+                "directory, so the server would overwrite its own inputs. Point it at a separate " +
+                "directory (a subdirectory of the forms directory is fine).",
         )
     }
     return resolved

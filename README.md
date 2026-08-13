@@ -264,7 +264,7 @@ the container user can write.
 ```
 --forms-dir <path>          Directory containing the Forms modules (or pass it positionally)
 --convert-command <cmd>     Site-supplied converter command (with its arguments) instead of frmf2xml
---converted-dir <path>      Where to keep the converted XML/.pld (default: inside the cache)
+--converted-dir <path>      Directory the converted XML/.pld is written into (default: the cache)
 --transport stdio|http      Transport (default: stdio)
 --port <int>                HTTP port (default: 3000)
 --allowed-host / --allowed-origin   Extra HTTP hosts/origins (localhost-only by default)
@@ -300,14 +300,17 @@ server --forms-dir C:\forms --converted-dir C:\forms-xml
 All modules share that one flat directory, each file named the way Oracle names it —
 `orders_fmb.xml`, `mainmenu_mmb.xml`, `utils.pld` — so a re-fetch replaces a module's file rather
 than accumulating copies. The directory is created if missing, and it must not be the forms
-directory itself (the names would collide with the pre-converted modules read from there).
+directory itself (the names would collide with the pre-converted modules read from there); a
+subdirectory of the forms directory is fine, since it is scanned non-recursively.
 
-Conversion still runs inside the module's own cache directory and the result is moved into place
-afterwards. That is deliberate: converters are driven with their working directory as the output
-directory and are judged by "the newest matching file written after the run started", so converting
-two modules directly into one shared directory could attribute one module's output to another.
-The index records the text form by a stable `converted/<name>` path either way, so it stays valid
-whether or not this option is set.
+**This is the directory the converter writes into**, not somewhere files are moved to afterwards:
+the converter runs with it as its working directory, so a wrapper that writes to a fixed location
+can simply be pointed at it. Output is attributed to a module by Oracle's naming first
+(`orders_fmb.xml`), falling back to "the newest matching file written after the run started" for
+converters that name their output freely; conversions sharing the directory are serialised so that
+fallback cannot mix two modules up. Whatever name the converter chose, the file is renamed to the
+canonical one, and the index records it by a stable `converted/<name>` path either way — so an
+index stays valid whether or not this option is set.
 
 ### Using your own converter
 
@@ -341,18 +344,20 @@ before this option accepted arguments keeps working unquoted.
 
 The module's absolute path goes wherever you write **`{}`**; with no `{}` in the command it is
 appended as the last argument, which is what the earlier `<command> <module>` convention did. The
-command runs with the **working directory set to that module's cache directory** and is expected to
-write the text form there. This mirrors how `frmf2xml` is driven, so a script that already wraps it
-needs no changes. Emit the same formats the parser reads: XML for `.fmb`/`.mmb`/`.olb`, a `.pld`
-dump for `.pll`. Oracle's `<name>_fmb.xml` naming is preferred but not required — any `.xml` (or
-`.pld` for a library) written into the working directory is picked up.
+command runs with the **working directory set to the converted directory** — that module's cache
+directory by default — and is expected to write the text form there. This mirrors how `frmf2xml` is
+driven, so a script that already wraps it needs no changes. Emit the same formats the parser reads:
+XML for `.fmb`/`.mmb`/`.olb`, a `.pld` dump for `.pll`. Oracle's `<name>_fmb.xml` naming is
+preferred but not required — any `.xml` (or `.pld` for a library) written into the working directory
+is picked up.
 
 The program itself may be a path (absolute or relative to where the server was started) or a bare
 name, which is looked up on `PATH`.
 
-With [`--converted-dir`](#keeping-the-converted-xml) the working directory is unchanged — the
-command still writes into the module's cache directory, and the server moves the result into your
-directory afterwards under the module's canonical name. Scripts need no adjustment either way.
+With [`--converted-dir`](#keeping-the-converted-xml) that working directory *is* your directory, so
+a wrapper that writes to a fixed place of its own — rather than to wherever it was started — works
+by pointing `--converted-dir` at it. Scripts that write into their working directory need no
+adjustment either way.
 
 Precedence is `--convert-command` → `ORACLE_HOME` → copy-mode, so an explicitly configured
 command wins even on a machine with a Forms installation. A blank value counts as unset. Like
@@ -385,8 +390,8 @@ ORDERS.fmb/
 ```
 
 Safe to delete at any time; modules are simply re-fetched. With
-[`--converted-dir`](#keeping-the-converted-xml) the `converted/` file moves out to the directory
-you name and the rest of the entry stays here.
+[`--converted-dir`](#keeping-the-converted-xml) the `converted/` file is written to the directory
+you name instead and the rest of the entry stays here.
 
 Annotations are **not** part of this derived cache. They live in a separate `annotations/` store
 (one `NAME.ext.json` per module, defaulting to `<cache dir>/annotations`, overridable with
@@ -396,7 +401,8 @@ tags, and relations you recorded intact.
 ## Notes on the Oracle tools
 
 - `frmf2xml` writes its output into the process working directory; the server runs it with the
-  module's cache dir as cwd and passes `OVERWRITE=YES USE_PROPERTY_IDS=NO`.
+  converted directory as cwd (`--converted-dir`, else the module's cache dir) and passes
+  `OVERWRITE=YES USE_PROPERTY_IDS=NO`.
 - `frmcmp_batch` is preferred over `frmcmp` (headless); the server passes
   `Script=YES Batch=YES Logon=NO` and augments `FORMS_PATH` with the forms dir so attached
   libraries resolve.

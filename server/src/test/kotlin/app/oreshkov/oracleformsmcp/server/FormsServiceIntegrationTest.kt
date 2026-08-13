@@ -3,6 +3,7 @@ package app.oreshkov.oracleformsmcp.server
 import app.oreshkov.oracleformsmcp.annotation.OnDiskAnnotationStore
 import app.oreshkov.oracleformsmcp.cache.OnDiskModuleCache
 import app.oreshkov.oracleformsmcp.convert.PreConvertedCopyConverter
+import app.oreshkov.oracleformsmcp.core.ModuleConverter
 import app.oreshkov.oracleformsmcp.model.AnnotationKind
 import app.oreshkov.oracleformsmcp.model.Author
 import app.oreshkov.oracleformsmcp.model.ElementKind
@@ -13,6 +14,8 @@ import app.oreshkov.oracleformsmcp.parse.FormsModuleParser
 import app.oreshkov.oracleformsmcp.scan.FormsDirectoryScannerImpl
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import kotlin.io.path.createDirectories
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -387,11 +390,13 @@ class FormsServiceIntegrationTest {
             listOf("orders_fmb.xml", "utils.pld"),
             Files.list(convertedDir).use { it.map { path -> path.fileName.toString() }.sorted().toList() },
         )
-        // ...and nothing left behind in the cache entry it was converted in.
+        // ...written there directly: the cache entry never gets a converted/ subdirectory at all.
         assertTrue(
-            Files.notExists(Path.of(OnDiskModuleCache(temp.resolve("cache-relocated")).moduleDir(ordersKey))
-                .resolve("converted").resolve("orders_fmb.xml")),
-            "the converted file must be moved into the converted dir, not copied",
+            Files.notExists(
+                Path.of(OnDiskModuleCache(temp.resolve("cache-relocated")).moduleDir(ordersKey))
+                    .resolve("converted"),
+            ),
+            "with --converted-dir set, conversion must run in that directory, not in the cache entry",
         )
 
         // The index addresses it by the same stable ref either way, and every read resolves.
@@ -408,6 +413,40 @@ class FormsServiceIntegrationTest {
         assertTrue(libraryHits.hits.isEmpty(), "a library must not match text from another module's XML")
     }
 
+    /**
+     * A site converter is free to name its output, and every module now writes into the one shared
+     * directory — so two of them must still end up with their own text form, not each other's.
+     */
+    @Test
+    fun modulesSharingAConvertedDirKeepTheirOwnTextFormWhenTheConverterNamesItFreely() = runTest {
+        val convertedDir = temp.resolve("shared-xml")
+        val shared = FormsService(
+            scanner = FormsDirectoryScannerImpl(formsDir),
+            converter = FreeNamingConverter(),
+            parser = FormsModuleParser(),
+            cache = OnDiskModuleCache(temp.resolve("cache-shared")),
+            annotationStore = OnDiskAnnotationStore(temp.resolve("annotations-shared")),
+            formsDir = formsDir,
+            binaryConversion = false,
+            convertedDir = convertedDir,
+        )
+
+        shared.fetchModule(ordersKey)
+        shared.fetchModule(dupesKey)
+
+        // Each output was renamed to its module's canonical name; neither overwrote the other.
+        assertEquals(
+            listOf("dupes_fmb.xml", "orders_fmb.xml"),
+            Files.list(convertedDir).use { it.map { path -> path.fileName.toString() }.sorted().toList() },
+        )
+        assertEquals("converted/orders_fmb.xml", shared.index(ordersKey).convertedFile)
+        assertEquals("converted/dupes_fmb.xml", shared.index(dupesKey).convertedFile)
+
+        // ...and each module reads back its own content out of the shared directory.
+        assertEquals("ORDERS", shared.getBlock(ordersKey, "ORDERS").block.queryDataSourceName)
+        assertEquals(listOf("STOCK", "AUDIT", "FORM"), shared.overview(dupesKey).blocks)
+    }
+
     @Test
     fun libraryDumpIsServedFromThePldItself() = runTest {
         service.fetchModule(utilsKey)
@@ -415,5 +454,19 @@ class FormsServiceIntegrationTest {
         assertEquals(4, units.size)
         val body = service.getProgramUnit(utilsKey, "PKG_UTIL", unitType = "PACKAGE_BODY")
         assertTrue(body.text.startsWith("PACKAGE BODY pkg_util"))
+    }
+
+    /**
+     * A converter that writes its output under a fixed name of its own, as a site `frmf2xml`
+     * wrapper may — the case the canonical rename and [FormsService]'s shared-output lock exist for.
+     */
+    private class FreeNamingConverter : ModuleConverter {
+        override val description: String = "test converter writing output.xml"
+
+        override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String {
+            val target = Path.of(targetDir).createDirectories().resolve("output.xml")
+            Files.copy(Path.of(sourcePath), target, StandardCopyOption.REPLACE_EXISTING)
+            return target.toString()
+        }
     }
 }

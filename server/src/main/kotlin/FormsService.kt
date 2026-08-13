@@ -61,6 +61,8 @@ import kotlin.io.path.isRegularFile
 import kotlin.io.path.readLines
 import kotlin.streams.asSequence
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** A coarse [FormsService.fetchModule] phase: [step] of [totalSteps], human-readable [message]. */
@@ -90,15 +92,24 @@ class FormsService(
      * (`orders_fmb.xml`, `utils.pld`), so the text forms are browsable and reusable outside the
      * cache. `null` keeps them inside the module's own cache directory.
      *
-     * Conversion itself always runs in the module's private cache directory and the result is
-     * moved here afterwards: converters are driven with the working directory as their output
-     * directory and success is judged by "newest matching file written after the run started", so
-     * letting two modules convert in one shared directory could attribute one module's output to
-     * another.
+     * Conversion runs directly in this directory: the converter is driven with its working
+     * directory as its output directory, so a site converter that writes where it is told needs no
+     * arguments to find its way here. Output is attributed by canonical name first (see
+     * [ModuleKey.convertedFileName]), with the "newest matching file written after the run started"
+     * heuristic as a fallback for converters that name their output freely — and [sharedOutputLock]
+     * keeps that fallback unambiguous.
      */
     private val convertedDir: Path? = null,
 ) {
     private val log = Logger.withTag("FormsService")
+
+    /**
+     * Serialises conversions when [convertedDir] makes every module share one output directory: the
+     * fallback attribution heuristic ("newest matching file") cannot tell two concurrent runs
+     * apart. Only the converter call is held, not parsing or caching — and the lock is skipped
+     * entirely when each module converts in its own cache directory.
+     */
+    private val sharedOutputLock = Mutex()
 
     /**
      * Resolves a tool's `module` argument: `NAME.ext` is parsed directly; a bare name matches
@@ -183,12 +194,10 @@ class FormsService(
         log.i { "Converting and indexing $key from $source (${converter.description})" }
         val moduleDir = cache.moduleDir(key)
         onProgress(FetchProgress(1, FETCH_STEPS, "Converting $key"))
-        val converted = converter.convert(
-            key = key,
-            sourcePath = conversionSource(scanned).toString(),
-            targetDir = Path.of(moduleDir).resolve(CONVERTED_DIR).toString(),
-        )
-        val textForm = relocateConverted(key, Path.of(converted))
+        val converted =
+            if (convertedDir == null) convert(key, scanned)
+            else sharedOutputLock.withLock { convert(key, scanned) }
+        val textForm = canonicalizeConverted(key, converted)
         onProgress(FetchProgress(2, FETCH_STEPS, "Parsing $key"))
         // Parsing a large form is CPU-bound; keep it off the caller's dispatcher.
         val parsed = withContext(Dispatchers.Default) { parser.parse(key, textForm.toString(), moduleDir) }
@@ -593,6 +602,19 @@ class FormsService(
             module.preConvertedPath ?: module.binaryPath!!
         }
 
+    /**
+     * Runs the configured converter for [key] with [convertedDirOf] as both its working and its
+     * output directory, and returns the file it produced.
+     */
+    private suspend fun convert(key: ModuleKey, scanned: ScannedModule): Path =
+        Path.of(
+            converter.convert(
+                key = key,
+                sourcePath = conversionSource(scanned).toString(),
+                targetDir = convertedDirOf(key).toString(),
+            ),
+        )
+
     /** Reads the line range of [ref], guarded against paths escaping the module's cache dir. */
     private suspend fun readRef(key: ModuleKey, ref: SourceRef): String {
         val file = resolveRef(key, ref.file)
@@ -629,28 +651,22 @@ class FormsService(
         convertedDir ?: Path.of(cache.moduleDir(key)).resolve(CONVERTED_DIR)
 
     /**
-     * Moves a freshly converted file into [convertedDir] under its canonical name
-     * (`orders_fmb.xml`, `utils.pld`), and returns where it ended up. A no-op when no converted
-     * directory is configured — the file is already in the module's cache entry.
-     *
-     * The canonical name matters in a directory shared by every module: a site converter is free
-     * to name its output whatever it likes (`output.xml`), and two modules writing the same name
-     * would otherwise overwrite each other.
+     * Gives a freshly converted file its canonical name ([ModuleKey.convertedFileName]) and returns
+     * where it ended up. The file is already in the right directory — conversion runs there — so
+     * this is a rename in place, and a no-op both when the converter already used that name and
+     * when no [convertedDir] is configured (inside a module's own cache entry the file is addressed
+     * by its actual name, so renaming it would buy nothing).
      */
-    private suspend fun relocateConverted(key: ModuleKey, produced: Path): Path {
+    private suspend fun canonicalizeConverted(key: ModuleKey, produced: Path): Path {
         val root = convertedDir ?: return produced
         return withContext(Dispatchers.IO) {
-            val target = root.createDirectories().resolve(canonicalConvertedName(key))
+            val target = root.createDirectories().resolve(key.convertedFileName)
             if (target.normalize() == produced.normalize()) return@withContext target
             Files.move(produced, target, StandardCopyOption.REPLACE_EXISTING)
             log.i { "Converted $key kept at $target" }
             target
         }
     }
-
-    /** Oracle's own naming for [key]'s text form: `ORDERS.fmb` → `orders_fmb.xml`, `UTILS.pll` → `utils.pld`. */
-    private fun canonicalConvertedName(key: ModuleKey): String =
-        key.name.lowercase() + key.type.convertedSuffix
 
     /**
      * The files `search_source` scans, each with the [SourceRef]-style path a hit reports: the

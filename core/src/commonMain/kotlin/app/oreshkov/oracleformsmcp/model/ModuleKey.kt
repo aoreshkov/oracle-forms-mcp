@@ -24,6 +24,18 @@ public data class ModuleKey(
         }
     }
 
+    /**
+     * Oracle's own naming for this module's text form: `ORDERS.fmb` → `orders_fmb.xml`,
+     * `UTILS.pll` → `utils.pld`.
+     *
+     * This is what makes one output directory shared by every module (`--converted-dir`) safe: a
+     * site converter is free to name its output whatever it likes, and two modules writing the
+     * same name would otherwise overwrite — or be mistaken for — each other. Derived, so it has no
+     * backing field and is not part of the serialized form.
+     */
+    public val convertedFileName: String
+        get() = name.lowercase() + type.convertedSuffix
+
     /** Canonical `NAME.ext` form, e.g. `ORDERS.fmb`. */
     override fun toString(): String = "$name.${type.extension}"
 

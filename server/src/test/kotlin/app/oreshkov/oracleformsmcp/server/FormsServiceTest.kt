@@ -52,6 +52,41 @@ class FormsServiceTest {
         assertFalse(service.fetchModule(ordersKey).fromCache)
     }
 
+    /** `--converted-dir` is the directory the converter writes into, not a later destination. */
+    @Test
+    fun convertedDirIsHandedToTheConverterAsItsOutputDirectory() = runTest {
+        val convertedDir = temp.resolve("forms-xml")
+        val converter = CopyingConverter()
+        val service = fakeService(
+            scanner = FakeScanner(listOf(ordersModule(preConverted("orders_fmb.xml")))),
+            cacheRoot = temp.resolve("cache"),
+            converter = converter,
+            convertedDir = convertedDir,
+        )
+
+        service.fetchModule(ordersKey)
+
+        assertEquals(listOf(convertedDir.toString()), converter.targetDirs)
+    }
+
+    /** Without it, each module still converts inside its own cache entry. */
+    @Test
+    fun withoutAConvertedDirTheConverterWritesIntoTheModulesCacheEntry() = runTest {
+        val converter = CopyingConverter()
+        val service = fakeService(
+            scanner = FakeScanner(listOf(ordersModule(preConverted("orders_fmb.xml")))),
+            cacheRoot = temp.resolve("cache"),
+            converter = converter,
+        )
+
+        service.fetchModule(ordersKey)
+
+        assertEquals(
+            listOf(temp.resolve("cache").resolve("ORDERS.fmb").resolve("converted").toString()),
+            converter.targetDirs,
+        )
+    }
+
     @Test
     fun readBeforeFetchTellsModelToFetch() = runTest {
         val service = serviceFor(ordersModule(preConverted("orders_fmb.xml")))

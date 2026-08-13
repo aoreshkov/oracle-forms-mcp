@@ -8,8 +8,12 @@ import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+import java.time.Instant
+import kotlin.io.path.createDirectories
 import kotlin.io.path.name
 import kotlin.io.path.readText
+import kotlin.io.path.setLastModifiedTime
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -99,6 +103,27 @@ class CustomCommandModuleConverterTest {
         )
 
         assertEquals("utils.pld", Path.of(output).name)
+    }
+
+    /**
+     * In the one output directory `--converted-dir` gives every module, a sibling module's file may
+     * well be the newest match — so Oracle's naming for *this* module wins over the newest-file glob.
+     */
+    @Test
+    fun prefersTheCanonicalNameOverANewerSiblingInASharedOutputDirectory() = runTest {
+        val fixture = copyFixture("orders_fmb.xml", temp)
+        val script = copyingScript(fixture, "orders_fmb.xml")
+        targetDir.createDirectories()
+        targetDir.resolve("other_fmb.xml").apply {
+            writeText("<OtherModule/>")
+            // Unambiguously the newest match, without making the test wait for the clock to tick.
+            setLastModifiedTime(FileTime.from(Instant.now().plusSeconds(60)))
+        }
+
+        val output = convertOrders(converter(script))
+
+        assertEquals("orders_fmb.xml", output.name)
+        assertTrue(output.readText().contains("FormModule"))
     }
 
     /** A custom converter need not copy frmf2xml's `_fmb` basename mangling. */

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`--converted-dir` is now the directory converters write into**, not a destination files are
+  moved to after conversion. The converter runs with it as its working directory, so a
+  `--convert-command` that writes into its working directory is unaffected, while one that writes
+  to a fixed location of its own can finally be pointed at it — previously such a wrapper failed
+  with "produced no output file" even though the XML existed, because the setting was consulted
+  only *after* a successful conversion. Conversion output is now identified by its canonical name
+  (`orders_fmb.xml`) before falling back to the newest matching file, and conversions sharing one
+  output directory are serialised, so a shared directory cannot attribute one module's output to
+  another. Converted files still end up under their canonical name and the index still records
+  them as `converted/<name>`, so nothing changes for readers.
+
 ## [0.6.0] - 2026-08-10
 
 ### Fixed

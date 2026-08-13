@@ -59,9 +59,10 @@ data class ServerConfig(
      */
     val convertCommand: String? = null,
     /**
-     * One flat directory keeping every module's converted XML (and `.pld`) text form, from
-     * `--converted-dir`. Operator configuration only. `null` keeps each text form inside its
-     * module's own cache entry under [cacheDir].
+     * One flat directory holding every module's converted XML (and `.pld`) text form, from
+     * `--converted-dir`. It is the directory the converter *writes into* — it runs with this as its
+     * working directory — not somewhere files are moved afterwards. Operator configuration only.
+     * `null` keeps each text form inside its module's own cache entry under [cacheDir].
      */
     val convertedDir: Path? = null,
 )
