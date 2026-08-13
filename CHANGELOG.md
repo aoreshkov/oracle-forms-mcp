@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-13
+
 ### Changed
 - **`--converted-dir` is now the directory converters write into**, not a destination files are
   moved to after conversion. The converter runs with it as its working directory, so a
@@ -183,7 +185,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.3.0...v0.4.0
