@@ -19,8 +19,9 @@ import kotlin.time.Duration.Companion.seconds
  * split into an argv list by [ConvertCommandSpec] (a quoted string, or a JSON array), the module's
  * absolute path is substituted for `{}` — or appended when the spec has no `{}` — and the process
  * is spawned directly with that list, never through a shell, with the working directory set to the
- * module's cache directory. That mirrors how `frmf2xml` is driven: the command is expected to write
- * its output *into the working directory*, in the text forms the parser consumes — XML for
+ * directory the text form is kept in (the server's `--converted-dir` when configured, else the
+ * module's cache directory). That mirrors how `frmf2xml` is driven: the command is expected to
+ * write its output *into the working directory*, in the text forms the parser consumes — XML for
  * fmb/mmb/olb and a `.pld` dump for pll.
  *
  * The command is **operator configuration** (`--convert-command`), never something a tool caller
@@ -70,14 +71,17 @@ public class CustomCommandModuleConverter(
             )
         }
         val output = ConversionOutput.check(key, toolName, result, startedAt, timeout) {
-            // Prefer Oracle's own naming (`orders_fmb.xml`), but accept any file of the right
-            // format: a custom converter is under no obligation to copy frmf2xml's basename
-            // mangling, and the parser dispatches on the extension alone.
-            ConversionOutput.newestMatching(target, startedAt) {
-                it.endsWith(key.type.convertedSuffix, ignoreCase = true)
-            } ?: ConversionOutput.newestMatching(target, startedAt) {
-                it.endsWith(fallbackExtension(key), ignoreCase = true)
-            }
+            // Oracle's own naming (`orders_fmb.xml`) is unambiguous even in a directory shared by
+            // every module, so try it first; fall back to any file of the right format, since a
+            // custom converter is under no obligation to copy frmf2xml's basename mangling and the
+            // parser dispatches on the extension alone.
+            ConversionOutput.canonical(target, key, startedAt)
+                ?: ConversionOutput.newestMatching(target, startedAt) {
+                    it.endsWith(key.type.convertedSuffix, ignoreCase = true)
+                }
+                ?: ConversionOutput.newestMatching(target, startedAt) {
+                    it.endsWith(fallbackExtension(key), ignoreCase = true)
+                }
         }
         return output.toAbsolutePath().toString()
     }
@@ -88,9 +92,9 @@ public class CustomCommandModuleConverter(
 
     /**
      * Parses [commandSpec] and makes its program absolute. Absolutising matters because the child
-     * runs in the module's cache directory: on Unix the exec happens after the chdir, so a relative
-     * program would be looked up there. A program that is not an existing file is left untouched
-     * for the OS to resolve on `PATH` — that is how `wine`, `docker`, or `python3` are named.
+     * runs in the output directory: on Unix the exec happens after the chdir, so a relative program
+     * would be looked up there. A program that is not an existing file is left untouched for the OS
+     * to resolve on `PATH` — that is how `wine`, `docker`, or `python3` are named.
      */
     private fun resolveCommand(): List<String> {
         val template = ConvertCommandSpec.parse(commandSpec)

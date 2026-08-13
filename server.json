@@ -40,7 +40,7 @@
         {
           "type": "named",
           "name": "--converted-dir",
-          "description": "Optional. Directory the converted XML / .pld text forms are kept in — one flat directory for all modules, each file named after its module (orders_fmb.xml, utils.pld). Mount a writable volume and point this at it to keep the text forms outside the cache. Must not be the forms directory. Also settable as OFMCP_CONVERTED_DIR.",
+          "description": "Optional. Directory the converted XML / .pld text forms are written into — the converter runs with this as its working directory, one flat directory for all modules, each file named after its module (orders_fmb.xml, utils.pld). Mount a writable volume and point this at it to keep the text forms outside the cache. Must not be the forms directory. Also settable as OFMCP_CONVERTED_DIR.",
           "isRequired": false,
           "format": "filepath",
           "placeholder": "/converted"
@@ -48,7 +48,7 @@
         {
           "type": "named",
           "name": "--convert-command",
-          "description": "Optional. Site-supplied converter run instead of Oracle's frmf2xml: a whole command line with its arguments, quoting any part that contains spaces, or a JSON array of arguments. It is spawned directly, never through a shell; the module's path replaces {} and is appended when {} is absent, and the working directory is the module's cache directory. Mount the converter into the container and point this at it. Also settable as OFMCP_CONVERT_COMMAND.",
+          "description": "Optional. Site-supplied converter run instead of Oracle's frmf2xml: a whole command line with its arguments, quoting any part that contains spaces, or a JSON array of arguments. It is spawned directly, never through a shell; the module's path replaces {} and is appended when {} is absent, and the working directory is the converted directory (--converted-dir, else the module's cache directory), which is where it must write the text form. Mount the converter into the container and point this at it. Also settable as OFMCP_CONVERT_COMMAND.",
           "isRequired": false,
           "format": "string",
           "placeholder": "/opt/forms/convert.sh --xml {}"

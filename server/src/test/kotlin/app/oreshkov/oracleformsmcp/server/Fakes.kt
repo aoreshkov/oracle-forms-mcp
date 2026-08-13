@@ -30,7 +30,12 @@ internal class FakeScanner(var modules: List<ScannedModule> = emptyList()) : For
 
 internal class CopyingConverter : ModuleConverter {
     override val description: String = "fake copy converter"
+
+    /** Every `targetDir` the service handed over, in call order — the conversion output directory. */
+    val targetDirs = mutableListOf<String>()
+
     override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String {
+        targetDirs += targetDir
         val source = Path.of(sourcePath)
         val target = Path.of(targetDir).createDirectories().resolve(source.name)
         Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING)
@@ -107,12 +112,15 @@ internal fun fakeService(
     cacheRoot: Path = Files.createTempDirectory("fake-service-cache"),
     binaryConversion: Boolean = false,
     annotationStore: AnnotationStore = InMemoryAnnotationStore(),
+    converter: ModuleConverter = CopyingConverter(),
+    convertedDir: Path? = null,
 ): FormsService = FormsService(
     scanner = scanner,
-    converter = CopyingConverter(),
+    converter = converter,
     parser = FakeParser(),
     cache = InMemoryCache(cacheRoot),
     annotationStore = annotationStore,
     formsDir = Path.of("."),
     binaryConversion = binaryConversion,
+    convertedDir = convertedDir,
 )

@@ -71,6 +71,15 @@ internal object ConversionOutput {
             ?.filter { it.isRegularFile() && predicate(it.name) }
             ?.filter { it.getLastModifiedTime().toMillis() >= startedAt - STALE_GRACE_MILLIS }
             ?.maxByOrNull { it.getLastModifiedTime().toMillis() }
+
+    /**
+     * [key]'s canonically named output in [dir], when this run wrote it. Tried before
+     * [newestMatching] so a directory shared by every module (`--converted-dir`) cannot attribute
+     * one module's file to another, however recently the sibling was written. Matched
+     * case-insensitively, as the tools vary the casing.
+     */
+    fun canonical(dir: Path, key: ModuleKey, startedAt: Long): Path? =
+        newestMatching(dir, startedAt) { it.equals(key.convertedFileName, ignoreCase = true) }
 }
 
 /**

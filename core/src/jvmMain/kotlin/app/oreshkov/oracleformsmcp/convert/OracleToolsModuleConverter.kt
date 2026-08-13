@@ -15,7 +15,8 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * [ModuleConverter] shelling out to the Oracle Forms tools under `<ORACLE_HOME>/bin`:
  * `frmf2xml` for fmb/mmb/olb (writes `<basename>_fmb.xml` into the process **cwd**, so it runs
- * with cwd = the module's `converted/` cache dir) and `frmcmp_batch Script=YES` for pll.
+ * with cwd = the directory the text form is kept in — the server's `--converted-dir` when
+ * configured, else the module's `converted` cache dir) and `frmcmp_batch Script=YES` for pll.
  *
  * Tool presence is validated lazily at first conversion, so a server with a stale `ORACLE_HOME`
  * still starts and serves already-cached modules. Forms tools have unreliable exit codes, so
@@ -54,8 +55,10 @@ public class OracleToolsModuleConverter(
             extraEnv = formsPathEnv(formsDir),
         )
         return checkOutput(key, tool, result, startedAt) {
-            // frmf2xml derives the output name from the input basename; casing varies, so glob.
-            newestMatching(target, startedAt) { it.endsWith(key.type.convertedSuffix, ignoreCase = true) }
+            // frmf2xml derives the output name from the input basename, so it normally *is* the
+            // canonical one; casing varies, and only a tool that renamed the output needs the glob.
+            ConversionOutput.canonical(target, key, startedAt)
+                ?: newestMatching(target, startedAt) { it.endsWith(key.type.convertedSuffix, ignoreCase = true) }
         }
     }
 

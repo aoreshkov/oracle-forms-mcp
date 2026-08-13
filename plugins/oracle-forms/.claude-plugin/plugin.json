@@ -22,14 +22,14 @@
     "convert_command": {
       "type": "string",
       "title": "Custom converter command",
-      "description": "Optional. Command run instead of Oracle's frmf2xml, with its arguments — quote any part containing spaces (\"C:\\tools\\my conv.bat\" -xml), or give a JSON array ([\"wine\",\"f2x.exe\",\"-xml\"]). It is spawned directly, never through a shell. The module's path replaces {}, or is appended when {} is absent; the working directory is the module's cache directory. Leave empty to use an ORACLE_HOME installation, or pre-converted files next to the modules.",
+      "description": "Optional. Command run instead of Oracle's frmf2xml, with its arguments — quote any part containing spaces (\"C:\\tools\\my conv.bat\" -xml), or give a JSON array ([\"wine\",\"f2x.exe\",\"-xml\"]). It is spawned directly, never through a shell. The module's path replaces {}, or is appended when {} is absent; the working directory is the converted XML directory below, or the module's cache directory when that is empty, and the command must write the text form there. Leave empty to use an ORACLE_HOME installation, or pre-converted files next to the modules.",
       "default": "",
       "required": false
     },
     "converted_dir": {
       "type": "directory",
       "title": "Converted XML directory",
-      "description": "Optional. Where to keep the converted XML / .pld text forms — one flat directory for all modules, each file named after its module (orders_fmb.xml, utils.pld). Leave empty to keep them inside the cache. Must not be the forms directory.",
+      "description": "Optional. Directory the converted XML / .pld text forms are written into — the converter writes here directly, one flat directory for all modules, each file named after its module (orders_fmb.xml, utils.pld). Leave empty to keep them inside the cache. Must not be the forms directory.",
       "default": "",
       "required": false
     },

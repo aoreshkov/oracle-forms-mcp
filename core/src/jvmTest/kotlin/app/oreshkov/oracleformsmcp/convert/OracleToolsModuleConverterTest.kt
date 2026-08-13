@@ -8,8 +8,12 @@ import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+import java.time.Instant
+import kotlin.io.path.createDirectories
 import kotlin.io.path.name
 import kotlin.io.path.readText
+import kotlin.io.path.setLastModifiedTime
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -44,6 +48,29 @@ class OracleToolsModuleConverterTest {
 
         val output = converter().convert(
             ModuleKey.of("orders", ModuleType.FORM), binary.toString(), targetDir.toString(),
+        )
+
+        assertEquals("orders_fmb.xml", Path.of(output).name)
+        assertTrue(Path.of(output).readText().contains("FormModule"))
+    }
+
+    /**
+     * `frmf2xml` writes into its cwd, which with `--converted-dir` is shared by every module — so a
+     * sibling module's newer file must not be mistaken for this run's output.
+     */
+    @Test
+    fun prefersTheCanonicalNameOverANewerSiblingInASharedOutputDirectory() = runTest {
+        val fixture = copyFixture("orders_fmb.xml", temp)
+        FakeOracleHome.copyingTool(oracleHome, "frmf2xml", fixture, "orders_fmb.xml")
+        targetDir.createDirectories()
+        targetDir.resolve("other_fmb.xml").apply {
+            writeText("<OtherModule/>")
+            // Unambiguously the newest match, without making the test wait for the clock to tick.
+            setLastModifiedTime(FileTime.from(Instant.now().plusSeconds(60)))
+        }
+
+        val output = converter().convert(
+            ModuleKey.of("orders", ModuleType.FORM), fakeBinary("ORDERS.fmb").toString(), targetDir.toString(),
         )
 
         assertEquals("orders_fmb.xml", Path.of(output).name)

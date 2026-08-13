@@ -1544,6 +1544,7 @@ public final class app/oreshkov/oracleformsmcp/model/ModuleKey {
 	public final fun copy (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleType;)Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleType;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getConvertedFileName ()Ljava/lang/String;
 	public final fun getName ()Ljava/lang/String;
 	public final fun getType ()Lapp/oreshkov/oracleformsmcp/model/ModuleType;
 	public fun hashCode ()I
