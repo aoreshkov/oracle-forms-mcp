@@ -91,21 +91,29 @@ fun Server.registerModuleAnnotationsTemplate(service: FormsService) {
 fun Server.addModuleIndexResource(service: FormsService, key: ModuleKey) {
     val uri = moduleIndexUri(key)
     if (uri in resources) return // warm re-fetch: already registered, don't re-notify
-    addResource(
-        uri = uri,
-        name = "$key index",
-        description = "Parsed index of $key: blocks with items, triggers, program units, LOVs, " +
-            "record groups, windows, canvases, and object refs.",
-        mimeType = "application/json",
-    ) { request ->
-        ReadResourceResult(
-            contents = listOf(
-                TextResourceContents(
-                    text = toolJson.encodeToString(service.index(key)),
-                    uri = request.uri,
-                    mimeType = "application/json",
+    try {
+        addResource(
+            uri = uri,
+            name = "$key index",
+            description = "Parsed index of $key: blocks with items, triggers, program units, LOVs, " +
+                "record groups, windows, canvases, and object refs.",
+            mimeType = "application/json",
+        ) { request ->
+            ReadResourceResult(
+                contents = listOf(
+                    TextResourceContents(
+                        text = toolJson.encodeToString(service.index(key)),
+                        uri = request.uri,
+                        mimeType = "application/json",
+                    )
                 )
             )
-        )
+        }
+    } catch (_: IllegalArgumentException) {
+        // Since MCP SDK 0.15 a duplicate registration throws instead of silently replacing. The
+        // check above is check-then-act and handlers run concurrently, so two first-time fetches
+        // of one module can both reach here; losing that race is not a fetch failure, and the
+        // winner registered an identical resource. Deliberately not remove-then-re-add: that
+        // would emit a spurious listChanged and briefly unregister a resource being read.
     }
 }

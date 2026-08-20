@@ -61,6 +61,13 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   **not** an exception: it versions the plugin's own files (manifest + launcher), which change on
   their own schedule, and the server build it runs is resolved at runtime — never bump it as part
   of a release.
+- **Tool handlers run concurrently.** Since MCP SDK 0.15 the server dispatches inbound requests in
+  parallel once the handshake is done (`ServerOptions.handlerCoroutineContext`, default
+  `Dispatchers.Default`, bounded internally, no opt-out). Anything reachable from a tool must be
+  safe for that: `FormsService.fetchModule` holds a per-`ModuleKey` `Mutex`,
+  `OnDiskModuleCache.putIndex` writes-then-renames, `OnDiskAnnotationStore` serialises on
+  `writeMutex`, and `addModuleIndexResource` tolerates a lost registration race. Lock order is
+  always per-module fetch lock → `sharedOutputLock`, never the reverse.
 - Public API changes require `gradlew updateKotlinAbi` (KGP ABI validation on `core`).
 
 ## Gotchas

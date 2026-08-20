@@ -15,6 +15,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 
 class FormsServiceTest {
@@ -38,6 +42,51 @@ class FormsServiceTest {
 
     private fun ordersModule(file: Path): ScannedModule =
         ScannedModule(key = ordersKey, preConvertedPath = file.toString())
+
+    /**
+     * Tool handlers are dispatched concurrently (MCP SDK 0.15+). Without the per-module fetch lock
+     * both callers miss the cache and both run convert → parse → putIndex into the same cache
+     * directory. Exactly one may do the work; the rest must see it as a warm hit.
+     */
+    @Test
+    fun concurrentFetchesOfOneModuleConvertOnce() = runBlocking {
+        val file = preConverted("orders_fmb.xml")
+        val converter = CopyingConverter()
+        val service = fakeService(
+            scanner = FakeScanner(listOf(ordersModule(file))),
+            converter = converter,
+            cacheRoot = temp.resolve("cache"),
+        )
+
+        val summaries = List(8) { async(Dispatchers.Default) { service.fetchModule(ordersKey) } }.awaitAll()
+
+        assertEquals(1, converter.targetDirs.size, "the module was converted more than once")
+        assertEquals(1, summaries.count { !it.fromCache }, "more than one caller did the work")
+        assertEquals(1, summaries.map { it.copy(fromCache = false) }.distinct().size)
+    }
+
+    /** The lock is per module, not global: distinct modules must still convert independently. */
+    @Test
+    fun concurrentFetchesOfDifferentModulesBothConvert() = runBlocking {
+        val utilsKey = ModuleKey.of("utils", ModuleType.LIBRARY)
+        val converter = CopyingConverter()
+        val service = fakeService(
+            scanner = FakeScanner(
+                listOf(
+                    ordersModule(preConverted("orders_fmb.xml")),
+                    ScannedModule(key = utilsKey, preConvertedPath = preConverted("utils.pld").toString()),
+                )
+            ),
+            converter = converter,
+            cacheRoot = temp.resolve("cache"),
+        )
+
+        listOf(ordersKey, utilsKey)
+            .map { key -> async(Dispatchers.Default) { service.fetchModule(key) } }
+            .awaitAll()
+
+        assertEquals(2, converter.targetDirs.size)
+    }
 
     @Test
     fun fetchIsFingerprintIdempotent() = runTest {

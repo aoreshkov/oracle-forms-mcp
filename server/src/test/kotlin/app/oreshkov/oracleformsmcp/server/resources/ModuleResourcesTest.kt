@@ -13,6 +13,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 
 class ModuleResourcesTest {
 
@@ -24,6 +28,22 @@ class ModuleResourcesTest {
             ),
         ),
     )
+
+    /**
+     * Since MCP SDK 0.15 a duplicate `addResource` throws instead of silently replacing, and tool
+     * handlers run concurrently — so two first-time fetches of one module can both pass the
+     * "already registered?" check. Losing that race must not fail the fetch.
+     */
+    @Test
+    fun concurrentRegistrationOfOneModuleKeepsExactlyOneResource() = runBlocking {
+        val server = serverWithResources()
+        val service = fakeService()
+        val key = ModuleKey.of("orders", ModuleType.FORM)
+
+        List(8) { async(Dispatchers.Default) { server.addModuleIndexResource(service, key) } }.awaitAll()
+
+        assertEquals(listOf(moduleIndexUri(key)), server.resources.keys.toList())
+    }
 
     @Test
     fun indexTemplateIsRegisteredWithMetadata() {

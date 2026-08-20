@@ -55,6 +55,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
@@ -110,6 +111,17 @@ class FormsService(
      * entirely when each module converts in its own cache directory.
      */
     private val sharedOutputLock = Mutex()
+
+    /**
+     * Serialises the whole fetch pipeline per module. Tool handlers are dispatched concurrently
+     * (MCP SDK 0.15+), so two overlapping `fetch_module` calls for one key would otherwise both
+     * miss the cache and both run convert → parse → putIndex into the same cache directory.
+     *
+     * Distinct from [sharedOutputLock], which serialises *across* modules and only when they share
+     * one `--converted-dir`. Always taken before [sharedOutputLock], never the reverse, so the two
+     * cannot deadlock. Bounded by the number of modules in the forms directory.
+     */
+    private val fetchLocks = ConcurrentHashMap<ModuleKey, Mutex>()
 
     /**
      * Resolves a tool's `module` argument: `NAME.ext` is parsed directly; a bare name matches
@@ -177,6 +189,15 @@ class FormsService(
     suspend fun fetchModule(
         key: ModuleKey,
         onProgress: suspend (FetchProgress) -> Unit = {},
+    ): FetchModuleSummary =
+        // The warm path is inside the lock on purpose: hoisting the cache check out would restore
+        // the very race this closes. A caller that arrives during a cold fetch of the same module
+        // waits, then gets that fetch's result with `fromCache = true` instead of redoing the work.
+        fetchLocks.computeIfAbsent(key) { Mutex() }.withLock { fetchModuleLocked(key, onProgress) }
+
+    private suspend fun fetchModuleLocked(
+        key: ModuleKey,
+        onProgress: suspend (FetchProgress) -> Unit,
     ): FetchModuleSummary {
         val scanned = scanner.scan().find { it.key == key }
             ?: throw IllegalArgumentException(
