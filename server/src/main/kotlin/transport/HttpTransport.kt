@@ -5,9 +5,13 @@ import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
+import kotlin.time.Duration.Companion.seconds
 
 /** The SDK's DNS-rebinding protection default: only these Host values are admitted. */
 private val LOCALHOST_HOSTS = listOf("localhost", "127.0.0.1", "[::1]")
+
+/** Keep-alive cadence for idle SSE streams; see the note in [runHttpServer]. */
+private val SSE_HEARTBEAT_PERIOD = 30.seconds
 
 /**
  * Runs [server] over the MCP Streamable HTTP transport on [port] and blocks until shutdown.
@@ -16,8 +20,11 @@ private val LOCALHOST_HOSTS = listOf("localhost", "127.0.0.1", "[::1]")
  * (secure) default, which only admits requests whose Host/Origin resolve to localhost —
  * connect via `http://127.0.0.1:port/mcp`. Passing extra hosts *appends* to the localhost
  * defaults (the SDK would otherwise replace them); comparison is hostname-only, so entries
- * need no port. The SDK also caps POST bodies (4 MiB default) and supports an `eventStore`
- * for SSE resumability; both are left at their defaults here.
+ * need no port. The SDK also caps POST bodies (4 MiB default), left at its default here.
+ *
+ * The SDK still offers an `eventStore` for SSE resumability; it is deliberately not used —
+ * spec revision 2026-07-28 removes stream resumability (`Last-Event-ID`) from Streamable HTTP,
+ * so adopting it now would buy a feature on its way out.
  */
 fun runHttpServer(
     server: Server,
@@ -33,6 +40,11 @@ fun runHttpServer(
         mcpStreamableHttp(
             allowedHosts = (LOCALHOST_HOSTS + allowedHosts).takeIf { allowedHosts.isNotEmpty() },
             allowedOrigins = (LOCALHOST_HOSTS + allowedOrigins).takeIf { allowedOrigins.isNotEmpty() },
+            // A conversion can hold the stream open for --conversion-timeout (120 s by default)
+            // with only three progress frames in between, which idle-timeout proxies and clients
+            // read as a dead connection. Ktor's own default period is also 30 s — stated here so
+            // the value is greppable next to that timeout.
+            sseHeartbeatConfig = { period = SSE_HEARTBEAT_PERIOD },
         ) { server }
     }.start(wait = true)
 }

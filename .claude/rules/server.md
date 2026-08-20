@@ -22,3 +22,11 @@ add a custom `SegmentTemplateMatcher`. The SDK's default matcher works here and 
 `ModuleResourcesTest.sdkDefaultMatcherExtractsTheModuleSegment` is the regression canary. If it dies
 with `NoSuchMethodError`, a newly added dependency has reintroduced the shadowed
 `kotlinx.collections.immutable` — fix the dependency, do not add the workaround matcher.
+
+**Tool handlers run concurrently** (MCP SDK 0.15+): the server dispatches inbound requests in
+parallel after the handshake, so two tool calls can be inside `FormsService` at the same time.
+Anything you add that mutates shared state needs its own serialisation — `fetchModule` uses a
+per-`ModuleKey` `Mutex` (taken before `sharedOutputLock`, never after), the annotation store uses
+`writeMutex`. Registration is once-only: `addTool`/`addPrompt`/`addResource`/`addResourceTemplate`
+throw `IllegalArgumentException` on a duplicate name instead of silently replacing, which is why
+`addModuleIndexResource` both checks `uri in resources` and swallows that exception.

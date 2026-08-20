@@ -6,7 +6,7 @@ kover = "0.9.8"
 # the standalone binary-compatibility-validator plugin has been dropped.
 
 # Third-party
-mcp-kotlin-sdk = "0.14.0"
+mcp-kotlin-sdk = "0.15.0"
 ktor = "3.5.1"
 kotlinx-coroutines = "1.11.0"
 kotlinx-serialization = "1.11.0"
@@ -28,6 +28,9 @@ mcp-kotlin-sdk = { module = "io.modelcontextprotocol:kotlin-sdk-server", version
 # Ktor (server-side only — this project fetches nothing over the network)
 ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
 ktor-server-cio = { module = "io.ktor:ktor-server-cio", version.ref = "ktor" }
+# Declared explicitly rather than leaned on transitively via the MCP SDK: the HTTP transport
+# names Ktor's `Heartbeat` type directly (mcpStreamableHttp(sseHeartbeatConfig = ...)).
+ktor-server-sse = { module = "io.ktor:ktor-server-sse", version.ref = "ktor" }
 
 # Logging
 kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }

@@ -15,6 +15,8 @@ import app.oreshkov.oracleformsmcp.model.ScannedModule
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.io.path.createDirectories
 import kotlin.io.path.name
 import kotlin.time.Instant
@@ -31,8 +33,12 @@ internal class FakeScanner(var modules: List<ScannedModule> = emptyList()) : For
 internal class CopyingConverter : ModuleConverter {
     override val description: String = "fake copy converter"
 
-    /** Every `targetDir` the service handed over, in call order — the conversion output directory. */
-    val targetDirs = mutableListOf<String>()
+    /**
+     * Every `targetDir` the service handed over, in call order — the conversion output directory.
+     * Its size doubles as the conversion count. Thread-safe: tool handlers run concurrently
+     * (MCP SDK 0.15+) and the concurrency tests drive conversions in parallel.
+     */
+    val targetDirs: MutableList<String> = CopyOnWriteArrayList()
 
     override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String {
         targetDirs += targetDir
@@ -51,10 +57,13 @@ internal class FakeParser(
 }
 
 internal class InMemoryCache(private val root: Path) : ModuleCache {
-    val indexes = linkedMapOf<ModuleKey, ModuleIndex>()
+    // Concurrent, not linked: tool handlers run in parallel (MCP SDK 0.15+), so the concurrency
+    // tests write this map from several coroutines at once.
+    val indexes: MutableMap<ModuleKey, ModuleIndex> = ConcurrentHashMap()
     override suspend fun get(key: ModuleKey): ModuleIndex? = indexes[key]
     override suspend fun putIndex(index: ModuleIndex) { indexes[index.key] = index }
-    override suspend fun list(): List<ModuleKey> = indexes.keys.toList()
+    // Sorted, matching OnDiskModuleCache — ConcurrentHashMap has no insertion order to inherit.
+    override suspend fun list(): List<ModuleKey> = indexes.keys.sortedBy { it.toString() }
     override suspend fun clear(key: ModuleKey) { indexes.remove(key) }
     override suspend fun size(): Long = 0
     override fun moduleDir(key: ModuleKey): String =

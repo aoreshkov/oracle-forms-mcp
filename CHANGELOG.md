@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Concurrent `fetch_module` calls for the same module no longer collide.** The MCP Kotlin SDK
+  now dispatches tool calls in parallel, and the fetch pipeline (convert → parse → cache) was
+  written for the serial dispatch that preceded it: two overlapping calls both missed the cache
+  and both converted into the same directory, on Windows failing outright with "the process
+  cannot access the file because it is being used by another process". Fetches are now serialised
+  per module, so one caller does the work and the rest get its result as a cache hit. Fetches of
+  *different* modules still run in parallel.
+- **The cached module index is written atomically.** It was written in place, so a read that
+  landed mid-write saw a truncated file, treated the entry as corrupt, and silently discarded a
+  valid cache entry — reachable in normal operation once tool calls could overlap. The index is
+  now written to a temporary file and renamed over the old one, and a concurrent reader never
+  observes a partial or missing index.
+- **A module's index resource can no longer be registered twice.** Registering a duplicate is now
+  an error in the SDK rather than a silent replace, so two first-time fetches of one module raced
+  and the loser reported a successful fetch as a failure.
+
+### Changed
+- MCP Kotlin SDK 0.14.0 → 0.15.0. Malformed request parameters are now reported as `Invalid
+  params` rather than `Internal error`; clients sending `Accept: */*` or `application/*` are
+  matched correctly; Streamable HTTP responses keep their status and body for clients that accept
+  only `text/event-stream`.
+
+### Added
+- **Keep-alive heartbeats on the HTTP transport.** Converting a large module can hold the event
+  stream open for up to `--conversion-timeout` (120 s by default) with only three progress frames
+  in between, which idle-timeout proxies and clients read as a dead connection. The stream now
+  emits a heartbeat every 30 seconds.
+
 ## [0.7.0] - 2026-08-13
 
 ### Changed
