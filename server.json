@@ -3,7 +3,7 @@
   "name": "io.github.aoreshkov/oracle-forms-mcp",
   "title": "Oracle Forms",
   "description": "Serves Oracle Forms module content (.fmb/.mmb/.pll/.olb) from a directory to MCP clients.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "websiteUrl": "https://github.com/aoreshkov/oracle-forms-mcp",
   "repository": {
     "url": "https://github.com/aoreshkov/oracle-forms-mcp",
