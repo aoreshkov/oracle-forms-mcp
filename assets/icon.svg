@@ -1,34 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Oracle Forms MCP">
-  <title>Oracle Forms MCP</title>
+<!-- Generated artwork. Do not edit by hand: redraw it from its generator instead. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="oracle-forms-mcp-title">
+  <title id="oracle-forms-mcp-title">Oracle Forms MCP</title>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="oracle-forms-mcp-bg" gradientUnits="objectBoundingBox" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0d1b2a"/>
       <stop offset="1" stop-color="#132a3f"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#7F52FF"/>
+    <linearGradient id="oracle-forms-mcp-accent" gradientUnits="objectBoundingBox" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7f52ff"/>
       <stop offset="1" stop-color="#3b82f6"/>
     </linearGradient>
-    <clipPath id="rounded">
+    <clipPath id="oracle-forms-mcp-panel">
       <rect width="512" height="512" rx="96" ry="96"/>
     </clipPath>
   </defs>
-
-  <!-- panel -->
-  <rect width="512" height="512" rx="96" ry="96" fill="url(#bg)"/>
-  <g clip-path="url(#rounded)">
-    <rect width="512" height="34" fill="url(#accent)"/>
-  </g>
-
-  <!-- three form rows: an accent label chip followed by a field bar -->
-  <g>
-    <rect x="88" y="148" width="80" height="64" rx="16" fill="url(#accent)"/>
-    <rect x="184" y="148" width="240" height="64" rx="16" fill="#e2e8f0" opacity="0.92"/>
-
-    <rect x="88" y="246" width="80" height="64" rx="16" fill="url(#accent)"/>
-    <rect x="184" y="246" width="176" height="64" rx="16" fill="#cbd5e1" opacity="0.62"/>
-
-    <rect x="88" y="344" width="80" height="64" rx="16" fill="url(#accent)"/>
-    <rect x="184" y="344" width="208" height="64" rx="16" fill="#cbd5e1" opacity="0.62"/>
-  </g>
+  <rect width="512" height="512" rx="96" ry="96" fill="url(#oracle-forms-mcp-bg)"/>
+  <rect width="512" height="34" fill="url(#oracle-forms-mcp-accent)" clip-path="url(#oracle-forms-mcp-panel)"/>
+  <rect x="88" y="148" width="80" height="64" rx="16" ry="16" fill="url(#oracle-forms-mcp-accent)"/>
+  <rect x="184" y="148" width="240" height="64" rx="16" ry="16" fill="#e2e8f0" opacity="0.92"/>
+  <rect x="88" y="246" width="80" height="64" rx="16" ry="16" fill="url(#oracle-forms-mcp-accent)"/>
+  <rect x="184" y="246" width="176" height="64" rx="16" ry="16" fill="#cbd5e1" opacity="0.62"/>
+  <rect x="88" y="344" width="80" height="64" rx="16" ry="16" fill="url(#oracle-forms-mcp-accent)"/>
+  <rect x="184" y="344" width="208" height="64" rx="16" ry="16" fill="#cbd5e1" opacity="0.62"/>
 </svg>

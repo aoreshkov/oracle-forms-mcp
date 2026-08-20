@@ -24,6 +24,13 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   (`server/mcpb/manifest.template.json` → `packageMcpb`). `server.json` is the MCP Registry
   listing; the publish job rewrites its version, icon tag, and appends the `mcpb` package with the
   bundle's sha256.
+- `assets/icon.svg` + `assets/icon-512.png` — **generated artwork, not hand-edited.** Both files are
+  drawn from one geometry description by a generator kept outside this repo, and copied in; editing
+  either in place is undone by the next redraw, and editing only one re-creates the divergence they
+  were unified to fix (the SVG's gradients are per-shape, and a raster that uses one canvas-wide
+  gradient instead draws a different icon). Consumed by `server/build.gradle.kts` (server
+  resources), `server/mcpb/manifest.template.json`, and `server.json`'s tag-pinned `icons` URLs —
+  so a change here reaches the registry listing only at the next tag.
 - `plugins/oracle-forms/` + `.claude-plugin/marketplace.json` — the Claude Code plugin channel,
   served straight from the repo by `/plugin marketplace add aoreshkov/oracle-forms-mcp`. The plugin
   carries no jars: `.mcp.json` runs `launcher/OracleFormsMcpLauncher.java` in Java single-file
@@ -114,7 +121,6 @@ gradlew updateKotlinAbi       # refresh core/api/*.api after public API changes
 gradlew :server:installDist   # launcher at server/build/install/server/bin/server(.bat)
 gradlew :server:packageMcpb   # .mcpb desktop bundle at server/build/mcpb/
 gradlew :server:run --args="--forms-dir sample-forms"
-java scripts/icon/GenerateIcon.java   # re-render assets/icon-512.png after editing assets/icon.svg
 
 claude plugin validate . --strict                        # the marketplace manifest
 claude plugin validate ./plugins/oracle-forms --strict   # the Claude Code plugin manifest
