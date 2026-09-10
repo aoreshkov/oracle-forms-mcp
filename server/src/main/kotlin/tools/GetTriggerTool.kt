@@ -37,16 +37,15 @@ fun Server.registerGetTriggerTool(service: FormsService) {
     ) { request ->
         guarded {
             val args = request.args()
-            toolResult(
-                service.getTrigger(
-                    key = service.resolveModule(args.moduleArg()),
-                    name = args.requireStringArg("name"),
-                    block = args.stringArg("block"),
-                    item = args.stringArg("item"),
-                    ownerPath = args.stringArg("ownerPath"),
-                    resolve = args.booleanArg("resolve") ?: false,
-                ),
+            val result = service.getTrigger(
+                key = service.resolveModule(args.moduleArg()),
+                name = args.requireStringArg("name"),
+                block = args.stringArg("block"),
+                item = args.stringArg("item"),
+                ownerPath = args.stringArg("ownerPath"),
+                resolve = args.booleanArg("resolve") ?: false,
             )
+            toolResult(result, result.source)
         }
     }
 }

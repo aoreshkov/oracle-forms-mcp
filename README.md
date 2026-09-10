@@ -98,7 +98,32 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 | `list_program_units` | Procedures, functions, package specs/bodies with line counts |
 | `get_program_unit` | One program unit's PL/SQL (disambiguate spec/body via `unitType`); `resolve` as for `get_trigger` |
 | `search_source` | Line search over extracted PL/SQL (`plsql`), the raw XML (`xml`), or both; paginated via `offset`/`nextOffset` |
+| `read_source` | A line range of a cached file, by `uri` or `file` — the converted XML or an extracted PL/SQL sidecar |
 | `get_object_xml` | The raw XML fragment of any named object — the escape hatch |
+
+### Reading around a result
+
+Everything indexed is a line range into a file the cache owns, and those ranges used to name a
+path with no way to resolve it. Every result that points at a file now carries a `source`:
+
+```jsonc
+"source": {
+  "uri": "oracleforms://ORDERS.fmb/plsql/triggers/ORDERS.ORDER_ID.WHEN-VALIDATE-ITEM.sql",
+  "file": "plsql/triggers/ORDERS.ORDER_ID.WHEN-VALIDATE-ITEM.sql",
+  "startLine": 1, "endLine": 3
+}
+```
+
+`read_source` takes either form back, so a search hit can be read in context and a truncated
+fragment continued. The same files are readable as MCP resources —
+`oracleforms://{module}/converted` for the converted text form and
+`oracleforms://{module}/plsql/{category}/{name}` for one extracted block of PL/SQL — and every
+such result also carries a `resource_link` content block, so a client can follow it without
+parsing JSON. Reads are capped by lines *and* characters; a cut resource read says so in the text
+it returns and names the call that continues it.
+
+Paths stay cache-relative and URIs stay layout-independent: an absolute host path would mean
+nothing to a client talking to the container image or over HTTP.
 
 ### Subclassed (inherited) objects
 

@@ -11,6 +11,7 @@ import app.oreshkov.oracleformsmcp.server.prompts.registerExplainModulePrompt
 import app.oreshkov.oracleformsmcp.server.resources.ModuleIndexResources
 import app.oreshkov.oracleformsmcp.server.resources.registerModuleAnnotationsTemplate
 import app.oreshkov.oracleformsmcp.server.resources.registerModuleIndexTemplate
+import app.oreshkov.oracleformsmcp.server.resources.registerSourceTemplates
 import app.oreshkov.oracleformsmcp.server.tools.registerAnnotateElementTool
 import app.oreshkov.oracleformsmcp.server.tools.registerFetchModuleTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetBlockTool
@@ -23,6 +24,7 @@ import app.oreshkov.oracleformsmcp.server.tools.registerListBlocksTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListModulesTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListProgramUnitsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListTriggersTool
+import app.oreshkov.oracleformsmcp.server.tools.registerReadSourceTool
 import app.oreshkov.oracleformsmcp.server.tools.registerRelateElementsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerRemoveAnnotationTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchAnnotationsTool
@@ -152,6 +154,7 @@ object McpServerFactory {
             registerListProgramUnitsTool(service)
             registerGetProgramUnitTool(service)
             registerSearchSourceTool(service)
+            registerReadSourceTool(service)
             registerGetObjectXmlTool(service)
             // Annotation layer: the model writes durable meta-information about elements, and the
             // read tools above surface it inline (see the DTO `annotations` fields).
@@ -167,6 +170,9 @@ object McpServerFactory {
             // directory that snapshot was `resources/list`'s overflow.
             registerModuleIndexTemplate(service)
             registerModuleAnnotationsTemplate(service)
+            // ...and of the files behind every SourceRef, so a line range resolves to something
+            // a client can open rather than to a path only this server knows how to find.
+            registerSourceTemplates(service)
         }
 
         val logForwarderScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

@@ -48,7 +48,17 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
 - **`SourceRef` paths are cache-relative and layout-independent.** The converted text form is
   always addressed as `converted/<name>` even when `--converted-dir` has moved it out of the cache
   entry; `FormsService.resolveRef` maps that prefix to the configured directory and re-checks
-  containment against whichever root it used. Never put an absolute path in a `SourceRef`.
+  containment against whichever root it used. Never put an absolute path in a `SourceRef` — not
+  even to make one resolvable, which is what the URIs below are for.
+- **A ref a caller cannot open is half a fact.** Every result that names a file carries a
+  `SourceLocation` (`uri` + `file` + line range) and a `resource_link` content block, and
+  `read_source` takes either form back. The URIs (`resources/SourceUris.kt`) stay
+  layout-independent like the refs they mirror — an absolute host path would mean nothing under
+  the GHCR image or the HTTP transport. Sidecars are reachable by **template**
+  (`oracleforms://{module}/plsql/{category}/{name}`), never one registered resource per file: a
+  form has hundreds, and `resources/list` has no cursor in the SDK. Resource reads are capped like
+  everything else, with the cut stated *inside* the returned text — a resource read carries bytes
+  and nothing else, so a silent truncation is indistinguishable from a short file.
 - **Cache entries are fingerprinted** (size+mtime, sha256-confirmed) against the file the
   pipeline consumed; reads throw `ModuleStaleException` on mismatch. Exception messages are
   written for the model — they must say which tool call fixes the situation.

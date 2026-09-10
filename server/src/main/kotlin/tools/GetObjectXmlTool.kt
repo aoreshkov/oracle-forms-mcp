@@ -29,14 +29,13 @@ fun Server.registerGetObjectXmlTool(service: FormsService) {
     ) { request ->
         guarded {
             val args = request.args()
-            toolResult(
-                service.getObjectXml(
-                    key = service.resolveModule(args.moduleArg()),
-                    objectType = args.requireStringArg("objectType"),
-                    name = args.requireStringArg("name"),
-                    owner = args.stringArg("owner"),
-                ),
+            val result = service.getObjectXml(
+                key = service.resolveModule(args.moduleArg()),
+                objectType = args.requireStringArg("objectType"),
+                name = args.requireStringArg("name"),
+                owner = args.stringArg("owner"),
             )
+            toolResult(result, result.source)
         }
     }
 }

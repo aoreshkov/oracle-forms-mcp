@@ -105,6 +105,68 @@ class ModuleResourcesTest {
         assertEquals(mapOf("module" to "ORDERS.fmb"), match.variables)
     }
 
+    /**
+     * Templates, not one resource per sidecar. A form yields a sidecar per trigger, program unit
+     * and menu command — hundreds per module — and `resources/list` has no cursor in the SDK, so
+     * registering them individually would rebuild the overflow the bounded index set removed.
+     */
+    @Test
+    fun sourceFilesAreReachableByTemplateWithoutListingOneResourceEach() {
+        val server = serverWithResources().apply { registerSourceTemplates(fakeService()) }
+
+        assertEquals(
+            listOf(MODULE_CONVERTED_URI_TEMPLATE, MODULE_PLSQL_URI_TEMPLATE),
+            server.resourceTemplates.map { it.uriTemplate },
+        )
+        assertEquals(0, server.resources.size, "source files must add nothing to resources/list")
+        server.resourceTemplates.forEach { assertNotNull(it.description) }
+    }
+
+    /**
+     * The source templates add a two- and a four-segment shape to the same scheme. The default
+     * matcher is RFC 6570 Level 1 — one variable per segment — so the four-segment one is only
+     * safe because every part of a sidecar path is a single segment; this is the canary for that.
+     */
+    @Test
+    fun sdkDefaultMatcherExtractsTheSourceSegments() {
+        val key = ModuleKey.of("orders", ModuleType.FORM)
+        val converted = PathSegmentTemplateMatcher.factory.create(
+            ResourceTemplate(uriTemplate = MODULE_CONVERTED_URI_TEMPLATE, name = "t"),
+        )
+        assertEquals(
+            mapOf("module" to "ORDERS.fmb"),
+            assertNotNull(converted.match(moduleConvertedUri(key))).variables,
+        )
+
+        val plsql = PathSegmentTemplateMatcher.factory.create(
+            ResourceTemplate(uriTemplate = MODULE_PLSQL_URI_TEMPLATE, name = "t"),
+        )
+        val uri = modulePlsqlUri(key, "triggers", "ORDERS.KEY-COMMIT.sql")
+        assertEquals(
+            mapOf("module" to "ORDERS.fmb", "category" to "triggers", "name" to "ORDERS.KEY-COMMIT.sql"),
+            assertNotNull(plsql.match(uri)).variables,
+        )
+        // The shapes stay distinct: neither template answers for the other's URIs.
+        assertNull(converted.match(uri))
+        assertNull(plsql.match(moduleConvertedUri(key)))
+        assertNull(plsql.match(moduleIndexUri(key)))
+    }
+
+    /**
+     * URI segments reach handlers percent-decoded and may contain `/` or `..`, so what the
+     * handlers accept is stated positively rather than by blocklist.
+     */
+    @Test
+    fun onlyPlainSegmentsAreAcceptedInASourcePath() {
+        val key = ModuleKey.of("orders", ModuleType.FORM)
+        assertEquals("plsql/triggers/A.sql", sourceRefPath(key, modulePlsqlUri(key, "triggers", "A.sql"), "c/o.xml"))
+        assertNull(sourceRefPath(key, "oracleforms://ORDERS.fmb/plsql/../../etc/passwd", "c/o.xml"))
+        assertNull(sourceRefPath(key, "oracleforms://OTHER.fmb/converted", "c/o.xml"), "another module's URI")
+        assertNull(sourceRefPath(key, "plsql/triggers/A.sql", "c/o.xml"), "not a URI at all")
+        assertNull(sourceUri(key, "plsql/triggers/../../escape.sql"))
+        assertNull(sourceUri(key, "somewhere/else.txt"), "an unknown ref shape gets no URI")
+    }
+
     @Test
     fun sdkDefaultMatcherRejectsUrisWithDifferentShape() {
         val matcher = PathSegmentTemplateMatcher.factory.create(

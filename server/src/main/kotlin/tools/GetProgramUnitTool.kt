@@ -30,14 +30,13 @@ fun Server.registerGetProgramUnitTool(service: FormsService) {
     ) { request ->
         guarded {
             val args = request.args()
-            toolResult(
-                service.getProgramUnit(
-                    key = service.resolveModule(args.moduleArg()),
-                    name = args.requireStringArg("name"),
-                    unitType = args.stringArg("unitType"),
-                    resolve = args.booleanArg("resolve") ?: false,
-                ),
+            val result = service.getProgramUnit(
+                key = service.resolveModule(args.moduleArg()),
+                name = args.requireStringArg("name"),
+                unitType = args.stringArg("unitType"),
+                resolve = args.booleanArg("resolve") ?: false,
             )
+            toolResult(result, result.source)
         }
     }
 }

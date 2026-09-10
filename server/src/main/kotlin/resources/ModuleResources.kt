@@ -84,6 +84,76 @@ fun Server.registerModuleAnnotationsTemplate(service: FormsService) {
     }
 }
 
+/**
+ * Registers the two templates that make a `SourceRef` openable:
+ * `oracleforms://{module}/converted` for the module's converted text form, and
+ * `oracleforms://{module}/plsql/{category}/{name}` for one extracted PL/SQL sidecar.
+ *
+ * Templates rather than per-file resources on purpose. A form produces one sidecar per trigger,
+ * program unit and menu command — hundreds per module — and `resources/list` has no cursor in the
+ * Kotlin SDK, so registering them individually would re-create exactly the overflow the bounded
+ * index registrations were introduced to stop. A template addresses all of them and lists as one
+ * entry.
+ *
+ * Contents are capped, with the cut stated inside the text: a resource read returns bytes and
+ * nothing else, so a silently truncated file would be indistinguishable from a short one.
+ */
+fun Server.registerSourceTemplates(service: FormsService) {
+    addResourceTemplate(
+        uriTemplate = MODULE_CONVERTED_URI_TEMPLATE,
+        name = "Forms module converted text",
+        description = "The converted text form of a fetched module — Forms2XML output for a form, " +
+            "menu or object library, or the .pld dump of a PL/SQL library. This is the file every " +
+            "SourceRef line range points into. Large files are capped; read a range with " +
+            "read_source. The segment is 'NAME.ext', e.g. 'ORDERS.fmb'.",
+        mimeType = "application/xml",
+    ) { request, variables ->
+        val key = moduleKeyOf(variables)
+        ReadResourceResult(
+            contents = listOf(
+                TextResourceContents(
+                    text = service.readSourceResource(key, moduleConvertedUri(key)),
+                    uri = request.uri,
+                    mimeType = sourceMimeType(service.index(key).convertedFile),
+                )
+            )
+        )
+    }
+    addResourceTemplate(
+        uriTemplate = MODULE_PLSQL_URI_TEMPLATE,
+        name = "Forms module PL/SQL source",
+        description = "One block of PL/SQL extracted from a fetched module during parsing: " +
+            "category is 'triggers', 'program-units' or 'menu-items', and name is the sidecar file " +
+            "name recorded in a result's 'source.file'. Capped; read a range with read_source.",
+        mimeType = "text/plain",
+    ) { request, variables ->
+        val key = moduleKeyOf(variables)
+        // Untrusted, percent-decoded URI segments; validated here and containment-checked again
+        // when the path is resolved against the module's cache directory.
+        val category = variables.getValue("category")
+        val name = variables.getValue("name")
+        require(isSafeSegment(category) && isSafeSegment(name)) {
+            "Invalid PL/SQL path in resource URI: '$category/$name'"
+        }
+        ReadResourceResult(
+            contents = listOf(
+                TextResourceContents(
+                    text = service.readSourceResource(key, modulePlsqlUri(key, category, name)),
+                    uri = request.uri,
+                    mimeType = "text/plain",
+                )
+            )
+        )
+    }
+}
+
+/** The module a template match names, rejecting a segment that is not a plain `NAME.ext`. */
+private fun moduleKeyOf(variables: Map<String, String>): ModuleKey {
+    val segment = variables.getValue("module")
+    require(MODULE_SEGMENT.matches(segment)) { "Invalid module segment in resource URI: '$segment'" }
+    return ModuleKey.parse(segment)
+}
+
 /** How many per-module index resources [ModuleIndexResources] keeps registered at once. */
 const val MAX_MODULE_INDEX_RESOURCES: Int = 50
 
