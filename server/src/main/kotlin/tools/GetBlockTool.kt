@@ -22,12 +22,11 @@ fun Server.registerGetBlockTool(service: FormsService) {
     ) { request ->
         guarded {
             val args = request.args()
-            toolResult(
-                service.getBlock(
-                    service.resolveModule(args.moduleArg()),
-                    args.requireStringArg("block"),
-                ),
+            val result = service.getBlock(
+                service.resolveModule(args.moduleArg()),
+                args.requireStringArg("block"),
             )
+            toolResult(result, result.source)
         }
     }
 }

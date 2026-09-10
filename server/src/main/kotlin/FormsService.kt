@@ -30,6 +30,8 @@ import app.oreshkov.oracleformsmcp.dto.RelationCreated
 import app.oreshkov.oracleformsmcp.dto.RelationView
 import app.oreshkov.oracleformsmcp.dto.SearchHit
 import app.oreshkov.oracleformsmcp.dto.SearchResults
+import app.oreshkov.oracleformsmcp.dto.SourceLocation
+import app.oreshkov.oracleformsmcp.dto.SourceText
 import app.oreshkov.oracleformsmcp.dto.TriggerList
 import app.oreshkov.oracleformsmcp.dto.TriggerSource
 import app.oreshkov.oracleformsmcp.dto.TriggerSummary
@@ -52,6 +54,10 @@ import app.oreshkov.oracleformsmcp.model.ScannedModule
 import app.oreshkov.oracleformsmcp.model.SourceRef
 import app.oreshkov.oracleformsmcp.model.TriggerInfo
 import app.oreshkov.oracleformsmcp.model.TriggerLevel
+import app.oreshkov.oracleformsmcp.server.resources.moduleConvertedUri
+import app.oreshkov.oracleformsmcp.server.resources.sourceMimeType
+import app.oreshkov.oracleformsmcp.server.resources.sourceRefPath
+import app.oreshkov.oracleformsmcp.server.resources.sourceUri
 import co.touchlab.kermit.Logger
 import java.nio.file.Files
 import java.nio.file.Path
@@ -340,6 +346,7 @@ class FormsService(
         return BlockDetail(
             module = index.key,
             block = block,
+            source = locationOf(index.key, block.sourceRef),
             hint = block.inherited?.let { ref ->
                 inheritedHint(
                     subject = "Block '${block.name}'",
@@ -436,6 +443,8 @@ class FormsService(
             item = trigger.itemName,
             text = followed?.text ?: own,
             bodySource = if (followed != null) BodySource.RESOLVED else bodySourceOf(own, inherited),
+            // A resolved body came out of the parent module's file, so that is what it points at.
+            source = followed?.let { locationOf(it.module, it.ref) } ?: locationOf(index.key, ref),
             inherited = inherited,
             resolvedFrom = followed?.module,
             hint = if (inherited == null || followed != null) null else inheritedHint(
@@ -514,6 +523,8 @@ class FormsService(
             unitType = unit.unitType,
             text = followed?.text ?: own,
             bodySource = if (followed != null) BodySource.RESOLVED else bodySourceOf(own, inherited),
+            // A resolved body came out of the parent module's file, so that is what it points at.
+            source = followed?.let { locationOf(it.module, it.ref) } ?: locationOf(index.key, ref),
             inherited = inherited,
             resolvedFrom = followed?.module,
             hint = if (inherited == null || followed != null) null else inheritedHint(
@@ -570,6 +581,7 @@ class FormsService(
                     path = refPath,
                     line = lineIndex + 1,
                     snippet = line.trim().take(200),
+                    uri = sourceUri(key, refPath),
                 )
             }
         }
@@ -611,6 +623,7 @@ class FormsService(
             xml = if (capped) xml.take(MAX_OBJECT_XML_CHARS) else xml,
             startLine = ref.ref.startLine,
             truncated = capped,
+            source = locationOf(index.key, ref.ref),
             // The fragment itself only shows SubclassSubObject="true"; the parent pointer lives on
             // the enclosing element, so it is served here rather than left one call away.
             inherited = ref.inherited,
@@ -619,6 +632,74 @@ class FormsService(
                 ElementId(index.key, ElementKind.OBJECT, ref.name, ref.ownerPath),
             ),
         )
+    }
+
+    /**
+     * Reads one capped slice of a cached file — the operation that makes every `SourceLocation`
+     * this server hands out actually openable, instead of a line range against a path only the
+     * server can resolve.
+     *
+     * [target] is either a source URI (`oracleforms://ORDERS.fmb/converted`) or the cache-relative
+     * path a ref carries (`plsql/triggers/ORDERS.KEY-COMMIT.sql`); both are accepted because both
+     * appear in the results a caller is reading from. Whichever it is, it is resolved through the
+     * same containment check as every other read, so a path cannot escape the module's cache.
+     *
+     * The response is bounded twice — [maxLines] rows and a character ceiling — because neither
+     * bound alone is enough: a converted form runs to hundreds of thousands of lines, and a single
+     * line of a doubly-escaped PL/SQL body can be the whole procedure.
+     */
+    suspend fun readSource(
+        key: ModuleKey,
+        target: String,
+        startLine: Int? = null,
+        endLine: Int? = null,
+        maxLines: Int? = null,
+    ): SourceText {
+        val index = index(key) // staleness/fetched check before touching files
+        val refPath = refPathOf(key, index, target)
+        val file = resolveRef(key, refPath)
+        if (!file.exists()) {
+            throw IllegalStateException(
+                "Cached file $refPath of $key is missing. Call fetch_module to re-index it.",
+            )
+        }
+        val lines = withContext(Dispatchers.IO) { file.readLines() }
+        val from = (startLine ?: 1).coerceAtLeast(1)
+        require(lines.isEmpty() || from <= lines.size) {
+            "startLine $from is past the end of $refPath, which has ${lines.size} lines."
+        }
+        val requestedTo = (endLine ?: lines.size).coerceAtMost(lines.size)
+        val (text, lastLine, cut) = slice(lines, from, requestedTo, maxLines)
+        return SourceText(
+            module = key,
+            source = SourceLocation(
+                uri = sourceUri(key, refPath).orEmpty(),
+                file = refPath,
+                startLine = from,
+                endLine = lastLine,
+            ),
+            totalLines = lines.size,
+            truncated = cut,
+            text = text,
+        )
+    }
+
+    /**
+     * A whole cached file as resource content: [readSource] over everything, with the truncation
+     * stated *in* the text. A resource read returns bytes and nothing else, so a silently cut file
+     * would be indistinguishable from a short one — the marker names the call that continues it.
+     */
+    suspend fun readSourceResource(key: ModuleKey, target: String): String {
+        val slice = readSource(key, target, maxLines = MAX_SOURCE_LINES)
+        if (!slice.truncated) return slice.text
+        val next = slice.source.endLine + 1
+        val note = "truncated at line ${slice.source.endLine} of ${slice.totalLines}; " +
+            "call read_source(module=\"$key\", uri=\"${slice.source.uri}\", startLine=$next) for the rest"
+        return slice.text + if (sourceMimeType(slice.source.file) == "application/xml") {
+            "\n<!-- $note -->"
+        } else {
+            "\n-- $note"
+        }
     }
 
     /** Every module with a cached index (feeds the MCP resources). */
@@ -981,6 +1062,69 @@ class FormsService(
         return files.sortedBy { it.first }
     }
 
+    // --- addressable source (SourceLocation, read_source) ---
+
+    /** The addressable location of [ref] in [key]'s cache — a ref plus the URI that opens it. */
+    private fun locationOf(key: ModuleKey, ref: SourceRef?): SourceLocation? = ref?.let {
+        SourceLocation(
+            uri = sourceUri(key, it.file).orEmpty(),
+            file = it.file,
+            startLine = it.startLine,
+            endLine = it.endLine,
+        )
+    }
+
+    /**
+     * The cache-relative path [target] names, whether it arrived as a source URI or as the ref
+     * path itself. A URI for a *different* module is rejected rather than silently read against
+     * this one, and the message says which two disagree.
+     */
+    private fun refPathOf(key: ModuleKey, index: ModuleIndex, target: String): String {
+        val trimmed = target.trim()
+        require(trimmed.isNotEmpty()) { "Pass 'uri' or 'file' naming the source to read." }
+        if (!trimmed.contains("://")) return trimmed
+        return sourceRefPath(key, trimmed, index.convertedFile) ?: throw IllegalArgumentException(
+            "'$trimmed' is not a source URI of $key. Source URIs look like " +
+                "'oracleforms://$key/converted' or 'oracleforms://$key/plsql/triggers/NAME.sql', " +
+                "and every result that points at a file carries one as 'source.uri'.",
+        )
+    }
+
+    /**
+     * Lines [from]..[to] of [lines], stopping at whichever ceiling comes first, with the last line
+     * actually taken and whether anything was left behind.
+     *
+     * The character budget is checked per line rather than on the joined result so a file of very
+     * long lines costs one line of overshoot, not the whole slice — except for a first line that
+     * alone exceeds the budget, which is taken and then cut, because returning nothing would be
+     * worse than returning a prefix that says it is one.
+     */
+    private fun slice(
+        lines: List<String>,
+        from: Int,
+        to: Int,
+        maxLines: Int?,
+    ): Triple<String, Int, Boolean> {
+        val cap = (maxLines ?: DEFAULT_SOURCE_LINES).coerceIn(1, MAX_SOURCE_LINES)
+        val taken = mutableListOf<String>()
+        var chars = 0
+        var last = from - 1
+        for (i in from..to) {
+            if (taken.size == cap) break
+            val line = lines[i - 1]
+            if (taken.isNotEmpty() && chars + line.length + 1 > MAX_SOURCE_CHARS) break
+            taken += line
+            chars += line.length + 1
+            last = i
+        }
+        val joined = taken.joinToString("\n")
+        return if (joined.length > MAX_SOURCE_CHARS) {
+            Triple(joined.take(MAX_SOURCE_CHARS), last, true)
+        } else {
+            Triple(joined, maxOf(last, from), last < to)
+        }
+    }
+
     // --- subclassing (inherited objects) ---
 
     /**
@@ -997,8 +1141,11 @@ class FormsService(
     /** One hop of a subclassing walk: where the parent object points next, and its body ref. */
     private class InheritedStep(val next: InheritanceRef?, val textRef: SourceRef?)
 
-    /** A body found by following a subclassing pointer, and the module it was found in. */
-    private class InheritedBody(val module: ModuleKey, val text: String)
+    /**
+     * A body found by following a subclassing pointer: the module it was found in, the text, and
+     * the [ref] it came from — which addresses a file in *that* module's cache, not this one's.
+     */
+    private class InheritedBody(val module: ModuleKey, val text: String, val ref: SourceRef)
 
     /**
      * The `ownerPath` to look under in the parent module, or `null` for "wherever it is there".
@@ -1034,8 +1181,11 @@ class FormsService(
             if (!visited.add(parentKey)) return null // a chain that loops back on itself
             val parentIndex = runCatching { index(parentKey) }.getOrNull() ?: return null
             val found = runCatching { step(parentIndex, pointer) }.getOrNull() ?: return null
-            val text = found.textRef?.let { readRef(parentKey, it) }.orEmpty()
-            if (text.isNotBlank()) return InheritedBody(parentKey, text)
+            val textRef = found.textRef
+            if (textRef != null) {
+                val text = readRef(parentKey, textRef)
+                if (text.isNotBlank()) return InheritedBody(parentKey, text, textRef)
+            }
             pointer = found.next ?: return null // empty and not inherited further: nothing to find
         }
         return null
@@ -1349,6 +1499,7 @@ class FormsService(
         programUnitCount = programUnits.size,
         attachedLibraries = attachedLibraries.map { it.name },
         fromCache = fromCache,
+        convertedUri = moduleConvertedUri(key),
     )
 
     private companion object {
@@ -1364,6 +1515,16 @@ class FormsService(
          */
         const val MAX_LIST_ROWS = 1_000
         const val MAX_OVERVIEW_NAMES = 500
+
+        /**
+         * `read_source` ceilings. Two of them, because neither bounds this data alone: a converted
+         * form is hundreds of thousands of lines, while a doubly-escaped PL/SQL body can be one
+         * line holding a whole procedure. [DEFAULT_SOURCE_LINES] is what a caller gets without
+         * asking — enough for a trigger body or an XML fragment, small enough to read twice.
+         */
+        const val DEFAULT_SOURCE_LINES = 200
+        const val MAX_SOURCE_LINES = 2_000
+        const val MAX_SOURCE_CHARS = 100_000
 
         /**
          * How far `resolve` walks a subclassing chain. Forms allows a parent to be subclassed in

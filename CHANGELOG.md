@@ -35,6 +35,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the `oracleforms://{module}/index` URI template, which addresses all of them.
 
 ### Added
+- **Source refs are addressable.** A `SourceRef` line range named a cache-relative path with no
+  tool exposing the root, so locating the file it pointed at meant searching the filesystem. Every
+  result that names a file now carries a `source` — the cache-relative `file`, the line range, and
+  a `uri` that opens it — plus a `resource_link` content block, and `fetch_module` returns the
+  `convertedUri` of the text form it produced. `search_source` hits carry the `uri` of the file
+  they were found in. The paths stay layout-independent: an absolute host path would be useless
+  under the container image and over HTTP, and it is the one thing a `SourceRef` must never carry.
+- `read_source` — a line range of any cached file, by `uri` or by `file`, with `startLine`,
+  `endLine` and `maxLines`. Capped on both lines and characters (neither bounds this data alone:
+  a converted form runs to hundreds of thousands of lines, while one line of PL/SQL can be a whole
+  procedure), reporting `totalLines` and `truncated` so the next call knows where to resume.
+- Resource templates `oracleforms://{module}/converted` and
+  `oracleforms://{module}/plsql/{category}/{name}`, so a client's own resource machinery can read
+  the converted text form and the extracted PL/SQL. Templates rather than one resource per file —
+  a form yields hundreds of sidecars, and `resources/list` has no cursor. Reads are capped, and a
+  truncated one says so in the text it returns, naming the `read_source` call that continues it.
 - `bodySource` on every result that serves PL/SQL (`own`, `inherited`, `resolved`, `empty`) and an
   `inherited` reference naming the parent module, file, and the object's name and owner path
   *there* — shaped so it is directly callable (`BAR_LIST.SELECT` here is `name: SELECT`,

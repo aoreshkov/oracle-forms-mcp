@@ -14,6 +14,12 @@ Tool files in `tools/` are **declarative adapters**: parse args → call `FormsS
 matching `structuredContent`. DTO fields are defaulted so output schemas stay forward-compatible.
 `ToolRegistrationTest` enforces all of this — a new tool that skips a piece fails that test.
 
+**A result that names a file carries a `SourceLocation`** (`uri` + cache-relative `file` + line
+range) and passes it to `toolResult(dto, dto.source)`, which attaches the `resource_link` block.
+URIs are built in `resources/SourceUris.kt` — kept apart from `ModuleResources.kt` so `FormsService`
+and the resource handlers can both use it without depending on each other. Never mint a URI for a
+ref shape no resource covers: an omitted field is honest, a dead link is not.
+
 **stdout is the stdio protocol channel.** Never `println`/write to stdout to debug — all logging
 goes Kermit → SLF4J → Logback → stderr.
 

@@ -14,13 +14,16 @@ import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
+import io.modelcontextprotocol.kotlin.sdk.types.ResourceLink
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
@@ -106,6 +109,26 @@ class GetTriggerToolTest {
         assertEquals("TOOLBAR", inherited.getValue("module").jsonPrimitive.content)
         assertEquals("BAR.SELECT", inherited.getValue("ownerPath").jsonPrimitive.content)
         assertTrue(result.field("hint")!!.contains("fetch_module(module=\"TOOLBAR.fmb\")"))
+    }
+
+    /**
+     * The spec lets a tool return links to resources it can read, and a client follows those with
+     * its own resource machinery rather than by parsing a path out of the JSON — so the link has
+     * to reach the wire beside the structured content, not instead of it.
+     */
+    @Test
+    fun aResultThatNamesAFileShipsAResourceLinkBesideTheJson() = runBlocking {
+        service.fetchModule(pickerKey)
+        service.fetchModule(toolbarKey)
+
+        val content = getTrigger(resolve = true).content
+        assertEquals(1, content.filterIsInstance<TextContent>().size, "the JSON payload must stay")
+        val link = content.filterIsInstance<ResourceLink>().single()
+
+        // Resolved from the parent, so the link addresses the parent's file — not this module's.
+        assertTrue(link.uri.startsWith("oracleforms://TOOLBAR.fmb/plsql/triggers/"), link.uri)
+        assertEquals("text/plain", link.mimeType)
+        assertTrue(assertNotNull(link.description).contains("read_source"))
     }
 
     @Test

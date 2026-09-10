@@ -1,7 +1,10 @@
 package app.oreshkov.oracleformsmcp.server.tools
 
+import app.oreshkov.oracleformsmcp.dto.SourceLocation
+import app.oreshkov.oracleformsmcp.server.resources.sourceMimeType
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.ResourceLink
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
@@ -29,11 +32,27 @@ internal val toolJson = Json { prettyPrint = true }
  * (for clients without structured-output support) and `structuredContent` matching the tool's
  * `outputSchema` (see [outputSchemaOf]).
  */
-internal inline fun <reified T> toolResult(value: T): CallToolResult {
+internal inline fun <reified T> toolResult(value: T, source: SourceLocation? = null): CallToolResult {
     val json = toolJson.encodeToJsonElement(value)
     return CallToolResult(
-        content = listOf(TextContent(toolJson.encodeToString(json))),
+        content = listOfNotNull(TextContent(toolJson.encodeToString(json)), source?.asResourceLink()),
         structuredContent = json as? JsonObject,
+    )
+}
+
+/**
+ * The `resource_link` block for a result that points at a file, so the file is reachable by the
+ * client's own resource machinery and not only by reading a path out of the JSON. The spec allows
+ * exactly this: a tool MAY return links to resources it can read.
+ *
+ * A location without a URI (a ref shape no resource covers) yields no link rather than a dead one.
+ */
+internal fun SourceLocation.asResourceLink(): ResourceLink? = uri.takeIf { it.isNotBlank() }?.let {
+    ResourceLink(
+        name = file.substringAfterLast('/'),
+        uri = it,
+        description = "Lines $startLine-$endLine of $file. Read a range with read_source.",
+        mimeType = sourceMimeType(file),
     )
 }
 

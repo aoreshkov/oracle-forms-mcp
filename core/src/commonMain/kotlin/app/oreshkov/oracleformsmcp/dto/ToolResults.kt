@@ -20,6 +20,42 @@ import kotlinx.serialization.Serializable
  */
 
 /**
+ * A readable location inside a module's cached files: the cache-relative [file] and 1-based
+ * inclusive line range of a `SourceRef`, plus the [uri] that addresses it.
+ *
+ * The line range is only useful if something can act on it. A cache-relative path is deliberately
+ * layout-independent — the cache root is not a client's business, and under the container image or
+ * the HTTP transport a host path means nothing at all — so the range on its own resolved to
+ * nothing a caller could open. [uri] closes that: it addresses the same file as an MCP resource,
+ * and `read_source` takes either form.
+ */
+@Serializable
+@SerialName("SourceLocation")
+public data class SourceLocation(
+    val uri: String = "",
+    val file: String = "",
+    val startLine: Int = 1,
+    val endLine: Int = 1,
+)
+
+/**
+ * `read_source` — one capped slice of a cached file.
+ *
+ * [source] echoes the range actually returned, which is not necessarily the range asked for:
+ * [truncated] says the request was cut at the line or character ceiling, and [totalLines] gives
+ * the size of the whole file so the next call can pick up where this one stopped.
+ */
+@Serializable
+@SerialName("SourceText")
+public data class SourceText(
+    val module: ModuleKey,
+    val source: SourceLocation = SourceLocation(),
+    val totalLines: Int = 0,
+    val truncated: Boolean = false,
+    val text: String = "",
+)
+
+/**
  * Where the PL/SQL body served beside this value came from.
  *
  * The distinction exists because [INHERITED] and [EMPTY] look identical on the wire — both carry
@@ -92,6 +128,12 @@ public data class FetchModuleSummary(
     val programUnitCount: Int = 0,
     val attachedLibraries: List<String> = emptyList(),
     val fromCache: Boolean = false,
+    /**
+     * Where the module's converted text form can be read, as a resource URI. The first thing a
+     * caller wants after a fetch is the file everything else points into, and the cache-relative
+     * paths in the index name it without saying where it is.
+     */
+    val convertedUri: String? = null,
 )
 
 /**
@@ -154,6 +196,7 @@ public data class BlockList(
 public data class BlockDetail(
     val module: ModuleKey,
     val block: BlockInfo,
+    val source: SourceLocation? = null,
     val hint: String? = null,
     val annotations: ElementAnnotations = ElementAnnotations(),
 )
@@ -206,6 +249,7 @@ public data class TriggerSource(
     val item: String? = null,
     val text: String,
     val bodySource: BodySource = BodySource.OWN,
+    val source: SourceLocation? = null,
     val inherited: InheritanceRef? = null,
     val resolvedFrom: ModuleKey? = null,
     val hint: String? = null,
@@ -240,6 +284,7 @@ public data class ProgramUnitSource(
     val unitType: ProgramUnitType,
     val text: String,
     val bodySource: BodySource = BodySource.OWN,
+    val source: SourceLocation? = null,
     val inherited: InheritanceRef? = null,
     val resolvedFrom: ModuleKey? = null,
     val hint: String? = null,
@@ -253,6 +298,8 @@ public data class SearchHit(
     val path: String,
     val line: Int,
     val snippet: String,
+    /** Resource URI of [path], so a hit can be opened rather than only reported. */
+    val uri: String? = null,
 )
 
 /**
@@ -286,8 +333,10 @@ public data class ObjectXml(
     val name: String,
     val ownerPath: String? = null,
     val xml: String,
+    /** Where the fragment starts in the converted file. Superseded by [source], kept for callers. */
     val startLine: Int = 1,
     val truncated: Boolean = false,
+    val source: SourceLocation? = null,
     val inherited: InheritanceRef? = null,
     val annotations: ElementAnnotations = ElementAnnotations(),
 )
