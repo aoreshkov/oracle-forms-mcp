@@ -45,7 +45,7 @@ class ModuleIndexSerializationTest {
             ),
         ),
         objectRefs = listOf(
-            ObjectRef("Block", "ORDERS", null, SourceRef("converted/orders_fmb.xml", 10, 42)),
+            ObjectRef("Block", "ORDERS", null, null, SourceRef("converted/orders_fmb.xml", 10, 42)),
         ),
     )
 

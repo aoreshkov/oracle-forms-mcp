@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+  <FormModule Name="PICKER" Title="Subclassed toolbar over a modal picker">
+    <Block Name="BAR_LIST" ParentModule="TOOLBAR" ParentModuleType="12" ParentName="BAR" ParentFilename="toolbar.fmb" ParentType="3">
+      <Item Name="SELECT" SubclassSubObject="true" CanvasName="BAR_LIST">
+        <Trigger Name="WHEN-BUTTON-PRESSED" SubclassSubObject="true"/>
+      </Item>
+      <Item Name="CANCEL" SubclassSubObject="true" CanvasName="BAR_LIST">
+        <Trigger Name="WHEN-BUTTON-PRESSED" SubclassSubObject="true" TriggerText="-- overridden locally&#10;Exit_Form(NO_VALIDATE);"/>
+      </Item>
+      <Item Name="COUNT" ItemType="Display Item" DataType="Number" CanvasName="BAR_LIST" Prompt="Rows"/>
+    </Block>
+    <Block Name="CUSTOMERS" QueryDataSourceName="CUSTOMERS">
+      <Item Name="NAME" ItemType="Text Item" DataType="Char" ColumnName="NAME" CanvasName="CV_LIST" Prompt="Name" ParentModule="PICKER" ParentModuleType="12" ParentName="PC_TEXT" ParentType="29"/>
+      <Item Name="REF" ItemType="Text Item" DataType="Char" ColumnName="REF" CanvasName="CV_LIST" Prompt="Reference"/>
+      <Trigger Name="KEY-HELP" TriggerText="BEGIN&#10;  :GLOBAL.picked_name := :CUSTOMERS.NAME;&#10;  :GLOBAL.picked_ref  := :CUSTOMERS.REF;&#10;  Exit_Form;&#10;END;"/>
+    </Block>
+    <Block Name="ORPHAN">
+      <Item Name="FLAG" ItemType="Check Box" SubclassSubObject="true" CanvasName="CV_LIST"/>
+      <Trigger Name="WHEN-NEW-BLOCK-INSTANCE" TriggerText=""/>
+    </Block>
+    <Block Name="MSG" ParentModule="SHARED" ParentModuleType="25" ParentName="STD" ParentFilename="shared.olb" SubclassObjectGroup="true" ParentType="23">
+      <Item Name="LVL" SubclassSubObject="true"/>
+    </Block>
+    <Canvas Name="BAR_LIST" CanvasType="Horizontal Toolbar" WindowName="WIN_LIST"/>
+    <Canvas Name="CV_LIST" CanvasType="Content" WindowName="WIN_LIST"/>
+    <ProgramUnit Name="BAR_REFRESH" ProgramUnitType="Procedure" ParentModule="TOOLBAR" ParentModuleType="12" ParentName="BAR_REFRESH" ParentFilename="toolbar.fmb"/>
+    <ProgramUnit Name="SHOW_INFO" ProgramUnitType="Procedure" ParentModule="SHARED" ParentModuleType="25" ParentName="STD" ParentFilename="shared.olb" SubclassObjectGroup="true" ParentType="23"/>
+    <PropertyClass Name="PC_TEXT"/>
+    <Trigger Name="ON-ERROR" ParentModule="SHARED" ParentModuleType="25" ParentName="STD" ParentFilename="shared.olb" SubclassObjectGroup="true" ParentType="23"/>
+    <Window Name="WIN_LIST" Title="Pick a customer" Modal="true" HorizontalToolbarCanvasName="BAR_LIST"/>
+  </FormModule>
+</Module>

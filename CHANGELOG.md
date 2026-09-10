@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Inherited (subclassed) objects are no longer served as empty.** A block, item, trigger or
+  program unit subclassed from another module stores only its overrides, so its body came back as
+  `""` with nothing to distinguish "this trigger has no code" from "this trigger's code lives in
+  another module" — a reader who trusted the tool concluded the button did nothing. Forms splits
+  the pointer across two levels (`ParentModule`/`ParentFilename`/`ParentName` on the owner,
+  `SubclassSubObject="true"` on each inherited child), so even `get_object_xml` on the object
+  itself could not answer it. The parser now reassembles that pointer and states it in the parent
+  module's own vocabulary, and `get_trigger`, `get_program_unit`, `get_block`, `list_triggers` and
+  `get_object_xml` all carry it. The same applies to objects copied in with an **object group**,
+  whose form-level triggers and program units are stored empty in exactly the same way; a parent
+  in the same module, which is a property class rather than a hidden definition, is not reported
+  as inheritance.
 - **`list_modules` no longer overflows on a real forms directory.** It returned every module
   unconditionally, so a directory of a few thousand modules produced a response several times
   larger than the tool-output limit of any MCP client — discovery, the entry point to every other
@@ -23,6 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the `oracleforms://{module}/index` URI template, which addresses all of them.
 
 ### Added
+- `bodySource` on every result that serves PL/SQL (`own`, `inherited`, `resolved`, `empty`) and an
+  `inherited` reference naming the parent module, file, and the object's name and owner path
+  *there* — shaped so it is directly callable (`BAR_LIST.SELECT` here is `name: SELECT`,
+  `ownerPath: BAR` in the parent), plus `objectGroup` where a group carried the object in. When a
+  body is inherited, the result also carries a hint naming the exact next call.
+- `resolve` on `get_trigger` and `get_program_unit`: follows the subclassing pointer and returns
+  the inherited body with `resolvedFrom`. It reads only modules that are **already cached** —
+  reaching an un-cached one would mean converting it, which a `readOnlyHint` tool must not do — and
+  degrades to the pointer plus a `fetch_module` hint rather than failing.
+- `get_object_xml` returns the subclassing pointer resolved to the level it was asked about, so
+  the escape hatch answers the question that sent a reader to it.
 - A hard row ceiling plus a `truncated` flag on every list-shaped result (`list_blocks`,
   `list_triggers`, `list_program_units`, `search_annotations`, and each section of
   `get_module_overview`), with `total` reporting what was left behind. A capped page that says so

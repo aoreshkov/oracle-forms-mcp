@@ -57,6 +57,23 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   never `SourceRef` line ranges), so they survive re-fetch and cache eviction. A source-fingerprint
   mismatch is a `staleAgainstSource` drift flag on the served view, never a delete. Never inline
   annotations into `ModuleIndex`.
+- **An empty body is never served as a fact.** A subclassed object stores only its overrides, so
+  its `TriggerText` is empty here while the code that runs lives in the parent module. Every read
+  that serves a body carries a `bodySource` (`own`/`inherited`/`resolved`/`empty`) and, when it is
+  `inherited`, the `InheritanceRef` plus a hint naming the exact next call. The pointer is
+  reassembled by the parser (`FormsXmlParser.inheritanceOf`) because Forms splits it across two
+  levels — `ParentModule` on the owner, `SubclassSubObject` on the child — and it is stated in the
+  *parent's* vocabulary (`BAR_LIST.SELECT` here is `name=SELECT, ownerPath=BAR` there) so it is
+  directly callable. `get_trigger`/`get_program_unit` take `resolve` to follow it, but only into
+  **already-cached** modules: converting one would break `readOnlyHint`.
+- **The `Parent*` attributes mean three different things**, and only two are inheritance.
+  `ParentFilename` (or a `ParentModule` naming another module) is a real subclassing pointer and
+  `ParentName` is the object's name *there*. `SubclassObjectGroup="true"` means the object was
+  copied in with an **object group**: it keeps its own name, and `ParentName` is the *group* — so
+  it goes in `objectGroup`, and no `ownerPath` is claimed, because where a library puts a group's
+  members is not recorded here. A `ParentModule` naming **this** module is a *property class*,
+  which supplies properties and hides nothing; it is deliberately **not** an `InheritanceRef` —
+  a real form carries dozens, and reporting them would be uncallable noise.
 - **The XML parser never fails on unknown vocabulary.** Forms XML is huge and version-dependent;
   unknown elements are skipped generically (but still get an `ObjectRef` when named).
 - **Every tool** declares title, annotations, and `outputSchemaOf<Dto>()`; DTO fields are

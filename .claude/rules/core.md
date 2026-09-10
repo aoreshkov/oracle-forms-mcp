@@ -15,6 +15,22 @@ paths:
   to the `AnnotationStore` (its own root, keyed by a stable `ElementId` — never `SourceRef` line
   ranges), decoupled from the derived cache so they survive re-fetch. A source-fingerprint mismatch
   is a `staleAgainstSource` drift flag on the served view, not a reason to delete the annotation.
+- **Subclassing pointers are reassembled, never invented.** Forms puts the cross-module pointer
+  (`ParentModule`/`ParentFilename`/`ParentName`) on the *owner* and only `SubclassSubObject="true"`
+  on each inherited child, so `inheritanceOf` threads it down the element stack and translates the
+  path into the parent's own names. Only the *immediately* enclosing element's pointer is
+  followed: Forms marks every link of a chain, so a gap means the object in between is defined
+  here, and continuing across it would fabricate a parent path. An object marked subclassed with
+  no pointer above it still gets a bare `InheritanceRef` — the point of the field is that an empty
+  body must never read as "there is no code".
+- **The same `Parent*` attributes carry three unrelated relationships**, so `inheritanceOf`
+  classifies before it records: a pointer into *another* module (`ParentName` = the object's name
+  there), an **object group** copy (`SubclassObjectGroup="true"` — the object keeps its own name,
+  `ParentName` is the group, and no owner path in the library may be asserted), and a **property
+  class** in this same module (`ParentModule` = this module, no `ParentFilename`), which is not
+  inheritance at all and must stay out of `InheritanceRef`. Getting this wrong is not a cosmetic
+  slip: it emits pointers that address the wrong kind of object at paths that do not exist, on the
+  majority of items in a typical form.
 - **The XML parser never fails on unknown vocabulary.** Forms XML is huge and version-dependent;
   unknown elements are skipped generically, but a named element still gets an `ObjectRef`. Do not
   add hard failures for unexpected tags.

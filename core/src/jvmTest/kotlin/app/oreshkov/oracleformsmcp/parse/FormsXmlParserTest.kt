@@ -15,6 +15,7 @@ import kotlin.io.path.readText
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -38,8 +39,14 @@ class FormsXmlParserTest {
 
     private fun dupesIndex() = parseFixture("dupes_fmb.xml", ModuleKey.of("dupes", ModuleType.FORM))
 
-    private fun readRef(ref: SourceRef): String =
-        cacheDir.resolve(ref.file).readLines().subList(ref.startLine - 1, ref.endLine).joinToString("\n")
+    private fun pickerIndex() = parseFixture("picker_fmb.xml", ModuleKey.of("picker", ModuleType.FORM))
+
+    /** Slices a ref the way FormsService.readRef does — an empty sidecar has no lines to take. */
+    private fun readRef(ref: SourceRef): String {
+        val lines = cacheDir.resolve(ref.file).readLines()
+        val end = ref.endLine.coerceAtMost(lines.size)
+        return if (ref.startLine > end) "" else lines.subList(ref.startLine - 1, end).joinToString("\n")
+    }
 
     @Test
     fun indexesAllSections() {
@@ -217,6 +224,123 @@ class FormsXmlParserTest {
         )
         val idRefs = index.objectRefs.filter { it.objectType == "Item" && it.name == "ID" }
         assertEquals(setOf("STOCK", "AUDIT"), idRefs.map { it.ownerPath }.toSet())
+    }
+
+    @Test
+    fun subclassedBlockCarriesItsCrossModulePointer() {
+        val block = pickerIndex().blocks.single { it.name == "BAR_LIST" }
+        val ref = assertNotNull(block.inherited)
+        assertEquals("TOOLBAR", ref.module)
+        assertEquals("toolbar.fmb", ref.file)
+        assertEquals("BAR", ref.name) // its name over there, not BAR_LIST
+        assertEquals(null, ref.ownerPath)
+        assertEquals("3", ref.parentType)
+        assertFalse(ref.subObject)
+    }
+
+    @Test
+    fun subclassedChildrenInheritThePointerWithTheParentsPath() {
+        val block = pickerIndex().blocks.single { it.name == "BAR_LIST" }
+        val item = assertNotNull(block.items.single { it.name == "SELECT" }.inherited)
+        assertEquals("TOOLBAR", item.module)
+        assertEquals("SELECT", item.name)
+        assertEquals("BAR", item.ownerPath) // BAR_LIST.SELECT here is BAR.SELECT there
+        assertTrue(item.subObject)
+
+        val trigger = pickerIndex().triggers.single {
+            it.name == "WHEN-BUTTON-PRESSED" && it.itemName == "SELECT"
+        }
+        val ref = assertNotNull(trigger.inherited)
+        assertEquals("TOOLBAR", ref.module)
+        assertEquals("toolbar.fmb", ref.file)
+        assertEquals("BAR.SELECT", ref.ownerPath)
+        assertEquals("", readRef(assertNotNull(trigger.textRef)))
+    }
+
+    @Test
+    fun aLocallyOverriddenBodyKeepsItsOwnText() {
+        // Subclassed, but this module supplies the code: the pointer stands, the body is real.
+        val trigger = pickerIndex().triggers.single {
+            it.name == "WHEN-BUTTON-PRESSED" && it.itemName == "CANCEL"
+        }
+        assertNotNull(trigger.inherited)
+        assertTrue(readRef(assertNotNull(trigger.textRef)).contains("Exit_Form(NO_VALIDATE)"))
+    }
+
+    @Test
+    fun aPropertyClassInThisSameModuleIsNotAnInheritancePointer() {
+        // `ParentName` also carries the property class, with ParentModule naming *this* module.
+        // Nothing is hidden there — the class is indexed alongside — and a real form has dozens,
+        // so treating it as inheritance would be both wrong and the bulk of get_block's payload.
+        val item = pickerIndex().blocks.single { it.name == "CUSTOMERS" }.items.single { it.name == "NAME" }
+        assertEquals(null, item.inherited)
+    }
+
+    @Test
+    fun objectGroupMembersKeepTheirOwnNameAndRecordTheGroup() {
+        val index = pickerIndex()
+        val block = index.blocks.single { it.name == "MSG" }
+        val ref = assertNotNull(block.inherited)
+        assertEquals("SHARED", ref.module)
+        assertEquals("shared.olb", ref.file)
+        assertEquals("MSG", ref.name) // its own name — ParentName ("STD") is the group
+        assertEquals("STD", ref.objectGroup)
+        assertEquals(null, ref.ownerPath)
+
+        // Members inherit the group and hang off the object's own path, not the group's name.
+        val item = assertNotNull(block.items.single { it.name == "LVL" }.inherited)
+        assertEquals("MSG", item.ownerPath)
+        assertEquals("LVL", item.name)
+        assertEquals("STD", item.objectGroup)
+
+        // Top-level triggers and program units come in the same way, and are empty here.
+        val trigger = index.triggers.single { it.name == "ON-ERROR" }
+        assertEquals("ON-ERROR", assertNotNull(trigger.inherited).name)
+        assertEquals("STD", trigger.inherited.objectGroup)
+        assertEquals("", readRef(assertNotNull(trigger.textRef)))
+        val unit = index.programUnits.single { it.name == "SHOW_INFO" }
+        assertEquals("SHOW_INFO", assertNotNull(unit.inherited).name)
+    }
+
+    @Test
+    fun subclassedObjectWithNoPointerAboveItIsStillFlagged() {
+        val item = pickerIndex().blocks.single { it.name == "ORPHAN" }.items.single()
+        val ref = assertNotNull(item.inherited)
+        assertTrue(ref.subObject)
+        assertEquals(null, ref.module)
+        assertEquals(null, ref.ownerPath)
+    }
+
+    @Test
+    fun objectRefsCarryTheInheritanceOfTheLevelTheyAddress() {
+        // The raw Item fragment holds only SubclassSubObject="true" — the parent pointer is on the
+        // enclosing Block, which is exactly why the ref resolves it down to this level.
+        val index = pickerIndex()
+        val item = index.objectRefs.single {
+            it.objectType == "Item" && it.name == "SELECT" && it.ownerPath == "BAR_LIST"
+        }
+        assertEquals("BAR", assertNotNull(item.inherited).ownerPath)
+        val trigger = index.objectRefs.single {
+            it.objectType == "Trigger" && it.ownerPath == "BAR_LIST.SELECT"
+        }
+        assertEquals("BAR.SELECT", assertNotNull(trigger.inherited).ownerPath)
+    }
+
+    @Test
+    fun subclassedProgramUnitCarriesItsPointer() {
+        val unit = pickerIndex().programUnits.single { it.name == "BAR_REFRESH" }
+        val ref = assertNotNull(unit.inherited)
+        assertEquals("TOOLBAR", ref.module)
+        assertEquals("BAR_REFRESH", ref.name)
+        assertEquals("", readRef(assertNotNull(unit.textRef)))
+    }
+
+    @Test
+    fun ordinaryObjectsCarryNoInheritance() {
+        val index = ordersIndex()
+        assertTrue(index.blocks.all { it.inherited == null && it.items.all { i -> i.inherited == null } })
+        assertTrue(index.triggers.all { it.inherited == null })
+        assertTrue(index.objectRefs.all { it.inherited == null })
     }
 
     @Test

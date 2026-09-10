@@ -12,7 +12,9 @@ fun Server.registerGetObjectXmlTool(service: FormsService) {
             "is the Forms2XML element name (Block, Item, Trigger, Canvas, Window, LOV, " +
             "RecordGroup, Alert, VisualAttribute, …). Pass 'owner' (e.g. 'ORDERS' or " +
             "'ORDERS.ORDER_ID') when the name exists at several scopes. Large fragments are " +
-            "truncated (flagged in the result).",
+            "truncated (flagged in the result). Forms writes the subclassing pointer on the " +
+            "enclosing owner, so a fragment of a subclassed object shows only " +
+            "SubclassSubObject=\"true\"; the resolved pointer is returned beside it as 'inherited'.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "objectType" to stringProp("XML element name, e.g. 'Block', 'Trigger', 'LOV'"),

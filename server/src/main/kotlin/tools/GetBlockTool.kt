@@ -8,7 +8,10 @@ fun Server.registerGetBlockTool(service: FormsService) {
     addTool(
         name = "get_block",
         description = "Full detail of one block: base table, every item (with item type, data " +
-            "type, column, canvas, prompt, and item-trigger names), and the block's trigger names.",
+            "type, column, canvas, prompt, and item-trigger names), and the block's trigger names. " +
+            "A subclassed block (or item) carries an 'inherited' pointer to the module that " +
+            "defines it — what is listed here is then only this module's overrides, and the " +
+            "result's hint names the call that reaches the full definition.",
         inputSchema = moduleSchema(
             extraProps = mapOf("block" to stringProp("Block name, e.g. 'ORDERS'")),
             extraRequired = listOf("block"),

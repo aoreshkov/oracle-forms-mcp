@@ -4,6 +4,7 @@ import app.oreshkov.oracleformsmcp.model.AlertInfo
 import app.oreshkov.oracleformsmcp.model.AttachedLibraryInfo
 import app.oreshkov.oracleformsmcp.model.BlockInfo
 import app.oreshkov.oracleformsmcp.model.CanvasInfo
+import app.oreshkov.oracleformsmcp.model.InheritanceRef
 import app.oreshkov.oracleformsmcp.model.ItemInfo
 import app.oreshkov.oracleformsmcp.model.LovInfo
 import app.oreshkov.oracleformsmcp.model.MenuInfo
@@ -41,6 +42,11 @@ import kotlin.time.Clock
  * Line semantics: StAX reports an event's *end* location, so an element's start line is taken
  * from where the previous event ended (see [startLineOf]) — exact for the one-element-per-line
  * layout Forms2XML writes, and at worst one line early. Pinned by FormsXmlParserTest.
+ *
+ * Subclassing is tracked down the element stack (see [inheritanceOf]): an element carrying a
+ * cross-module pointer opens a chain, and its `SubclassSubObject` children continue it one
+ * segment deeper — so an inherited trigger knows the parent module *and* the path to address it
+ * there, which neither its own element nor its owner's carries alone.
  */
 internal object FormsXmlParser {
 
@@ -49,9 +55,14 @@ internal object FormsXmlParser {
         val name: String?,
         val startLine: Int,
         val ownerPath: String?,
+        val inherited: InheritanceRef?,
     )
 
-    private class BlockBuilder(val name: String, val queryDataSourceName: String?) {
+    private class BlockBuilder(
+        val name: String,
+        val queryDataSourceName: String?,
+        val inherited: InheritanceRef?,
+    ) {
         val items = mutableListOf<ItemInfo>()
         val triggerNames = mutableListOf<String>()
     }
@@ -63,6 +74,7 @@ internal object FormsXmlParser {
         val columnName: String?,
         val canvasName: String?,
         val prompt: String?,
+        val inherited: InheritanceRef?,
     ) {
         val triggerNames = mutableListOf<String>()
     }
@@ -72,6 +84,9 @@ internal object FormsXmlParser {
         val xmlPath = cacheRelative(convertedFile, moduleCacheDir)
 
         var formsVersion: String? = null
+        // The module's own name, to tell a parent in another module from a property class in this
+        // one. Taken from the module element itself; the key is the fallback for a headless parse.
+        var moduleName: String? = key.name
         val blocks = mutableListOf<BlockInfo>()
         val triggers = mutableListOf<TriggerInfo>()
         val programUnits = mutableListOf<ProgramUnitInfo>()
@@ -111,13 +126,20 @@ internal object FormsXmlParser {
                         val startLine = startLineOf(prevEventEndLine, eventEndLine)
                         val parent = stack.lastOrNull()
                         val ownerPath = ownerPathOf(stack)
-                        stack.addLast(Frame(element, name, startLine, ownerPath))
+                        val inherited = inheritanceOf(reader, name, parent?.inherited, moduleName)
+                        stack.addLast(Frame(element, name, startLine, ownerPath, inherited))
 
                         when (element) {
                             "Module" -> formsVersion = reader.attr("version")
 
+                            // Every object below the module root is compared against this name.
+                            "FormModule", "MenuModule", "ObjectLibrary" ->
+                                moduleName = name ?: moduleName
+
                             "Block" -> if (parent?.element == "FormModule") {
-                                block = BlockBuilder(name ?: "", reader.attr("QueryDataSourceName"))
+                                block = BlockBuilder(
+                                    name ?: "", reader.attr("QueryDataSourceName"), inherited,
+                                )
                             }
 
                             "Item" -> if (block != null && parent?.element == "Block") {
@@ -128,6 +150,7 @@ internal object FormsXmlParser {
                                     columnName = reader.attr("ColumnName"),
                                     canvasName = reader.attr("CanvasName"),
                                     prompt = reader.attr("Prompt"),
+                                    inherited = inherited,
                                 )
                             }
 
@@ -151,6 +174,7 @@ internal object FormsXmlParser {
                                     itemName = if (level == TriggerLevel.ITEM) item?.name else null,
                                     firstLine = firstCodeLine(text),
                                     lineCount = lineCountOf(text),
+                                    inherited = inherited,
                                     textRef = textRef,
                                     // xmlRef is filled in at the matching END_ELEMENT.
                                 )
@@ -172,6 +196,7 @@ internal object FormsXmlParser {
                                     name = unitName,
                                     unitType = unitType,
                                     lineCount = lineCountOf(text),
+                                    inherited = inherited,
                                     textRef = textRef,
                                 )
                             }
@@ -244,6 +269,7 @@ internal object FormsXmlParser {
                                 objectType = frame.element,
                                 name = frame.name,
                                 ownerPath = frame.ownerPath,
+                                inherited = frame.inherited,
                                 ref = SourceRef(xmlPath, frame.startLine, endLine),
                             )
                         }
@@ -262,6 +288,7 @@ internal object FormsXmlParser {
                                     queryDataSourceName = it.queryDataSourceName,
                                     items = it.items.toList(),
                                     triggerNames = it.triggerNames.toList(),
+                                    inherited = it.inherited,
                                     sourceRef = SourceRef(xmlPath, frame.startLine, endLine),
                                 )
                                 block = null
@@ -278,6 +305,7 @@ internal object FormsXmlParser {
                                             canvasName = built.canvasName,
                                             prompt = built.prompt,
                                             triggerNames = built.triggerNames.toList(),
+                                            inherited = built.inherited,
                                         ),
                                     )
                                     item = null
@@ -328,6 +356,93 @@ internal object FormsXmlParser {
      */
     private fun startLineOf(prevEventEndLine: Int, currentEventEndLine: Int): Int =
         minOf(prevEventEndLine, currentEventEndLine).coerceAtLeast(1)
+
+    /**
+     * The pointer to another module's copy of the element being opened, or `null` when its
+     * definition is right here.
+     *
+     * Forms records three different things with the same family of `Parent*` attributes, and they
+     * do not mean the same thing:
+     *
+     * 1. **Subclassed from another module** — `ParentFilename` names the file and `ParentName` the
+     *    object's name *over there* (`BAR_LIST` here is `BAR` in `toolbar.fmb`). The definition is
+     *    hidden; this is the case the pointer exists for.
+     * 2. **Copied in with an object group** — `SubclassObjectGroup="true"`. The object keeps its
+     *    own name and place in the parent, and `ParentName` names the **group**, not the object.
+     *    Taking `ParentName` as the name here would point every member of a group at the group.
+     * 3. **A property class in this same module** — `ParentModule` naming the module itself, with
+     *    no `ParentFilename`. Nothing is hidden: the property class is indexed alongside and
+     *    supplies properties, not a body. Emitting a ref would be both wrong (it addresses an
+     *    object of a different kind, at a path that does not exist) and noisy — a real form runs
+     *    to dozens of them.
+     *
+     * Cases 1 and 2 are recorded; case 3 is not — it is the property class of gap "item
+     * semantics", not an inheritance pointer.
+     *
+     * A child of an inherited object carries only `SubclassSubObject="true"`, which says neither
+     * which module nor which path, so the owner's pointer is threaded down the stack one segment
+     * at a time. Only [ownerRef], the *immediately* enclosing element's pointer, is followed:
+     * Forms marks every link of a chain, so a gap means the object in between was defined here,
+     * and continuing across it would invent a parent path.
+     *
+     * A `SubclassSubObject` with no pointer above it still yields a bare [InheritanceRef] — the
+     * object is known to be inherited even though this file does not say from where, and saying
+     * so is the whole point: an empty body with no ref reads as "there is no code".
+     */
+    private fun inheritanceOf(
+        reader: XMLStreamReader,
+        name: String?,
+        ownerRef: InheritanceRef?,
+        moduleName: String?,
+    ): InheritanceRef? {
+        val parentModule = reader.attr("ParentModule")
+        val parentFilename = reader.attr("ParentFilename")
+        val parentName = reader.attr("ParentName")
+        val parentType = reader.attr("ParentType")
+        val objectGroup = reader.attr("SubclassObjectGroup").equals("true", ignoreCase = true)
+        val subObject = reader.attr("SubclassSubObject").equals("true", ignoreCase = true)
+        // A parent in this same module hides nothing (case 3 above); a filename always means
+        // another file, and is checked first so a converter that omits ParentModule still works.
+        val elsewhere = parentFilename != null ||
+            (parentModule != null && !parentModule.equals(moduleName, ignoreCase = true))
+        return when {
+            // Case 2: keep the object's own identity, record the group that carried it.
+            elsewhere && objectGroup -> InheritanceRef(
+                module = parentModule,
+                file = parentFilename,
+                name = name,
+                ownerPath = ownerRef?.let { joinPath(it.ownerPath, it.name) },
+                objectGroup = parentName,
+                parentType = parentType,
+            )
+            // Case 1: ParentName is this object's name in the parent module.
+            elsewhere -> InheritanceRef(
+                module = parentModule,
+                file = parentFilename,
+                name = parentName ?: name,
+                ownerPath = ownerRef?.let { joinPath(it.ownerPath, it.name) },
+                parentType = parentType,
+            )
+            // Inherited through the owner: same parent module, one path segment deeper. Forms
+            // writes no ParentName on a sub-object — it is the same name on both sides.
+            subObject && ownerRef != null -> InheritanceRef(
+                module = ownerRef.module,
+                file = ownerRef.file,
+                name = name,
+                ownerPath = joinPath(ownerRef.ownerPath, ownerRef.name),
+                objectGroup = ownerRef.objectGroup,
+                parentType = parentType,
+                subObject = true,
+            )
+            // Subclassed, but nothing above it named a parent module.
+            subObject -> InheritanceRef(parentType = parentType, subObject = true)
+            else -> null
+        }
+    }
+
+    /** Dotted join of an owner path and a name, `null` when both are absent. */
+    private fun joinPath(ownerPath: String?, name: String?): String? =
+        listOfNotNull(ownerPath, name).joinToString(".").ifEmpty { null }
 
     /** Dotted names of the enclosing named elements below the module root, or `null` at top level. */
     private fun ownerPathOf(stack: ArrayDeque<Frame>): String? =

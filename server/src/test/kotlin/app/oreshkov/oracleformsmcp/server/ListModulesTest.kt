@@ -123,21 +123,21 @@ class ListModulesTest {
 
     @Test
     fun patternMatchesNamesCaseInsensitivelyAsASubstring() = runTest {
-        val service = serviceFor(listOf(realModule("E_MISSREC"), realModule("E_PIECE"), realModule("ORDERS")))
+        val service = serviceFor(listOf(realModule("SALES_ORDERS"), realModule("SALES_INVOICES"), realModule("ORDERS")))
 
-        val result = service.listModules(pattern = "missrec")
+        val result = service.listModules(pattern = "invoices")
 
-        assertEquals(listOf("E_MISSREC"), result.modules.map { it.name })
+        assertEquals(listOf("SALES_INVOICES"), result.modules.map { it.name })
         assertEquals(1, result.total)
     }
 
     @Test
     fun patternIsARegexWhenAsked() = runTest {
-        val service = serviceFor(listOf(realModule("E_MISSREC"), realModule("E_PIECE"), realModule("ORDERS")))
+        val service = serviceFor(listOf(realModule("SALES_ORDERS"), realModule("SALES_INVOICES"), realModule("ORDERS")))
 
         assertEquals(
-            listOf("E_MISSREC", "E_PIECE"),
-            service.listModules(pattern = "^E_", regex = true).modules.map { it.name },
+            listOf("SALES_INVOICES", "SALES_ORDERS"),
+            service.listModules(pattern = "^SALES_", regex = true).modules.map { it.name },
         )
     }
 
@@ -146,7 +146,7 @@ class ListModulesTest {
         val service = serviceFor(synthetic(3))
 
         val failure = assertFailsWith<IllegalArgumentException> {
-            service.listModules(pattern = "E_[", regex = true)
+            service.listModules(pattern = "SALES_[", regex = true)
         }
 
         assertTrue(failure.message!!.contains("regex"), failure.message!!)
@@ -170,13 +170,13 @@ class ListModulesTest {
      */
     @Test
     fun statusFiltersRowsWhileCountsStillCoverEveryMatch() = runTest {
-        val fetched = realModule("E_MISSREC")
-        val service = serviceFor(listOf(fetched, realModule("E_PIECE"), realModule("ORDERS")))
+        val fetched = realModule("SALES_ORDERS")
+        val service = serviceFor(listOf(fetched, realModule("SALES_INVOICES"), realModule("ORDERS")))
         service.fetchModule(fetched.key)
 
-        val result = service.listModules(pattern = "E_", status = ModuleStatus.CACHED)
+        val result = service.listModules(pattern = "SALES_", status = ModuleStatus.CACHED)
 
-        assertEquals(listOf("E_MISSREC"), result.modules.map { it.name })
+        assertEquals(listOf("SALES_ORDERS"), result.modules.map { it.name })
         assertEquals(1, result.total, "'total' is the size of the filtered result set")
         assertEquals(
             mapOf(ModuleStatus.CACHED to 1, ModuleStatus.NOT_CACHED to 1),
@@ -187,12 +187,12 @@ class ListModulesTest {
 
     @Test
     fun everyRowCarriesTheFlatNameBesideTheCanonicalKey() = runTest {
-        val service = serviceFor(listOf(realModule("E_MISSREC")))
+        val service = serviceFor(listOf(realModule("SALES_ORDERS")))
 
         val row = service.listModules().modules.single()
 
-        assertEquals("E_MISSREC", row.name)
-        assertEquals(ModuleKey.of("E_MISSREC", ModuleType.FORM), row.module)
+        assertEquals("SALES_ORDERS", row.name)
+        assertEquals(ModuleKey.of("SALES_ORDERS", ModuleType.FORM), row.module)
         assertNotNull(row.sizeBytes)
         assertNotNull(row.lastModified)
     }

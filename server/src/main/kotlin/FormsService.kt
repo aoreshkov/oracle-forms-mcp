@@ -14,6 +14,7 @@ import app.oreshkov.oracleformsmcp.dto.AnnotationView
 import app.oreshkov.oracleformsmcp.dto.BlockDetail
 import app.oreshkov.oracleformsmcp.dto.BlockList
 import app.oreshkov.oracleformsmcp.dto.BlockSummary
+import app.oreshkov.oracleformsmcp.dto.BodySource
 import app.oreshkov.oracleformsmcp.dto.ElementAnnotationList
 import app.oreshkov.oracleformsmcp.dto.ElementAnnotations
 import app.oreshkov.oracleformsmcp.dto.FetchModuleSummary
@@ -38,6 +39,7 @@ import app.oreshkov.oracleformsmcp.model.AnnotationKind
 import app.oreshkov.oracleformsmcp.model.Author
 import app.oreshkov.oracleformsmcp.model.ElementId
 import app.oreshkov.oracleformsmcp.model.ElementKind
+import app.oreshkov.oracleformsmcp.model.InheritanceRef
 import app.oreshkov.oracleformsmcp.model.ModuleFingerprint
 import app.oreshkov.oracleformsmcp.model.ModuleIndex
 import app.oreshkov.oracleformsmcp.model.ModuleKey
@@ -338,6 +340,16 @@ class FormsService(
         return BlockDetail(
             module = index.key,
             block = block,
+            hint = block.inherited?.let { ref ->
+                inheritedHint(
+                    subject = "Block '${block.name}'",
+                    ref = ref,
+                    parentKey = inheritedModuleKey(ref),
+                    nextCall = { "get_block(module=\"$it\", block=\"${ref.name ?: block.name}\")" },
+                    resolveAttempted = false,
+                    resolvable = false,
+                )
+            },
             annotations = elementAnnotations(index, ElementId(index.key, ElementKind.BLOCK, block.name)),
         )
     }
@@ -370,6 +382,9 @@ class FormsService(
                     // The PL/SQL preview is the bulky per-row field; omit it unless asked.
                     firstLine = if (detailed) it.firstLine else "",
                     lineCount = it.lineCount,
+                    // firstLine is the parsed body's first non-blank line, so an empty one means
+                    // the body holds no code — the same test getTrigger makes against the text.
+                    bodySource = bodySourceOf(it.firstLine, it.inherited),
                 )
             }
             .toList()
@@ -382,24 +397,59 @@ class FormsService(
         )
     }
 
+    /**
+     * One trigger's PL/SQL. When the trigger is subclassed its body is empty *in this module*, so
+     * the result says so ([BodySource.INHERITED]) and carries the pointer plus the call that
+     * reaches the code — never a bare `""`, which reads as "this trigger does nothing".
+     *
+     * [resolve] follows that pointer, but only into modules that are **already cached**: fetching
+     * one would run a conversion, and this read is annotated `readOnlyHint`. When the walk cannot
+     * finish, the pointer and the hint are returned unchanged rather than an error.
+     */
     suspend fun getTrigger(
         key: ModuleKey,
         name: String,
         block: String?,
         item: String?,
         ownerPath: String? = null,
+        resolve: Boolean = false,
     ): TriggerSource {
         val index = index(key)
         val trigger = resolveTrigger(index, name, ownerPath, block, item)
         val ref = trigger.textRef
             ?: throw IllegalStateException("Trigger '$name' has no recorded PL/SQL body")
+        val own = readRef(key, ref)
+        val inherited = trigger.inherited.takeIf { bodySourceOf(own, it) == BodySource.INHERITED }
+        val followed = if (resolve && inherited != null) {
+            followInherited(inherited) { parentIndex, pointer ->
+                val found = resolveTrigger(parentIndex, trigger.name, suggestedOwnerPath(pointer))
+                InheritedStep(found.inherited, found.textRef)
+            }
+        } else {
+            null
+        }
         return TriggerSource(
             module = index.key,
             name = trigger.name,
             level = trigger.level,
             block = trigger.blockName,
             item = trigger.itemName,
-            text = readRef(key, ref),
+            text = followed?.text ?: own,
+            bodySource = if (followed != null) BodySource.RESOLVED else bodySourceOf(own, inherited),
+            inherited = inherited,
+            resolvedFrom = followed?.module,
+            hint = if (inherited == null || followed != null) null else inheritedHint(
+                subject = "Trigger '${trigger.name}'" +
+                    (triggerOwner(trigger)?.let { " on '$it'" } ?: " at form level"),
+                ref = inherited,
+                parentKey = inheritedModuleKey(inherited),
+                nextCall = { parent ->
+                    "get_trigger(module=\"$parent\", name=\"${trigger.name}\"" +
+                        (suggestedOwnerPath(inherited)?.let { ", ownerPath=\"$it\")" } ?: ")")
+                },
+                resolveAttempted = resolve,
+                resolvable = true,
+            ),
             annotations = elementAnnotations(
                 index,
                 ElementId(index.key, ElementKind.TRIGGER, trigger.name, triggerOwner(trigger)),
@@ -422,7 +472,13 @@ class FormsService(
         )
     }
 
-    suspend fun getProgramUnit(key: ModuleKey, name: String, unitType: String?): ProgramUnitSource {
+    /** One program unit's PL/SQL; subclassing and [resolve] behave exactly as in [getTrigger]. */
+    suspend fun getProgramUnit(
+        key: ModuleKey,
+        name: String,
+        unitType: String?,
+        resolve: Boolean = false,
+    ): ProgramUnitSource {
         val index = index(key)
         val wantedType = unitType?.let { ProgramUnitType.fromForms(it.replace('_', ' ')) }
         val matches = index.programUnits.filter {
@@ -440,11 +496,37 @@ class FormsService(
         }
         val ref = unit.textRef
             ?: throw IllegalStateException("Program unit '$name' has no recorded PL/SQL body")
+        val own = readRef(key, ref)
+        val inherited = unit.inherited.takeIf { bodySourceOf(own, it) == BodySource.INHERITED }
+        val followed = if (resolve && inherited != null) {
+            followInherited(inherited) { parentIndex, _ ->
+                val found = parentIndex.programUnits.first {
+                    it.name.equals(unit.name, ignoreCase = true) && it.unitType == unit.unitType
+                }
+                InheritedStep(found.inherited, found.textRef)
+            }
+        } else {
+            null
+        }
         return ProgramUnitSource(
             module = index.key,
             name = unit.name,
             unitType = unit.unitType,
-            text = readRef(key, ref),
+            text = followed?.text ?: own,
+            bodySource = if (followed != null) BodySource.RESOLVED else bodySourceOf(own, inherited),
+            inherited = inherited,
+            resolvedFrom = followed?.module,
+            hint = if (inherited == null || followed != null) null else inheritedHint(
+                subject = "Program unit '${unit.name}'",
+                ref = inherited,
+                parentKey = inheritedModuleKey(inherited),
+                nextCall = { parent ->
+                    "get_program_unit(module=\"$parent\", name=\"${unit.name}\", " +
+                        "unitType=\"${unit.unitType.name}\")"
+                },
+                resolveAttempted = resolve,
+                resolvable = true,
+            ),
             annotations = elementAnnotations(index, programUnitId(index.key, unit)),
         )
     }
@@ -529,6 +611,9 @@ class FormsService(
             xml = if (capped) xml.take(MAX_OBJECT_XML_CHARS) else xml,
             startLine = ref.ref.startLine,
             truncated = capped,
+            // The fragment itself only shows SubclassSubObject="true"; the parent pointer lives on
+            // the enclosing element, so it is served here rather than left one call away.
+            inherited = ref.inherited,
             annotations = elementAnnotations(
                 index,
                 ElementId(index.key, ElementKind.OBJECT, ref.name, ref.ownerPath),
@@ -896,6 +981,133 @@ class FormsService(
         return files.sortedBy { it.first }
     }
 
+    // --- subclassing (inherited objects) ---
+
+    /**
+     * What a served body actually is. An empty [text] means opposite things depending on whether
+     * the object is subclassed, and the two are indistinguishable on the wire without this — the
+     * correctness bug this vocabulary exists to close.
+     */
+    private fun bodySourceOf(text: String, inherited: InheritanceRef?): BodySource = when {
+        text.isNotBlank() -> BodySource.OWN
+        inherited != null -> BodySource.INHERITED
+        else -> BodySource.EMPTY
+    }
+
+    /** One hop of a subclassing walk: where the parent object points next, and its body ref. */
+    private class InheritedStep(val next: InheritanceRef?, val textRef: SourceRef?)
+
+    /** A body found by following a subclassing pointer, and the module it was found in. */
+    private class InheritedBody(val module: ModuleKey, val text: String)
+
+    /**
+     * The `ownerPath` to look under in the parent module, or `null` for "wherever it is there".
+     *
+     * An object carried in by an **object group** keeps its own name but not its place: where the
+     * group puts it inside an object library is that library's business, not something this
+     * module's XML records. Asserting `:FORM` for it would be a guess, so the scope is left open
+     * and a name that turns out to be ambiguous over there ends the walk instead.
+     */
+    private fun suggestedOwnerPath(ref: InheritanceRef): String? =
+        ref.ownerPath ?: FORM_LEVEL_OWNER.takeIf { ref.objectGroup == null }
+
+    /**
+     * Follows a subclassing pointer to the module that actually defines the body.
+     *
+     * **Cached modules only.** Fetching a parent would convert it, and every read tool here
+     * declares `readOnlyHint = true`; a walk that cannot proceed returns `null` and the caller
+     * serves the pointer plus a hint naming the `fetch_module` call instead. The walk is bounded
+     * ([MAX_INHERITANCE_HOPS]) and cycle-guarded, since a chain is data from converted files and
+     * nothing guarantees it terminates.
+     *
+     * [step] locates the counterpart object in a parent index; anything it throws (no such
+     * trigger, ambiguous scope) ends the walk rather than failing the call.
+     */
+    private suspend fun followInherited(
+        start: InheritanceRef,
+        step: (ModuleIndex, InheritanceRef) -> InheritedStep,
+    ): InheritedBody? {
+        var pointer = start
+        val visited = mutableSetOf<ModuleKey>()
+        repeat(MAX_INHERITANCE_HOPS) {
+            val parentKey = inheritedModuleKey(pointer) ?: return null
+            if (!visited.add(parentKey)) return null // a chain that loops back on itself
+            val parentIndex = runCatching { index(parentKey) }.getOrNull() ?: return null
+            val found = runCatching { step(parentIndex, pointer) }.getOrNull() ?: return null
+            val text = found.textRef?.let { readRef(parentKey, it) }.orEmpty()
+            if (text.isNotBlank()) return InheritedBody(parentKey, text)
+            pointer = found.next ?: return null // empty and not inherited further: nothing to find
+        }
+        return null
+    }
+
+    /**
+     * The module a subclassing pointer names, or `null` when it cannot be pinned down.
+     *
+     * `ParentFilename` is preferred because it carries the module *type* as its extension (and is
+     * taken by its file name only — Forms may record a full path from the machine that saved the
+     * form). A pointer with only `ParentModule` is a bare name, so it resolves only when exactly
+     * one cached module wears it.
+     */
+    private suspend fun inheritedModuleKey(ref: InheritanceRef): ModuleKey? {
+        ref.file
+            ?.substringAfterLast('/')?.substringAfterLast('\\')
+            ?.let { ModuleKey.parseOrNull(it) }
+            ?.let { return it }
+        val name = ref.module?.trim()?.uppercase() ?: return null
+        return cache.list().singleOrNull { it.name == name }
+    }
+
+    /**
+     * The message that goes beside an inherited body or block: which module holds the definition
+     * and the exact call that reaches it — the same contract the staleness exceptions keep.
+     *
+     * [resolvable] is `false` for tools that have no `resolve` argument, so the hint never
+     * suggests one that does not exist; [resolveAttempted] switches the wording to say why
+     * `resolve` came back empty-handed.
+     */
+    private suspend fun inheritedHint(
+        subject: String,
+        ref: InheritanceRef,
+        parentKey: ModuleKey?,
+        nextCall: (ModuleKey) -> String,
+        resolveAttempted: Boolean,
+        resolvable: Boolean,
+    ): String {
+        if (parentKey == null) {
+            val named = ref.module ?: ref.file
+            return "$subject is subclassed, so its definition lives in the module it inherits " +
+                "from — which cannot be pinned down from this module's XML" +
+                (named?.let { " (it names only '$it')" } ?: "") +
+                ". Call list_modules(pattern=\"${named ?: ""}\") to find it, or get_object_xml " +
+                "for the raw subclass attributes."
+        }
+        val retry = if (resolvable) " Or retry this call with resolve=true." else ""
+        // An object group is how the definition got here; naming it saves a search of the library.
+        val where = "'$parentKey'" + (ref.objectGroup?.let { " (object group '$it')" } ?: "")
+        if (cache.get(parentKey) == null) {
+            return "$subject is subclassed, so its definition lives in $where, which is not " +
+                "cached" +
+                (
+                    if (resolveAttempted) {
+                        " — resolve could not follow the pointer, because reaching an un-cached " +
+                            "module means converting it and this read never does"
+                    } else {
+                        ""
+                    }
+                    ) +
+                ". Call fetch_module(module=\"$parentKey\"), then ${nextCall(parentKey)}.$retry"
+        }
+        if (!resolveAttempted) {
+            return "$subject is subclassed, so its definition lives in $where, which is " +
+                "already cached. Call ${nextCall(parentKey)}.$retry"
+        }
+        return "$subject is subclassed from $where, but no body was found there" +
+            (suggestedOwnerPath(ref)?.let { " under '$it'" } ?: "") +
+            ". Call ${nextCall(parentKey)} to look directly, or get_object_xml for the raw " +
+            "subclass attributes."
+    }
+
     // --- annotation internals ---
 
     /** Notes/relations for [element], drawn from [index]'s stored annotations, with drift resolved. */
@@ -1152,6 +1364,13 @@ class FormsService(
          */
         const val MAX_LIST_ROWS = 1_000
         const val MAX_OVERVIEW_NAMES = 500
+
+        /**
+         * How far `resolve` walks a subclassing chain. Forms allows a parent to be subclassed in
+         * turn, so the chain is data read from converted files — bounded here (on top of the
+         * cycle guard) so a malformed one costs a handful of cache reads, not a hang.
+         */
+        const val MAX_INHERITANCE_HOPS = 5
 
         /** Marks a `list_modules` cursor as ours, so a token from elsewhere fails cleanly. */
         const val MODULE_CURSOR_PREFIX = "modules:v1:"
