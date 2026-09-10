@@ -11,7 +11,9 @@ fun Server.registerGetModuleOverviewTool(service: FormsService) {
             "section — blocks, program units, attached libraries, LOVs, record groups, windows, " +
             "canvases, alerts, parameters, visual attributes, property classes, editors, menus, " +
             "object-library tabs — and the trigger count. The natural first call after fetch_module; " +
-            "drill in with list_blocks, list_triggers, list_program_units, then the get_* tools.",
+            "drill in with list_blocks, list_triggers, list_program_units, then the get_* tools. " +
+            "'truncated' means at least one section held more names than the response cap and was " +
+            "cut — drill into that section with its own list tool.",
         inputSchema = moduleSchema(),
         title = "Module overview",
         outputSchema = outputSchemaOf<ModuleOverview>(),

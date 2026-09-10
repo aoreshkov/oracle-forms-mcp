@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`list_modules` no longer overflows on a real forms directory.** It returned every module
+  unconditionally, so a directory of a few thousand modules produced a response several times
+  larger than the tool-output limit of any MCP client — discovery, the entry point to every other
+  tool, was the one call that could not succeed. It now takes `pattern` (substring, or a regex
+  with `regex: true`), `type`, `status`, `limit` (default 100, max 500) and an opaque `cursor`,
+  and returns `total`, `returned`, `truncated`, `nextCursor` and a `countsByStatus` summary that
+  covers the whole name/type match even when `status` narrows the rows. Filtering happens before
+  any file is stat-ed or hashed, so a narrow call is also a cheap one.
+- **`resources/list` is bounded.** One MCP resource was registered per cached module — at startup
+  for the whole cache, and again on every fetch — which made a warm cache over a large forms
+  directory overflow the client on a request it issues by itself, before the model calls anything.
+  At most 50 recently fetched modules are now registered; every cached module remains readable
+  through the `oracleforms://{module}/index` URI template, which addresses all of them.
+
+### Added
+- A hard row ceiling plus a `truncated` flag on every list-shaped result (`list_blocks`,
+  `list_triggers`, `list_program_units`, `search_annotations`, and each section of
+  `get_module_overview`), with `total` reporting what was left behind. A capped page that says so
+  beats a response the client has to reject.
+- A flat `name` on every `list_modules` row, beside the existing `module` key — the identifier to
+  match on, without reaching through the nested object.
+
 ## [0.8.0] - 2026-08-20
 
 ### Fixed

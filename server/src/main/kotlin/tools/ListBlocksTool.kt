@@ -9,7 +9,8 @@ fun Server.registerListBlocksTool(service: FormsService) {
         name = "list_blocks",
         description = "List the data blocks of a fetched form module with their base table " +
             "(query data source), item count, and trigger count. Use get_block for a block's " +
-            "full item list.",
+            "full item list. 'total' counts every block; 'truncated' means the rows were cut at " +
+            "the response cap — reach the rest by name with get_block or search_source.",
         inputSchema = moduleSchema(),
         title = "List blocks",
         outputSchema = outputSchemaOf<BlockList>(),

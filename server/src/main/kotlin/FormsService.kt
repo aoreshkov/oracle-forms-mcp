@@ -42,6 +42,7 @@ import app.oreshkov.oracleformsmcp.model.ModuleFingerprint
 import app.oreshkov.oracleformsmcp.model.ModuleIndex
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
+import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.model.ProgramUnitInfo
 import app.oreshkov.oracleformsmcp.model.ProgramUnitType
 import app.oreshkov.oracleformsmcp.model.Relation
@@ -53,7 +54,9 @@ import co.touchlab.kermit.Logger
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.time.Instant
+import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.createDirectories
@@ -68,6 +71,13 @@ import kotlinx.coroutines.withContext
 
 /** A coarse [FormsService.fetchModule] phase: [step] of [totalSteps], human-readable [message]. */
 data class FetchProgress(val step: Int, val totalSteps: Int, val message: String)
+
+/**
+ * `list_modules` page size when the caller names none, and the ceiling it is clamped to. Shared
+ * with `ListModulesTool` so the numbers the tool description promises are the ones enforced here.
+ */
+internal const val DEFAULT_MODULE_PAGE: Int = 100
+internal const val MAX_MODULE_PAGE: Int = 500
 
 /**
  * Orchestrates scan → convert → parse → cache and exposes the read operations the MCP tools call,
@@ -146,38 +156,63 @@ class FormsService(
         }
     }
 
-    /** Scans the forms directory and reports each module's cache status. */
-    suspend fun listModules(): ModuleList {
+    /**
+     * Scans the forms directory and reports one filtered, capped page of module cache statuses.
+     *
+     * A real forms directory holds thousands of modules, so an unfiltered, unbounded answer is
+     * larger than any client's tool-output budget. The cheap filters run first: [pattern] and
+     * [type] are pure string work, so a narrowed call never stats — let alone hashes — a module it
+     * will not report. Only the survivors get a status, which costs a cache read plus a stat of
+     * the source file.
+     *
+     * @param pattern case-insensitive substring of the module name, or a regex when [regex] is set
+     * @param status keeps only rows in that state; [ModuleList.countsByStatus] still describes the
+     *   whole name/type-filtered set, so a status filter narrows the rows without blinding the
+     *   caller to what else is there
+     * @param cursor an opaque [ModuleList.nextCursor] from a previous call; paging is keyset-based
+     *   on the canonical module key, so a page boundary survives modules appearing or disappearing
+     *   between calls
+     */
+    suspend fun listModules(
+        pattern: String? = null,
+        regex: Boolean = false,
+        type: ModuleType? = null,
+        status: ModuleStatus? = null,
+        limit: Int? = null,
+        cursor: String? = null,
+    ): ModuleList {
         val scanned = scanner.scan()
-        val entries = scanned.map { module ->
-            val path = fingerprintSource(module)
-            val cached = cache.get(module.key)
-            val status = when {
-                cached == null -> ModuleStatus.NOT_CACHED
-                Fingerprints.matches(cached.fingerprint, Path.of(cached.sourceFile)) -> ModuleStatus.CACHED
-                else -> ModuleStatus.STALE
-            }
-            ModuleStatusEntry(
-                module = module.key,
-                type = module.key.type,
-                path = path.toString(),
-                sizeBytes = runCatching { Files.size(path) }.getOrNull(),
-                lastModified = runCatching {
-                    Instant.ofEpochMilli(Files.getLastModifiedTime(path).toMillis()).toString()
-                }.getOrNull(),
-                status = status,
-                hasPreConverted = module.preConvertedPath != null,
-            )
+        val scannedKeys = scanned.mapTo(mutableSetOf()) { it.key }
+        val cachedKeys = cache.list().toSet()
+        // One ordered universe: scanned modules plus cache entries whose source vanished from the
+        // forms directory (still readable). Sorted by canonical key so cursors are stable.
+        val universe = (scanned.map { it.key to it } + cachedKeys.filterNot { it in scannedKeys }.map { it to null })
+            .sortedBy { (key, _) -> key.toString() }
+
+        val nameMatcher = pattern?.let { moduleNameMatcher(it, regex) }
+        val matching = universe.filter { (key, _) ->
+            (nameMatcher == null || nameMatcher(key.name)) && (type == null || key.type == type)
         }
-        // Cache entries whose source vanished from the forms directory are still readable.
-        val scannedKeys = scanned.map { it.key }.toSet()
-        val orphans = cache.list().filterNot { it in scannedKeys }.map { key ->
-            ModuleStatusEntry(module = key, type = key.type, status = ModuleStatus.SOURCE_MISSING)
+
+        val rows = withContext(Dispatchers.IO) {
+            matching.map { (key, module) -> statusEntry(key, module, key in cachedKeys) }
         }
+        val countsByStatus = rows.groupingBy { it.status }.eachCount()
+        val selected = if (status == null) rows else rows.filter { it.status == status }
+
+        val after = cursor?.let { decodeModuleCursor(it) }
+        val remaining = if (after == null) selected else selected.filter { it.module.toString() > after }
+        val page = remaining.take((limit ?: DEFAULT_MODULE_PAGE).coerceIn(1, MAX_MODULE_PAGE))
+        val truncated = page.size < remaining.size
         return ModuleList(
             formsDir = formsDir.toAbsolutePath().toString(),
             oracleHomeConversion = binaryConversion,
-            modules = entries + orphans,
+            total = selected.size,
+            returned = page.size,
+            truncated = truncated,
+            nextCursor = if (truncated) encodeModuleCursor(page.last().module) else null,
+            countsByStatus = countsByStatus,
+            modules = page,
         )
     }
 
@@ -233,33 +268,50 @@ class FormsService(
 
     suspend fun overview(key: ModuleKey): ModuleOverview {
         val index = index(key)
+        // Fourteen name-only sections, any of which a generated module can blow up; cap each and
+        // report one flag rather than fourteen.
+        val cap = NameSectionCap()
+        val blocks = cap(index.blocks.map { it.name })
+        val programUnits = cap(index.programUnits.map { it.name })
+        val attachedLibraries = cap(index.attachedLibraries.map { it.name })
+        val lovs = cap(index.lovs.map { it.name })
+        val recordGroups = cap(index.recordGroups.map { it.name })
+        val windows = cap(index.windows.map { it.name })
+        val canvases = cap(index.canvases.map { it.name })
+        val alerts = cap(index.alerts.map { it.name })
+        val parameters = cap(index.parameters.map { it.name })
+        val visualAttributes = cap(index.visualAttributes)
+        val propertyClasses = cap(index.propertyClasses)
+        val editors = cap(index.editors)
+        val menus = cap(index.menus.map { it.name })
+        val objectLibraryTabs = cap(index.objectLibraryTabs.map { it.name })
         return ModuleOverview(
             module = index.key,
             formsVersion = index.formsVersion,
-            blocks = index.blocks.map { it.name },
+            truncated = cap.truncated,
+            blocks = blocks,
             triggerCount = index.triggers.size,
-            programUnits = index.programUnits.map { it.name },
-            attachedLibraries = index.attachedLibraries.map { it.name },
-            lovs = index.lovs.map { it.name },
-            recordGroups = index.recordGroups.map { it.name },
-            windows = index.windows.map { it.name },
-            canvases = index.canvases.map { it.name },
-            alerts = index.alerts.map { it.name },
-            parameters = index.parameters.map { it.name },
-            visualAttributes = index.visualAttributes,
-            propertyClasses = index.propertyClasses,
-            editors = index.editors,
-            menus = index.menus.map { it.name },
-            objectLibraryTabs = index.objectLibraryTabs.map { it.name },
+            programUnits = programUnits,
+            attachedLibraries = attachedLibraries,
+            lovs = lovs,
+            recordGroups = recordGroups,
+            windows = windows,
+            canvases = canvases,
+            alerts = alerts,
+            parameters = parameters,
+            visualAttributes = visualAttributes,
+            propertyClasses = propertyClasses,
+            editors = editors,
+            menus = menus,
+            objectLibraryTabs = objectLibraryTabs,
             annotations = elementAnnotations(index, ElementId(index.key, ElementKind.MODULE, index.key.name)),
         )
     }
 
     suspend fun listBlocks(key: ModuleKey): BlockList {
         val index = index(key)
-        return BlockList(
-            module = index.key,
-            blocks = index.blocks.map { block ->
+        val (blocks, truncated) = capRows(
+            index.blocks.map { block ->
                 BlockSummary(
                     name = block.name,
                     queryDataSourceName = block.queryDataSourceName,
@@ -268,6 +320,12 @@ class FormsService(
                         block.items.sumOf { it.triggerNames.size },
                 )
             },
+        )
+        return BlockList(
+            module = index.key,
+            total = index.blocks.size,
+            truncated = truncated,
+            blocks = blocks,
         )
     }
 
@@ -299,7 +357,7 @@ class FormsService(
             "menu" -> setOf(TriggerLevel.MENU)
             else -> throw IllegalArgumentException("level must be one of: form, block, item, menu, all")
         }
-        val triggers = index(key).triggers.asSequence()
+        val matching = index(key).triggers.asSequence()
             .filter { wanted == null || it.level in wanted }
             .filter { block == null || it.blockName.equals(block, ignoreCase = true) }
             .filter { item == null || it.itemName.equals(item, ignoreCase = true) }
@@ -315,7 +373,13 @@ class FormsService(
                 )
             }
             .toList()
-        return TriggerList(module = key, triggers = triggers)
+        val (triggers, truncated) = capRows(matching)
+        return TriggerList(
+            module = key,
+            total = matching.size,
+            truncated = truncated,
+            triggers = triggers,
+        )
     }
 
     suspend fun getTrigger(
@@ -345,11 +409,16 @@ class FormsService(
 
     suspend fun listProgramUnits(key: ModuleKey): ProgramUnitList {
         val index = index(key)
-        return ProgramUnitList(
-            module = index.key,
-            units = index.programUnits.map {
+        val (units, truncated) = capRows(
+            index.programUnits.map {
                 ProgramUnitSummary(name = it.name, unitType = it.unitType, lineCount = it.lineCount)
             },
+        )
+        return ProgramUnitList(
+            module = index.key,
+            total = index.programUnits.size,
+            truncated = truncated,
+            units = units,
         )
     }
 
@@ -583,7 +652,16 @@ class FormsService(
                     it.to?.name?.lowercase()?.contains(query) == true
             }
         }
-        return AnnotationSearchResults(module = key, notes = noteHits, relations = relationHits)
+        val (pagedNotes, notesCut) = capRows(noteHits)
+        val (pagedRelations, relationsCut) = capRows(relationHits)
+        return AnnotationSearchResults(
+            module = key,
+            totalNotes = noteHits.size,
+            totalRelations = relationHits.size,
+            truncated = notesCut || relationsCut,
+            notes = pagedNotes,
+            relations = pagedRelations,
+        )
     }
 
     /** Removes the annotation or relation with [id] from [key]'s store. */
@@ -615,6 +693,105 @@ class FormsService(
 
     /** The file the pipeline actually consumes, and therefore fingerprints. */
     private fun fingerprintSource(module: ScannedModule): Path = Path.of(conversionSource(module))
+
+    // --- list_modules: matching, status, cursors ---
+
+    /** Name predicate for `list_modules`; a bad regex fails as an argument error, not a crash. */
+    private fun moduleNameMatcher(pattern: String, regex: Boolean): (String) -> Boolean {
+        if (!regex) return { name -> name.contains(pattern, ignoreCase = true) }
+        val compiled = try {
+            Regex(pattern, RegexOption.IGNORE_CASE)
+        } catch (e: IllegalArgumentException) {
+            throw IllegalArgumentException(
+                "Invalid regex 'pattern' for list_modules: ${e.message}. " +
+                    "Drop the 'regex' flag to match the pattern as a plain substring.",
+                e,
+            )
+        }
+        return { name -> compiled.containsMatchIn(name) }
+    }
+
+    /**
+     * Resolves one row's cache status and file metadata. [isCached] comes from the cache's
+     * directory listing, so a never-fetched module answers without opening its index at all —
+     * the common case on a cold cache and on every `NOT_CACHED` row of a warm one.
+     */
+    private suspend fun statusEntry(
+        key: ModuleKey,
+        module: ScannedModule?,
+        isCached: Boolean,
+    ): ModuleStatusEntry {
+        if (module == null) {
+            return ModuleStatusEntry(
+                name = key.name,
+                module = key,
+                type = key.type,
+                status = ModuleStatus.SOURCE_MISSING,
+            )
+        }
+        val path = fingerprintSource(module)
+        val cached = if (isCached) cache.get(key) else null
+        val status = when {
+            cached == null -> ModuleStatus.NOT_CACHED
+            Fingerprints.matches(cached.fingerprint, Path.of(cached.sourceFile)) -> ModuleStatus.CACHED
+            else -> ModuleStatus.STALE
+        }
+        // One stat, not two: size and mtime come from the same attribute read.
+        val attributes = runCatching { Files.readAttributes(path, BasicFileAttributes::class.java) }.getOrNull()
+        return ModuleStatusEntry(
+            name = key.name,
+            module = key,
+            type = key.type,
+            path = path.toString(),
+            sizeBytes = attributes?.size(),
+            lastModified = attributes?.let { Instant.ofEpochMilli(it.lastModifiedTime().toMillis()).toString() },
+            status = status,
+            hasPreConverted = module.preConvertedPath != null,
+        )
+    }
+
+    /**
+     * Mints the opaque continuation token clients pass back as `cursor`. MCP requires cursors to be
+     * treated as opaque, so the encoding exists to stop callers from constructing one by hand — not
+     * as a secret. It is a keyset cursor: it names the last key of the page, never an offset.
+     */
+    private fun encodeModuleCursor(key: ModuleKey): String =
+        Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("$MODULE_CURSOR_PREFIX$key".toByteArray(Charsets.UTF_8))
+
+    /** The canonical key a [encodeModuleCursor] token points just past. */
+    private fun decodeModuleCursor(cursor: String): String {
+        val decoded = runCatching { String(Base64.getUrlDecoder().decode(cursor), Charsets.UTF_8) }.getOrNull()
+        require(decoded != null && decoded.startsWith(MODULE_CURSOR_PREFIX)) {
+            "Invalid 'cursor' for list_modules. Pass back the 'nextCursor' from a previous call " +
+                "verbatim, or omit 'cursor' to start from the first page."
+        }
+        return decoded.removePrefix(MODULE_CURSOR_PREFIX)
+    }
+
+    /**
+     * Caps a list-shaped result: the rows to return plus whether any were dropped. Every list tool
+     * goes through this, so a pathological module returns a page that says it was cut instead of a
+     * response no client can accept.
+     */
+    private fun <T> capRows(rows: List<T>): Pair<List<T>, Boolean> =
+        if (rows.size <= MAX_LIST_ROWS) rows to false else rows.take(MAX_LIST_ROWS) to true
+
+    /**
+     * [capRows] for the name-only sections of `get_module_overview`: caps each section and
+     * remembers whether any of them was cut, so the overview carries one honest [truncated] flag
+     * instead of one per section.
+     */
+    private class NameSectionCap {
+        var truncated: Boolean = false
+            private set
+
+        operator fun invoke(names: List<String>): List<String> {
+            if (names.size <= MAX_OVERVIEW_NAMES) return names
+            truncated = true
+            return names.take(MAX_OVERVIEW_NAMES)
+        }
+    }
 
     private fun conversionSource(module: ScannedModule): String =
         if (binaryConversion) {
@@ -966,6 +1143,18 @@ class FormsService(
         const val MAX_SEARCH_RESULTS = 200
         const val MAX_OBJECT_XML_CHARS = 500_000
         const val FETCH_STEPS = 3
+
+        /**
+         * Output ceilings. Claude Code caps MCP tool output at 25,000 tokens (~100 KB) and warns
+         * at 10,000, so every list-shaped result is bounded and says so rather than being rejected
+         * whole: [DEFAULT_MODULE_PAGE]/[MAX_MODULE_PAGE] page `list_modules`, [MAX_LIST_ROWS] caps
+         * the per-module lists, and [MAX_OVERVIEW_NAMES] caps each section of the overview.
+         */
+        const val MAX_LIST_ROWS = 1_000
+        const val MAX_OVERVIEW_NAMES = 500
+
+        /** Marks a `list_modules` cursor as ours, so a token from elsewhere fails cleanly. */
+        const val MODULE_CURSOR_PREFIX = "modules:v1:"
 
         /** Cache subdirectory of a module's converted text form, and the prefix its refs carry. */
         const val CONVERTED_DIR = "converted"

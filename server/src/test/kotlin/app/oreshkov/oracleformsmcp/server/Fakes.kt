@@ -123,10 +123,11 @@ internal fun fakeService(
     annotationStore: AnnotationStore = InMemoryAnnotationStore(),
     converter: ModuleConverter = CopyingConverter(),
     convertedDir: Path? = null,
+    parser: ModuleParser = FakeParser(),
 ): FormsService = FormsService(
     scanner = scanner,
     converter = converter,
-    parser = FakeParser(),
+    parser = parser,
     cache = InMemoryCache(cacheRoot),
     annotationStore = annotationStore,
     formsDir = Path.of("."),

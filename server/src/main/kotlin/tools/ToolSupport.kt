@@ -128,8 +128,18 @@ internal fun moduleSchema(
     required = listOf("module") + extraRequired,
 )
 
-/** Schema for tools that take no arguments. */
-internal fun emptySchema(): ToolSchema = ToolSchema(properties = JsonObject(emptyMap()))
+/**
+ * Schema for tools that take no arguments: `{"type":"object"}`, one of the two forms the
+ * 2026-07-28 spec calls valid for a parameterless tool.
+ *
+ * The spec *recommends* the stricter `{"type":"object","additionalProperties":false}`, which the
+ * SDK's [ToolSchema] cannot express — it is a closed data class of `$schema`/`properties`/
+ * `required`/`$defs` with no passthrough. Emitting `properties: {}` (the old shape) is no closer:
+ * under JSON Schema 2020-12 an empty `properties` constrains nothing, so it accepts exactly what
+ * the bare object schema accepts while implying the tool has properties. Tighten this when the
+ * SDK can carry the keyword.
+ */
+internal fun emptySchema(): ToolSchema = ToolSchema()
 
 // --- argument parsing ---
 
