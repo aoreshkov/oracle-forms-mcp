@@ -41,6 +41,7 @@ public data class ProgramUnitInfo(
     val unitType: ProgramUnitType = ProgramUnitType.UNKNOWN,
     val lineCount: Int = 0,
     val inherited: InheritanceRef? = null,
+    val textEncoding: TextEncoding = TextEncoding.ORIGINAL,
     val textRef: SourceRef? = null,
     val xmlRef: SourceRef? = null,
 )

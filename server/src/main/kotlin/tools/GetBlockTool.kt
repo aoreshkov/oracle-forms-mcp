@@ -7,13 +7,22 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 fun Server.registerGetBlockTool(service: FormsService) {
     addTool(
         name = "get_block",
-        description = "Full detail of one block: base table, every item (with item type, data " +
-            "type, column, canvas, prompt, and item-trigger names), and the block's trigger names. " +
-            "A subclassed block (or item) carries an 'inherited' pointer to the module that " +
-            "defines it — what is listed here is then only this module's overrides, and the " +
-            "result's hint names the call that reaches the full definition.",
+        description = "One block: base table, its trigger names, and every item. Each item row " +
+            "carries its name, type, property class (which is usually where an item's role is " +
+            "defined — an LOV button is only an LOV button because of the class it inherits), " +
+            "prompt, item-trigger names, and its 'inherited' pointer when it is subclassed. " +
+            "verbosity=detailed adds data type, column, canvas, and the visible/required/LOV " +
+            "properties Forms records only where they are overridden. A subclassed block (or " +
+            "item) carries an 'inherited' pointer to the module that defines it — what is listed " +
+            "here is then only this module's overrides, and the result's hint names the call that " +
+            "reaches the full definition.",
         inputSchema = moduleSchema(
-            extraProps = mapOf("block" to stringProp("Block name, e.g. 'ORDERS'")),
+            extraProps = mapOf(
+                "block" to stringProp("Block name, e.g. 'ORDERS'"),
+                "verbosity" to verbosityProp(
+                    "returns each item's name, type, property class, prompt and trigger names",
+                ),
+            ),
             extraRequired = listOf("block"),
         ),
         title = "Get block detail",
@@ -23,8 +32,9 @@ fun Server.registerGetBlockTool(service: FormsService) {
         guarded {
             val args = request.args()
             val result = service.getBlock(
-                service.resolveModule(args.moduleArg()),
-                args.requireStringArg("block"),
+                key = service.resolveModule(args.moduleArg()),
+                blockName = args.requireStringArg("block"),
+                detailed = args.detailedArg(),
             )
             toolResult(result, result.source)
         }

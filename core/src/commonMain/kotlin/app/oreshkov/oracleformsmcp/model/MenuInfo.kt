@@ -22,4 +22,5 @@ public data class MenuItemInfo(
     val label: String? = null,
     val commandType: String? = null,
     val commandRef: SourceRef? = null,
+    val textEncoding: TextEncoding = TextEncoding.ORIGINAL,
 )

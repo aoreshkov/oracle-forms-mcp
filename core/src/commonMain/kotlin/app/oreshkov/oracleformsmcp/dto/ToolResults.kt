@@ -3,13 +3,16 @@ package app.oreshkov.oracleformsmcp.dto
 import app.oreshkov.oracleformsmcp.model.AnnotationKind
 import app.oreshkov.oracleformsmcp.model.Author
 import app.oreshkov.oracleformsmcp.model.BlockInfo
+import app.oreshkov.oracleformsmcp.model.CanvasInfo
 import app.oreshkov.oracleformsmcp.model.ElementId
 import app.oreshkov.oracleformsmcp.model.InheritanceRef
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.model.ProgramUnitType
+import app.oreshkov.oracleformsmcp.model.TextEncoding
 import app.oreshkov.oracleformsmcp.model.TriggerLevel
+import app.oreshkov.oracleformsmcp.model.WindowInfo
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -162,7 +165,26 @@ public data class ModuleOverview(
     val editors: List<String> = emptyList(),
     val menus: List<String> = emptyList(),
     val objectLibraryTabs: List<String> = emptyList(),
+    val detail: ModuleDetail? = null,
     val annotations: ElementAnnotations = ElementAnnotations(),
+)
+
+/**
+ * The objects behind two of `get_module_overview`'s name lists, returned only at
+ * `verbosity: "detailed"`.
+ *
+ * Names alone cannot answer the questions these sections are consulted for. Whether a window is
+ * modal decides how a form is read; which window a canvas sits on is the thread from a screen to
+ * the block that fills it. Both were reachable only through `get_object_xml`, one call per object.
+ *
+ * A sub-object rather than richer `windows`/`canvases` fields: those stay name lists, so nothing
+ * a caller already reads changes shape.
+ */
+@Serializable
+@SerialName("ModuleDetail")
+public data class ModuleDetail(
+    val windows: List<WindowInfo> = emptyList(),
+    val canvases: List<CanvasInfo> = emptyList(),
 )
 
 /** One row of `list_blocks`. */
@@ -249,6 +271,7 @@ public data class TriggerSource(
     val item: String? = null,
     val text: String,
     val bodySource: BodySource = BodySource.OWN,
+    val textEncoding: TextEncoding = TextEncoding.ORIGINAL,
     val source: SourceLocation? = null,
     val inherited: InheritanceRef? = null,
     val resolvedFrom: ModuleKey? = null,
@@ -284,6 +307,7 @@ public data class ProgramUnitSource(
     val unitType: ProgramUnitType,
     val text: String,
     val bodySource: BodySource = BodySource.OWN,
+    val textEncoding: TextEncoding = TextEncoding.ORIGINAL,
     val source: SourceLocation? = null,
     val inherited: InheritanceRef? = null,
     val resolvedFrom: ModuleKey? = null,

@@ -19,6 +19,7 @@ import app.oreshkov.oracleformsmcp.dto.ElementAnnotationList
 import app.oreshkov.oracleformsmcp.dto.ElementAnnotations
 import app.oreshkov.oracleformsmcp.dto.FetchModuleSummary
 import app.oreshkov.oracleformsmcp.dto.ModuleAnnotationsView
+import app.oreshkov.oracleformsmcp.dto.ModuleDetail
 import app.oreshkov.oracleformsmcp.dto.ModuleList
 import app.oreshkov.oracleformsmcp.dto.ModuleOverview
 import app.oreshkov.oracleformsmcp.dto.ModuleStatusEntry
@@ -42,6 +43,7 @@ import app.oreshkov.oracleformsmcp.model.Author
 import app.oreshkov.oracleformsmcp.model.ElementId
 import app.oreshkov.oracleformsmcp.model.ElementKind
 import app.oreshkov.oracleformsmcp.model.InheritanceRef
+import app.oreshkov.oracleformsmcp.model.ItemInfo
 import app.oreshkov.oracleformsmcp.model.ModuleFingerprint
 import app.oreshkov.oracleformsmcp.model.ModuleIndex
 import app.oreshkov.oracleformsmcp.model.ModuleKey
@@ -274,7 +276,12 @@ class FormsService(
         return index.summary(fromCache = false)
     }
 
-    suspend fun overview(key: ModuleKey): ModuleOverview {
+    /**
+     * The module's sections by name, plus — at [detailed] — the window and canvas objects behind
+     * two of them. Modality and the window a canvas sits on are the properties these sections are
+     * actually consulted for, and they used to cost one `get_object_xml` per object.
+     */
+    suspend fun overview(key: ModuleKey, detailed: Boolean = false): ModuleOverview {
         val index = index(key)
         // Fourteen name-only sections, any of which a generated module can blow up; cap each and
         // report one flag rather than fourteen.
@@ -312,6 +319,11 @@ class FormsService(
             editors = editors,
             menus = menus,
             objectLibraryTabs = objectLibraryTabs,
+            detail = if (detailed) {
+                ModuleDetail(windows = index.windows, canvases = index.canvases)
+            } else {
+                null
+            },
             annotations = elementAnnotations(index, ElementId(index.key, ElementKind.MODULE, index.key.name)),
         )
     }
@@ -337,12 +349,23 @@ class FormsService(
         )
     }
 
-    suspend fun getBlock(key: ModuleKey, blockName: String): BlockDetail {
+    /**
+     * One block in full. A block of a real form runs to dozens of items, so [detailed] governs how
+     * much of each row comes back.
+     *
+     * What `concise` drops is descriptive — data type, column, canvas, and the properties Forms
+     * only writes when they are overridden. What it keeps is everything a reader would otherwise
+     * have to *infer*: the item's name and type, its property class (which is where a shop's item
+     * semantics live), its prompt, its trigger names, and its subclassing pointer. Dropping that
+     * last one to save bytes would re-create the absence bug `bodySource` exists to prevent.
+     */
+    suspend fun getBlock(key: ModuleKey, blockName: String, detailed: Boolean = false): BlockDetail {
         val index = index(key)
-        val block = index.blocks.firstOrNull { it.name.equals(blockName, ignoreCase = true) }
+        val full = index.blocks.firstOrNull { it.name.equals(blockName, ignoreCase = true) }
             ?: throw IllegalArgumentException(
                 "No block '$blockName' in $key. Blocks: ${index.blocks.joinToString(", ") { it.name }}",
             )
+        val block = if (detailed) full else full.copy(items = full.items.map(::conciseItem))
         return BlockDetail(
             module = index.key,
             block = block,
@@ -443,6 +466,7 @@ class FormsService(
             item = trigger.itemName,
             text = followed?.text ?: own,
             bodySource = if (followed != null) BodySource.RESOLVED else bodySourceOf(own, inherited),
+            textEncoding = trigger.textEncoding,
             // A resolved body came out of the parent module's file, so that is what it points at.
             source = followed?.let { locationOf(it.module, it.ref) } ?: locationOf(index.key, ref),
             inherited = inherited,
@@ -523,6 +547,7 @@ class FormsService(
             unitType = unit.unitType,
             text = followed?.text ?: own,
             bodySource = if (followed != null) BodySource.RESOLVED else bodySourceOf(own, inherited),
+            textEncoding = unit.textEncoding,
             // A resolved body came out of the parent module's file, so that is what it points at.
             source = followed?.let { locationOf(it.module, it.ref) } ?: locationOf(index.key, ref),
             inherited = inherited,
@@ -1061,6 +1086,20 @@ class FormsService(
         }
         return files.sortedBy { it.first }
     }
+
+    /**
+     * An item row without the descriptive properties, for `get_block`'s concise default. Only
+     * fields a caller can recover by asking for `verbosity: "detailed"` are dropped — never one
+     * whose absence would read as a fact about the item.
+     */
+    private fun conciseItem(item: ItemInfo): ItemInfo = ItemInfo(
+        name = item.name,
+        itemType = item.itemType,
+        prompt = item.prompt,
+        propertyClass = item.propertyClass,
+        triggerNames = item.triggerNames,
+        inherited = item.inherited,
+    )
 
     // --- addressable source (SourceLocation, read_source) ---
 

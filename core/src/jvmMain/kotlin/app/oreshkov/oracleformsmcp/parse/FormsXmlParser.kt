@@ -20,6 +20,7 @@ import app.oreshkov.oracleformsmcp.model.ProgramUnitInfo
 import app.oreshkov.oracleformsmcp.model.ProgramUnitType
 import app.oreshkov.oracleformsmcp.model.RecordGroupInfo
 import app.oreshkov.oracleformsmcp.model.SourceRef
+import app.oreshkov.oracleformsmcp.model.TextEncoding
 import app.oreshkov.oracleformsmcp.model.TriggerInfo
 import app.oreshkov.oracleformsmcp.model.TriggerLevel
 import app.oreshkov.oracleformsmcp.model.WindowInfo
@@ -61,6 +62,7 @@ internal object FormsXmlParser {
     private class BlockBuilder(
         val name: String,
         val queryDataSourceName: String?,
+        val propertyClass: String?,
         val inherited: InheritanceRef?,
     ) {
         val items = mutableListOf<ItemInfo>()
@@ -74,6 +76,10 @@ internal object FormsXmlParser {
         val columnName: String?,
         val canvasName: String?,
         val prompt: String?,
+        val propertyClass: String?,
+        val visible: Boolean?,
+        val required: Boolean?,
+        val lovName: String?,
         val inherited: InheritanceRef?,
     ) {
         val triggerNames = mutableListOf<String>()
@@ -138,7 +144,10 @@ internal object FormsXmlParser {
 
                             "Block" -> if (parent?.element == "FormModule") {
                                 block = BlockBuilder(
-                                    name ?: "", reader.attr("QueryDataSourceName"), inherited,
+                                    name = name ?: "",
+                                    queryDataSourceName = reader.attr("QueryDataSourceName"),
+                                    propertyClass = reader.localParentName(moduleName),
+                                    inherited = inherited,
                                 )
                             }
 
@@ -150,12 +159,18 @@ internal object FormsXmlParser {
                                     columnName = reader.attr("ColumnName"),
                                     canvasName = reader.attr("CanvasName"),
                                     prompt = reader.attr("Prompt"),
+                                    propertyClass = reader.localParentName(moduleName),
+                                    visible = reader.boolAttr("Visible"),
+                                    required = reader.boolAttr("Required"),
+                                    // Forms2XML has been inconsistent about this one's casing.
+                                    lovName = reader.attr("LOVName") ?: reader.attr("LovName"),
                                     inherited = inherited,
                                 )
                             }
 
                             "Trigger" -> {
-                                val text = reader.attr("TriggerText").orEmpty()
+                                val body = decodeDoubleEscaped(reader.attr("TriggerText").orEmpty())
+                                val text = body.text
                                 val level = when (parent?.element) {
                                     "Block" -> TriggerLevel.BLOCK
                                     "Item" -> TriggerLevel.ITEM
@@ -175,6 +190,7 @@ internal object FormsXmlParser {
                                     firstLine = firstCodeLine(text),
                                     lineCount = lineCountOf(text),
                                     inherited = inherited,
+                                    textEncoding = body.encoding,
                                     textRef = textRef,
                                     // xmlRef is filled in at the matching END_ELEMENT.
                                 )
@@ -187,7 +203,8 @@ internal object FormsXmlParser {
 
                             "ProgramUnit" -> {
                                 val unitType = ProgramUnitType.fromForms(reader.attr("ProgramUnitType").orEmpty())
-                                val text = reader.attr("ProgramUnitText").orEmpty()
+                                val body = decodeDoubleEscaped(reader.attr("ProgramUnitText").orEmpty())
+                                val text = body.text
                                 val unitName = name ?: ""
                                 val textRef = sidecars.write(
                                     PlsqlSidecars.PROGRAM_UNITS, "$unitName.${unitType.name}", text,
@@ -197,6 +214,7 @@ internal object FormsXmlParser {
                                     unitType = unitType,
                                     lineCount = lineCountOf(text),
                                     inherited = inherited,
+                                    textEncoding = body.encoding,
                                     textRef = textRef,
                                 )
                             }
@@ -217,10 +235,26 @@ internal object FormsXmlParser {
                                 recordGroup = it.copy(columns = it.columns + (name ?: ""))
                             }
 
-                            "Window" -> windows += WindowInfo(name ?: "", reader.attr("Title"))
+                            "Window" -> windows += WindowInfo(
+                                name = name ?: "",
+                                title = reader.attr("Title"),
+                                modal = reader.boolAttr("Modal"),
+                                width = reader.intAttr("Width"),
+                                height = reader.intAttr("Height"),
+                                horizontalToolbarCanvasName = reader.attr("HorizontalToolbarCanvasName"),
+                                verticalToolbarCanvasName = reader.attr("VerticalToolbarCanvasName"),
+                            )
 
                             "Canvas" -> canvases += CanvasInfo(
-                                name ?: "", reader.attr("CanvasType"), reader.attr("WindowName"),
+                                name = name ?: "",
+                                canvasType = reader.attr("CanvasType"),
+                                windowName = reader.attr("WindowName"),
+                                propertyClass = reader.localParentName(moduleName),
+                                raiseOnEnter = reader.boolAttr("RaiseOnEnter"),
+                                width = reader.intAttr("Width"),
+                                height = reader.intAttr("Height"),
+                                viewportWidth = reader.intAttr("ViewportWidth"),
+                                viewportHeight = reader.intAttr("ViewportHeight"),
                             )
 
                             "Alert" -> alerts += AlertInfo(name ?: "", reader.attr("AlertMessage"))
@@ -236,10 +270,10 @@ internal object FormsXmlParser {
                             "Menu" -> menu = MenuInfo(name ?: "")
 
                             "MenuItem" -> menu?.let {
-                                val command = reader.attr("CommandText")
-                                val commandRef = command?.let { text ->
+                                val command = reader.attr("CommandText")?.let(::decodeDoubleEscaped)
+                                val commandRef = command?.let { body ->
                                     sidecars.write(
-                                        PlsqlSidecars.MENU_ITEMS, "${it.name}.${name ?: ""}", text,
+                                        PlsqlSidecars.MENU_ITEMS, "${it.name}.${name ?: ""}", body.text,
                                     )
                                 }
                                 menu = it.copy(
@@ -248,6 +282,7 @@ internal object FormsXmlParser {
                                         label = reader.attr("Label"),
                                         commandType = reader.attr("CommandType"),
                                         commandRef = commandRef,
+                                        textEncoding = command?.encoding ?: TextEncoding.ORIGINAL,
                                     ),
                                 )
                             }
@@ -286,6 +321,7 @@ internal object FormsXmlParser {
                                 blocks += BlockInfo(
                                     name = it.name,
                                     queryDataSourceName = it.queryDataSourceName,
+                                    propertyClass = it.propertyClass,
                                     items = it.items.toList(),
                                     triggerNames = it.triggerNames.toList(),
                                     inherited = it.inherited,
@@ -304,6 +340,10 @@ internal object FormsXmlParser {
                                             columnName = built.columnName,
                                             canvasName = built.canvasName,
                                             prompt = built.prompt,
+                                            propertyClass = built.propertyClass,
+                                            visible = built.visible,
+                                            required = built.required,
+                                            lovName = built.lovName,
                                             triggerNames = built.triggerNames.toList(),
                                             inherited = built.inherited,
                                         ),
@@ -324,6 +364,17 @@ internal object FormsXmlParser {
             reader.close()
         }
 
+        // Property classes are declared after the objects that use them, so the candidates
+        // collected during the pass are confirmed here, against what the document actually has.
+        val declaredClasses = propertyClasses.mapTo(HashSet()) { it.uppercase() }
+        val classedBlocks = blocks.map { b ->
+            b.copy(
+                propertyClass = b.propertyClass.asPropertyClass(declaredClasses),
+                items = b.items.map { it.copy(propertyClass = it.propertyClass.asPropertyClass(declaredClasses)) },
+            )
+        }
+        val classedCanvases = canvases.map { it.copy(propertyClass = it.propertyClass.asPropertyClass(declaredClasses)) }
+
         return ModuleIndex(
             key = key,
             formsVersion = formsVersion,
@@ -331,14 +382,14 @@ internal object FormsXmlParser {
             fingerprint = ModuleFingerprint(0, 0, ""), // stamped by FormsModuleParser/service
             convertedFile = xmlPath,
             parsedAt = Clock.System.now(),
-            blocks = blocks,
+            blocks = classedBlocks,
             triggers = triggers,
             programUnits = programUnits,
             attachedLibraries = attachedLibraries,
             lovs = lovs,
             recordGroups = recordGroups,
             windows = windows,
-            canvases = canvases,
+            canvases = classedCanvases,
             alerts = alerts,
             parameters = parameters,
             visualAttributes = visualAttributes,
@@ -453,6 +504,48 @@ internal object FormsXmlParser {
             .ifEmpty { null }
 
     private fun XMLStreamReader.attr(name: String): String? = getAttributeValue(null, name)
+
+    /**
+     * A boolean property, or `null` when the file did not write it. Forms2XML emits a property
+     * only where it differs from the default, so absence means "not overridden" — reporting
+     * `false` for it would invent a fact.
+     */
+    private fun XMLStreamReader.boolAttr(name: String): Boolean? = when {
+        attr(name).equals("true", ignoreCase = true) -> true
+        attr(name).equals("false", ignoreCase = true) -> false
+        else -> null
+    }
+
+    /** An integer property, or `null` when absent or not a number (never a parse failure). */
+    private fun XMLStreamReader.intAttr(name: String): Int? = attr(name)?.trim()?.toIntOrNull()
+
+    /**
+     * `ParentName` when the parent is in *this* module — the candidate property class.
+     *
+     * The same attribute names three unrelated relationships (see [inheritanceOf]), and this is
+     * the one that hides nothing: the parent is indexed alongside. It is only a *candidate* here
+     * because a same-module parent could also be another object of the same kind; [asPropertyClass]
+     * settles it against the property classes the document actually declares.
+     */
+    private fun XMLStreamReader.localParentName(moduleName: String?): String? {
+        if (attr("ParentFilename") != null) return null
+        if (attr("SubclassObjectGroup").equals("true", ignoreCase = true)) return null
+        val parentModule = attr("ParentModule")
+        if (parentModule != null && !parentModule.equals(moduleName, ignoreCase = true)) return null
+        return attr("ParentName")
+    }
+
+    /**
+     * Keeps a candidate parent name only if the module really declares a property class by that
+     * name.
+     *
+     * `ParentType` would answer this directly, but its numbering is version-dependent and the XML
+     * defines it nowhere, so it is not something to hard-code. The document says it instead: the
+     * `PropertyClass` elements are right there. They are also written *after* the blocks that use
+     * them, which is why this runs once at the end rather than inline.
+     */
+    private fun String?.asPropertyClass(declared: Set<String>): String? =
+        this?.takeIf { it.uppercase() in declared }
 
     private fun xmlInputFactory(): XMLInputFactory = XMLInputFactory.newInstance().apply {
         // Converted files are local, but XXE hardening is free.

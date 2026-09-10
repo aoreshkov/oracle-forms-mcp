@@ -1,6 +1,7 @@
 package app.oreshkov.oracleformsmcp.parse
 
 import app.oreshkov.oracleformsmcp.model.SourceRef
+import app.oreshkov.oracleformsmcp.model.TextEncoding
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -55,3 +56,48 @@ internal fun firstCodeLine(text: String): String =
 /** Number of lines in normalized [text]. */
 internal fun lineCountOf(text: String): Int =
     text.replace("\r\n", "\n").lineSequence().count().coerceAtLeast(1)
+
+/** A PL/SQL body as it will be stored, and whether getting it there required a recovery. */
+internal class DecodedText(val text: String, val encoding: TextEncoding)
+
+/** Numeric character references still present in a value the XML parser already decoded once. */
+private val NUMERIC_ENTITY = Regex("""&#(\d+|[xX][0-9a-fA-F]+);""")
+
+/**
+ * Undoes double escaping in a PL/SQL body, when the evidence says that is what happened.
+ *
+ * A correctly escaped file writes a newline as `&#10;` and the XML parser hands over a real
+ * newline. A doubly-escaped one writes `&amp;#10;`, the parser decodes the `&amp;`, and what
+ * arrives is the five literal characters `&#10;` — so the entire body is one physical line, its
+ * line count is 1, every recorded line range collapses to it, and a line-oriented search has
+ * nothing to report but line 1.
+ *
+ * The guard is the pair of conditions that only hold together for that case: the text carries no
+ * real line break at all, *and* decoding its leftover references introduces one. A genuine
+ * one-liner is left alone even when it contains `&#9;`, and a multi-line body is never touched.
+ *
+ * It cannot be proven — a body that really did contain those characters inside a string literal
+ * looks the same — which is why the result is labelled [TextEncoding.RECOVERED] and served that
+ * way rather than quietly swapped in.
+ */
+internal fun decodeDoubleEscaped(raw: String): DecodedText {
+    if (raw.isEmpty() || raw.contains('\n') || raw.contains('\r')) {
+        return DecodedText(raw, TextEncoding.ORIGINAL)
+    }
+    if (!NUMERIC_ENTITY.containsMatchIn(raw)) return DecodedText(raw, TextEncoding.ORIGINAL)
+    val decoded = NUMERIC_ENTITY.replace(raw) { match ->
+        val digits = match.groupValues[1]
+        val code = if (digits[0] == 'x' || digits[0] == 'X') {
+            digits.substring(1).toIntOrNull(16)
+        } else {
+            digits.toIntOrNull()
+        }
+        // An out-of-range or unparseable reference is left exactly as it was found.
+        if (code == null || code !in 1..0x10FFFF) match.value else String(Character.toChars(code))
+    }
+    return if (decoded.contains('\n')) {
+        DecodedText(decoded, TextEncoding.RECOVERED)
+    } else {
+        DecodedText(raw, TextEncoding.ORIGINAL)
+    }
+}

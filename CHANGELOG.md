@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Doubly-escaped PL/SQL is recovered at parse time.** Some converters write a newline as
+  `&amp;#10;` rather than `&#10;`, so the XML parser decodes it once and the body still holds the
+  literal characters `&#10;`. The whole body then reads as a single physical line: `lineCount` was
+  1 for a hundred-line procedure, every recorded line range collapsed onto that line, and a
+  line-oriented search could only ever report line 1 of a very long one. Bodies that carry no real
+  line break, and whose leftover numeric references decode into one, are now recovered — and
+  flagged `textEncoding: "recovered"` rather than quietly swapped in, because a body that genuinely
+  contained those characters is indistinguishable from one that was escaped twice. A correctly
+  escaped file, and a genuine one-liner, are untouched.
 - **Inherited (subclassed) objects are no longer served as empty.** A block, item, trigger or
   program unit subclassed from another module stores only its overrides, so its body came back as
   `""` with nothing to distinguish "this trigger has no code" from "this trigger's code lives in
@@ -35,6 +44,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the `oracleforms://{module}/index` URI template, which addresses all of them.
 
 ### Added
+- **The properties that give an object its role.** `ItemInfo` gains `propertyClass`, `visible`,
+  `required` and `lovName`; in most Forms applications the property class *is* an item's semantics
+  — a push button is an LOV button only because of the class it inherits — and without it every
+  button looked alike. `WindowInfo` gains `modal`, `width`, `height` and the toolbar canvas names,
+  `CanvasInfo` gains `propertyClass`, `raiseOnEnter` and its size and viewport. Whether a window is
+  modal decides how a form is read, and all of it previously cost one `get_object_xml` per object.
+  A property Forms did not write stays `null` — meaning "not overridden", never `false`.
+- `verbosity` on `get_module_overview`: `detailed` adds a `detail` section carrying the window and
+  canvas objects behind two of the name lists, which also answers "which window hosts this canvas?"
+  in the same call. The name lists keep their shape, so nothing a caller already reads changes.
+- `verbosity` on `get_block`, since a block of a real form runs to dozens of items. The default
+  keeps each item's name, type, property class, prompt, trigger names and subclassing pointer —
+  everything a reader would otherwise have to infer — and `detailed` adds data type, column, canvas
+  and the visible/required/LOV properties.
 - **Source refs are addressable.** A `SourceRef` line range named a cache-relative path with no
   tool exposing the root, so locating the file it pointed at meant searching the filesystem. Every
   result that names a file now carries a `source` — the cache-relative `file`, the line range, and
