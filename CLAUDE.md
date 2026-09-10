@@ -61,6 +61,18 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   unknown elements are skipped generically (but still get an `ObjectRef` when named).
 - **Every tool** declares title, annotations, and `outputSchemaOf<Dto>()`; DTO fields are
   defaulted so schemas stay forward-compatible. `ToolRegistrationTest` enforces this.
+- **Every list-shaped result is bounded and says so.** Clients cap tool output (Claude Code at
+  25k tokens), and a real forms directory holds thousands of modules, so no tool may return an
+  unbounded collection: `list_modules` filters (`pattern`/`type`/`status`) then pages
+  (`limit`/opaque `cursor` → `nextCursor`), and the per-module lists cap rows with a `truncated`
+  flag beside an honest `total` (see `MAX_LIST_ROWS`/`MAX_OVERVIEW_NAMES` next to
+  `MAX_OBJECT_XML_CHARS`). Paging vocabulary is fixed: `offset`/`nextOffset` where page N is cheap
+  to recompute (`search_source`), an opaque `cursor` where it is not.
+- **`resources/list` stays bounded too.** It is a call the *client* issues on its own and the SDK
+  answers without a cursor, so per-module index resources are capped at the 50 most recently
+  fetched (`ModuleIndexResources`) and no startup snapshot of the cache is registered. Every
+  cached module stays reachable through `registerModuleIndexTemplate`; never re-add a
+  registration per cache entry.
 - **Exactly two files carry the version by hand**: `gradle.properties` and `server.json` (the
   release tag guard checks both). Everything else derives it — the MCP `Implementation` version
   via `generateVersionResource`, the MCPB manifest via the `@version@` token in

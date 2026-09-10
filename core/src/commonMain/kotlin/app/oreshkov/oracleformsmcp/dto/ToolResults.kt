@@ -18,10 +18,14 @@ import kotlinx.serialization.Serializable
  * so the wire format stays forward-compatible as fields are added.
  */
 
-/** One row of `list_modules`. */
+/**
+ * One row of `list_modules`. [name] is the flat identifier to match and reason about; [module]
+ * carries the same name with its type as the canonical key every other tool takes.
+ */
 @Serializable
 @SerialName("ModuleStatusEntry")
 public data class ModuleStatusEntry(
+    val name: String,
     val module: ModuleKey,
     val type: ModuleType,
     val path: String? = null,
@@ -31,12 +35,25 @@ public data class ModuleStatusEntry(
     val hasPreConverted: Boolean = false,
 )
 
-/** `list_modules`. */
+/**
+ * `list_modules` — one filtered, capped page of the forms directory.
+ *
+ * The paging fields precede [modules] so a reader meets them before the rows: [total] is the size
+ * of the filtered result set, [returned] the rows on this page, and [truncated] says more rows
+ * follow — in which case [nextCursor] is the opaque token to pass back as `cursor`.
+ * [countsByStatus] summarises the name/type-filtered set *before* any `status` filter, so a first
+ * call stays small and still orients ("of 40 matches, 3 are CACHED").
+ */
 @Serializable
 @SerialName("ModuleList")
 public data class ModuleList(
     val formsDir: String,
     val oracleHomeConversion: Boolean = false,
+    val total: Int = 0,
+    val returned: Int = 0,
+    val truncated: Boolean = false,
+    val nextCursor: String? = null,
+    val countsByStatus: Map<ModuleStatus, Int> = emptyMap(),
     val modules: List<ModuleStatusEntry> = emptyList(),
 )
 
@@ -55,12 +72,17 @@ public data class FetchModuleSummary(
     val fromCache: Boolean = false,
 )
 
-/** `get_module_overview` — counts plus the names of every section. */
+/**
+ * `get_module_overview` — counts plus the names of every section. [truncated] is `true` when at
+ * least one section held more names than the per-section cap and was cut; drill into that section
+ * with its own list tool (`list_blocks`, `list_program_units`) or `search_source`.
+ */
 @Serializable
 @SerialName("ModuleOverview")
 public data class ModuleOverview(
     val module: ModuleKey,
     val formsVersion: String? = null,
+    val truncated: Boolean = false,
     val blocks: List<String> = emptyList(),
     val triggerCount: Int = 0,
     val programUnits: List<String> = emptyList(),
@@ -89,11 +111,13 @@ public data class BlockSummary(
     val triggerCount: Int = 0,
 )
 
-/** `list_blocks`. */
+/** `list_blocks`. [total] counts every block; [truncated] says the rows were cut at the cap. */
 @Serializable
 @SerialName("BlockList")
 public data class BlockList(
     val module: ModuleKey,
+    val total: Int = 0,
+    val truncated: Boolean = false,
     val blocks: List<BlockSummary> = emptyList(),
 )
 
@@ -118,11 +142,16 @@ public data class TriggerSummary(
     val lineCount: Int = 0,
 )
 
-/** `list_triggers`. */
+/**
+ * `list_triggers`. [total] counts the triggers matching the block/item/level filter; [truncated]
+ * says the rows were cut at the cap — narrow the filter to see the rest.
+ */
 @Serializable
 @SerialName("TriggerList")
 public data class TriggerList(
     val module: ModuleKey,
+    val total: Int = 0,
+    val truncated: Boolean = false,
     val triggers: List<TriggerSummary> = emptyList(),
 )
 
@@ -148,11 +177,13 @@ public data class ProgramUnitSummary(
     val lineCount: Int = 0,
 )
 
-/** `list_program_units`. */
+/** `list_program_units`. [total] counts every unit; [truncated] says the rows were cut at the cap. */
 @Serializable
 @SerialName("ProgramUnitList")
 public data class ProgramUnitList(
     val module: ModuleKey,
+    val total: Int = 0,
+    val truncated: Boolean = false,
     val units: List<ProgramUnitSummary> = emptyList(),
 )
 
@@ -282,11 +313,17 @@ public data class AnnotationRemoved(
     val removed: Boolean = false,
 )
 
-/** `search_annotations` — matching notes and relations across one module. */
+/**
+ * `search_annotations` — matching notes and relations across one module. [truncated] says either
+ * list was cut at the cap; narrow with `text`, `kind` or `tag` to see the rest.
+ */
 @Serializable
 @SerialName("AnnotationSearchResults")
 public data class AnnotationSearchResults(
     val module: ModuleKey,
+    val totalNotes: Int = 0,
+    val totalRelations: Int = 0,
+    val truncated: Boolean = false,
     val notes: List<AnnotationView> = emptyList(),
     val relations: List<RelationView> = emptyList(),
 )

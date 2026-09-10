@@ -6,6 +6,8 @@ import app.oreshkov.oracleformsmcp.server.tools.toolJson
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.ReadResourceResult
 import io.modelcontextprotocol.kotlin.sdk.types.TextResourceContents
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Stable, parseable URI for a cached module's index. */
 fun moduleIndexUri(key: ModuleKey): String = "oracleforms://$key/index"
@@ -82,15 +84,65 @@ fun Server.registerModuleAnnotationsTemplate(service: FormsService) {
     }
 }
 
+/** How many per-module index resources [ModuleIndexResources] keeps registered at once. */
+const val MAX_MODULE_INDEX_RESOURCES: Int = 50
+
 /**
- * Exposes one MCP resource per cached module: reading `oracleforms://NAME.ext/index` returns the
- * [app.oreshkov.oracleformsmcp.model.ModuleIndex] JSON. Registered at startup for already-cached
- * modules and again after each successful `fetch_module`, so `resources/list` stays current
- * without a restart (the server emits `listChanged` notifications on registration).
+ * Exposes an MCP resource per *recently fetched* module — reading `oracleforms://NAME.ext/index`
+ * returns the [app.oreshkov.oracleformsmcp.model.ModuleIndex] JSON — bounded to the
+ * [limit] most recent, oldest evicted first.
+ *
+ * The bound is the point. `resources/list` has no cursor in the Kotlin SDK, and the client issues
+ * it on its own before the model does anything: one resource per cached module turned a warm cache
+ * over a real forms directory (thousands of modules) into a several-hundred-kilobyte response —
+ * the same overflow `list_modules` had, on a call nobody chose to make. Nothing is lost by
+ * evicting: [registerModuleIndexTemplate] addresses *every* cached module through the same URI, so
+ * an evicted module stays readable, and `list_modules` remains the discovery path. What the static
+ * registrations buy is visibility in `resources/list` for the modules this session actually
+ * touched, which is exactly what a bounded most-recent set holds.
+ *
+ * Registration happens from `fetch_module`, and tool handlers run concurrently (MCP SDK 0.15+), so
+ * every mutation of the recency set is serialised on [mutex].
+ */
+class ModuleIndexResources(
+    private val service: FormsService,
+    private val limit: Int = MAX_MODULE_INDEX_RESOURCES,
+) {
+    /** Registered index URIs, oldest first — insertion order is the eviction order. */
+    private val registered = LinkedHashSet<String>()
+    private val mutex = Mutex()
+
+    /** Registers [key]'s index resource on [server], evicting the oldest beyond [limit]. */
+    suspend fun register(server: Server, key: ModuleKey) {
+        val uri = moduleIndexUri(key)
+        mutex.withLock {
+            if (registered.remove(uri)) {
+                registered += uri // warm re-fetch: refresh recency, the resource is already there
+                return
+            }
+            server.addModuleIndexResource(service, key)
+            registered += uri
+            while (registered.size > limit) {
+                val evicted = registered.first()
+                registered -= evicted
+                // Unregisters only; an in-flight read already holds its handler, and later reads
+                // fall through to the URI template, which serves the identical content.
+                server.removeResource(evicted)
+            }
+        }
+    }
+
+    /** The index URIs currently registered, oldest first. Test/diagnostic view of the bound. */
+    internal fun registeredUris(): List<String> = registered.toList()
+}
+
+/**
+ * Registers one module's index resource. Prefer [ModuleIndexResources.register], which keeps the
+ * registered set bounded; this is the raw registration it performs.
  */
 fun Server.addModuleIndexResource(service: FormsService, key: ModuleKey) {
     val uri = moduleIndexUri(key)
-    if (uri in resources) return // warm re-fetch: already registered, don't re-notify
+    if (uri in resources) return // already registered, don't re-notify
     try {
         addResource(
             uri = uri,
@@ -111,9 +163,10 @@ fun Server.addModuleIndexResource(service: FormsService, key: ModuleKey) {
         }
     } catch (_: IllegalArgumentException) {
         // Since MCP SDK 0.15 a duplicate registration throws instead of silently replacing. The
-        // check above is check-then-act and handlers run concurrently, so two first-time fetches
-        // of one module can both reach here; losing that race is not a fetch failure, and the
-        // winner registered an identical resource. Deliberately not remove-then-re-add: that
-        // would emit a spurious listChanged and briefly unregister a resource being read.
+        // check above is check-then-act and handlers run concurrently, so two callers that bypass
+        // ModuleIndexResources' mutex can both reach here; losing that race is not a fetch
+        // failure, and the winner registered an identical resource. Deliberately not
+        // remove-then-re-add: that would emit a spurious listChanged and briefly unregister a
+        // resource being read.
     }
 }

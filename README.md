@@ -63,6 +63,9 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 
 1. `list_modules` scans the configured `--forms-dir` (non-recursive) and reports each module's
    cache status: `NOT_CACHED`, `CACHED`, `STALE` (source changed on disk), or `SOURCE_MISSING`.
+   A production forms directory holds thousands of modules, so the answer is filtered and paged:
+   narrow with `pattern`/`type`/`status`, follow `nextCursor` for the rest, and read
+   `countsByStatus` for the shape of the whole match.
 2. `fetch_module` produces the module's text form in the cache and indexes it:
    - **`ORACLE_HOME` set** — binaries are converted with the Oracle tools in
      `%ORACLE_HOME%\bin`: `frmf2xml` for `.fmb`/`.mmb`/`.olb` (XML), `frmcmp_batch`
@@ -85,7 +88,7 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 
 | Tool | What it returns |
 |---|---|
-| `list_modules` | Every module in the forms dir with type, size, and cache status |
+| `list_modules` | Modules in the forms dir with type, size, and cache status; filter by `pattern`/`regex`, `type`, `status` and page via `limit`/`cursor` |
 | `fetch_module` | Converts + indexes one module (idempotent; progress notifications) |
 | `get_module_overview` | Names of every section + counts — the first call after a fetch |
 | `list_blocks` | Blocks with base table, item count, trigger count |

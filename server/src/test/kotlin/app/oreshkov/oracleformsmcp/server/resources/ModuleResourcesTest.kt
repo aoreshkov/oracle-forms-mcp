@@ -45,6 +45,39 @@ class ModuleResourcesTest {
         assertEquals(listOf(moduleIndexUri(key)), server.resources.keys.toList())
     }
 
+    /**
+     * `resources/list` has no cursor in the Kotlin SDK and the client issues it unprompted, so one
+     * registration per cached module made a warm cache over a real forms directory overflow the
+     * client before the model called anything. The registered set must stay bounded however many
+     * modules are fetched, and the most recent fetches are the ones that survive.
+     */
+    @Test
+    fun resourcesListStaysBoundedHoweverManyModulesAreFetched() = runBlocking {
+        val server = serverWithResources()
+        val indexResources = ModuleIndexResources(fakeService(), limit = 5)
+        val keys = (0 until 60).map { ModuleKey.of("MOD%02d".format(it), ModuleType.FORM) }
+
+        keys.forEach { indexResources.register(server, it) }
+
+        assertEquals(5, server.resources.size)
+        assertEquals(keys.takeLast(5).map(::moduleIndexUri), indexResources.registeredUris())
+        assertEquals(indexResources.registeredUris().toSet(), server.resources.keys.toSet())
+    }
+
+    /** Re-fetching a still-registered module refreshes its recency instead of registering twice. */
+    @Test
+    fun refetchingAModuleRefreshesRecencyWithoutDuplicating() = runBlocking {
+        val server = serverWithResources()
+        val indexResources = ModuleIndexResources(fakeService(), limit = 2)
+        val (a, b, c) = listOf("A", "B", "C").map { ModuleKey.of(it, ModuleType.FORM) }
+
+        listOf(a, b, a, c).forEach { indexResources.register(server, it) }
+
+        // B was the oldest by the time C arrived, because re-registering A moved A to the front.
+        assertEquals(listOf(a, c).map(::moduleIndexUri), indexResources.registeredUris())
+        assertEquals(2, server.resources.size)
+    }
+
     @Test
     fun indexTemplateIsRegisteredWithMetadata() {
         val server = serverWithResources().apply { registerModuleIndexTemplate(fakeService()) }

@@ -11,7 +11,8 @@ fun Server.registerSearchAnnotationsTool(service: FormsService) {
         description = "Search the meta-information stored for one module. Filter notes by free " +
             "text, by annotation 'kind' (note/tag/summary/classification), or by exact 'tag' " +
             "label; matching relations are returned when only a text query is given. Text search " +
-            "is case-insensitive over bodies, relation types, and element names.",
+            "is case-insensitive over bodies, relation types, and element names. 'truncated' means " +
+            "either list was cut at the response cap — narrow with text, kind or tag.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "text" to stringProp("Case-insensitive substring to match (optional)"),

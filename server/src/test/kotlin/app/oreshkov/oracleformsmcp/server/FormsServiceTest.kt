@@ -6,6 +6,8 @@ import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.model.ScannedModule
+import app.oreshkov.oracleformsmcp.model.TriggerInfo
+import app.oreshkov.oracleformsmcp.model.TriggerLevel
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.writeText
@@ -155,6 +157,46 @@ class FormsServiceTest {
 
         service.fetchModule(ordersKey)
         service.overview(ordersKey) // heals
+    }
+
+    /**
+     * Every list-shaped result has a hard ceiling and says when it hit one: a tool that can only
+     * fail on a pathological module is worse than one that returns a capped page and flags it.
+     * `total` stays honest so the caller knows how much was left behind.
+     */
+    @Test
+    fun listShapedResultsAreCappedAndFlagTheCut() = runTest {
+        val file = preConverted("orders_fmb.xml")
+        val service = fakeService(
+            scanner = FakeScanner(listOf(ordersModule(file))),
+            cacheRoot = temp.resolve("cache"),
+            parser = FakeParser { key, converted ->
+                minimalIndex(key, converted).copy(
+                    triggers = (0 until 1_500).map {
+                        TriggerInfo(name = "WHEN-VALIDATE-ITEM-$it", level = TriggerLevel.FORM, lineCount = 3)
+                    },
+                )
+            },
+        )
+        service.fetchModule(ordersKey)
+
+        val triggers = service.listTriggers(ordersKey, block = null, item = null, level = null)
+
+        assertEquals(1_500, triggers.total)
+        assertEquals(1_000, triggers.triggers.size)
+        assertTrue(triggers.truncated)
+    }
+
+    /** Under the cap nothing is flagged — `truncated` must mean something. */
+    @Test
+    fun listShapedResultsUnderTheCapAreNotFlagged() = runTest {
+        val service = serviceFor(ordersModule(preConverted("orders_fmb.xml")))
+        service.fetchModule(ordersKey)
+
+        val blocks = service.listBlocks(ordersKey)
+
+        assertEquals(0, blocks.total)
+        assertFalse(blocks.truncated)
     }
 
     @Test

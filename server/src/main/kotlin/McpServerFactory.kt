@@ -8,7 +8,7 @@ import app.oreshkov.oracleformsmcp.core.ModuleCache
 import app.oreshkov.oracleformsmcp.parse.FormsModuleParser
 import app.oreshkov.oracleformsmcp.scan.FormsDirectoryScannerImpl
 import app.oreshkov.oracleformsmcp.server.prompts.registerExplainModulePrompt
-import app.oreshkov.oracleformsmcp.server.resources.addModuleIndexResource
+import app.oreshkov.oracleformsmcp.server.resources.ModuleIndexResources
 import app.oreshkov.oracleformsmcp.server.resources.registerModuleAnnotationsTemplate
 import app.oreshkov.oracleformsmcp.server.resources.registerModuleIndexTemplate
 import app.oreshkov.oracleformsmcp.server.tools.registerAnnotateElementTool
@@ -40,7 +40,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.runBlocking
 
 const val SERVER_NAME: String = "oracle-forms-mcp"
 
@@ -112,6 +111,10 @@ object McpServerFactory {
             convertedDir = config.convertedDir,
         )
 
+        // Bounds how many per-module index resources `resources/list` ever carries; see
+        // ModuleIndexResources for why an unbounded set is a client-side overflow.
+        val indexResources = ModuleIndexResources(service)
+
         val server = Server(
             serverInfo = Implementation(name = SERVER_NAME, version = ServerVersion.value),
             options = ServerOptions(
@@ -137,8 +140,9 @@ object McpServerFactory {
         ) {
             registerListModulesTool(service)
             registerFetchModuleTool(service) { key ->
-                // Newly indexed modules appear in resources/list without a restart.
-                addModuleIndexResource(service, key)
+                // Newly indexed modules appear in resources/list without a restart, oldest
+                // registration evicted once the bound is reached.
+                indexResources.register(this, key)
             }
             registerGetModuleOverviewTool(service)
             registerListBlocksTool(service)
@@ -157,13 +161,13 @@ object McpServerFactory {
             registerSearchAnnotationsTool(service)
             registerRemoveAnnotationTool(service)
             registerExplainModulePrompt(service)
-            // Direct addressing of any cached index; the per-module resources below stay for
-            // discoverability via resources/list.
+            // Direct addressing of *any* cached index, however large the cache. This — not the
+            // bounded static registrations above — is what makes every cached module reachable,
+            // which is why no startup snapshot of the cache is registered: on a real forms
+            // directory that snapshot was `resources/list`'s overflow.
             registerModuleIndexTemplate(service)
             registerModuleAnnotationsTemplate(service)
         }
-        // One index resource per already-cached module (startup snapshot).
-        runBlocking { cache.list() }.forEach { server.addModuleIndexResource(service, it) }
 
         val logForwarderScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         attachMcpLogForwarder(server, logForwarderScope)
