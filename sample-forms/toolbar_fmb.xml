@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+  <FormModule Name="TOOLBAR" Title="Shared toolbar">
+    <Block Name="BAR">
+      <Item Name="SELECT" ItemType="Push Button" CanvasName="BAR" Prompt="Select">
+        <Trigger Name="WHEN-BUTTON-PRESSED" TriggerText="BEGIN&#10;   Do_Key('HELP');&#10;EXCEPTION&#10;   WHEN OTHERS THEN RAISE Form_Trigger_Failure;&#10;END;"/>
+      </Item>
+      <Item Name="CANCEL" ItemType="Push Button" CanvasName="BAR" Prompt="Cancel">
+        <Trigger Name="WHEN-BUTTON-PRESSED" TriggerText="Exit_Form;"/>
+      </Item>
+    </Block>
+    <Canvas Name="BAR" CanvasType="Horizontal Toolbar" WindowName="WIN_BAR"/>
+    <ProgramUnit Name="BAR_REFRESH" ProgramUnitType="Procedure" ProgramUnitText="PROCEDURE bar_refresh IS&#10;BEGIN&#10;  Synchronize;&#10;END;"/>
+    <Window Name="WIN_BAR" Title="Toolbar"/>
+  </FormModule>
+</Module>

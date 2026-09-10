@@ -4,6 +4,7 @@ import app.oreshkov.oracleformsmcp.model.AnnotationKind
 import app.oreshkov.oracleformsmcp.model.Author
 import app.oreshkov.oracleformsmcp.model.BlockInfo
 import app.oreshkov.oracleformsmcp.model.ElementId
+import app.oreshkov.oracleformsmcp.model.InheritanceRef
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
 import app.oreshkov.oracleformsmcp.model.ModuleType
@@ -17,6 +18,27 @@ import kotlinx.serialization.Serializable
  * serialize a value object instead of hand-rolling JSON. All read-only collections with defaults
  * so the wire format stays forward-compatible as fields are added.
  */
+
+/**
+ * Where the PL/SQL body served beside this value came from.
+ *
+ * The distinction exists because [INHERITED] and [EMPTY] look identical on the wire — both carry
+ * `text: ""` — while meaning opposite things. Serving an inherited body as a bare empty string
+ * asserts that the object does nothing, which is the one lie a reader has no way to detect.
+ *
+ * [OWN] the body is defined in this module (the ordinary case, and the default so the field can
+ * be omitted); [INHERITED] the object is subclassed and its code lives in the module the
+ * accompanying `inherited` ref names; [RESOLVED] the body shown *is* the parent's, followed for
+ * this call (`resolvedFrom` says from where); [EMPTY] the object genuinely has no body.
+ */
+@Serializable
+@SerialName("BodySource")
+public enum class BodySource {
+    OWN,
+    INHERITED,
+    RESOLVED,
+    EMPTY,
+}
 
 /**
  * One row of `list_modules`. [name] is the flat identifier to match and reason about; [module]
@@ -121,16 +143,26 @@ public data class BlockList(
     val blocks: List<BlockSummary> = emptyList(),
 )
 
-/** `get_block` — the full block including its items and trigger names. */
+/**
+ * `get_block` — the full block including its items and trigger names.
+ *
+ * A subclassed block carries `block.inherited` (and so may its items); [hint] then names the call
+ * that reaches the full definition, because what this module stores is only its overrides.
+ */
 @Serializable
 @SerialName("BlockDetail")
 public data class BlockDetail(
     val module: ModuleKey,
     val block: BlockInfo,
+    val hint: String? = null,
     val annotations: ElementAnnotations = ElementAnnotations(),
 )
 
-/** One row of `list_triggers`. */
+/**
+ * One row of `list_triggers`. [bodySource] tells an empty-looking row that is subclassed from one
+ * that is genuinely empty — the same distinction `get_trigger` makes, carried into the listing so
+ * a scan of the rows does not have to call every one of them to find out.
+ */
 @Serializable
 @SerialName("TriggerSummary")
 public data class TriggerSummary(
@@ -140,6 +172,7 @@ public data class TriggerSummary(
     val item: String? = null,
     val firstLine: String = "",
     val lineCount: Int = 0,
+    val bodySource: BodySource = BodySource.OWN,
 )
 
 /**
@@ -155,7 +188,14 @@ public data class TriggerList(
     val triggers: List<TriggerSummary> = emptyList(),
 )
 
-/** `get_trigger` — the decoded PL/SQL body. */
+/**
+ * `get_trigger` — the decoded PL/SQL body.
+ *
+ * [bodySource] qualifies [text]: an empty [text] beside `INHERITED` means the code lives in the
+ * module [inherited] names, never that the trigger does nothing. [resolvedFrom] is set only when
+ * the call followed the pointer (`resolve`), and [hint] names the exact next call whenever one is
+ * needed.
+ */
 @Serializable
 @SerialName("TriggerSource")
 public data class TriggerSource(
@@ -165,6 +205,10 @@ public data class TriggerSource(
     val block: String? = null,
     val item: String? = null,
     val text: String,
+    val bodySource: BodySource = BodySource.OWN,
+    val inherited: InheritanceRef? = null,
+    val resolvedFrom: ModuleKey? = null,
+    val hint: String? = null,
     val annotations: ElementAnnotations = ElementAnnotations(),
 )
 
@@ -187,7 +231,7 @@ public data class ProgramUnitList(
     val units: List<ProgramUnitSummary> = emptyList(),
 )
 
-/** `get_program_unit` — the PL/SQL body. */
+/** `get_program_unit` — the PL/SQL body. [bodySource] and friends as in [TriggerSource]. */
 @Serializable
 @SerialName("ProgramUnitSource")
 public data class ProgramUnitSource(
@@ -195,6 +239,10 @@ public data class ProgramUnitSource(
     val name: String,
     val unitType: ProgramUnitType,
     val text: String,
+    val bodySource: BodySource = BodySource.OWN,
+    val inherited: InheritanceRef? = null,
+    val resolvedFrom: ModuleKey? = null,
+    val hint: String? = null,
     val annotations: ElementAnnotations = ElementAnnotations(),
 )
 
@@ -224,6 +272,11 @@ public data class SearchResults(
 /**
  * `get_object_xml` — the raw XML fragment of one named object, sliced from the converted file by
  * its recorded line range. [truncated] flags a fragment cut at the response size cap.
+ *
+ * [inherited] answers the subclassing question *at this object's level*: Forms writes the parent
+ * pointer on the enclosing owner, so the fragment of a subclassed item shows only
+ * `SubclassSubObject="true"` and would otherwise leave the escape hatch unable to answer the
+ * question it was called for.
  */
 @Serializable
 @SerialName("ObjectXml")
@@ -235,6 +288,7 @@ public data class ObjectXml(
     val xml: String,
     val startLine: Int = 1,
     val truncated: Boolean = false,
+    val inherited: InheritanceRef? = null,
     val annotations: ElementAnnotations = ElementAnnotations(),
 )
 

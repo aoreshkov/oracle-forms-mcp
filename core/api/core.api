@@ -257,16 +257,18 @@ public final class app/oreshkov/oracleformsmcp/dto/AnnotationView$Companion {
 
 public final class app/oreshkov/oracleformsmcp/dto/BlockDetail {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/BlockDetail$Companion;
-	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/BlockInfo;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)V
-	public synthetic fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/BlockInfo;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/BlockInfo;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)V
+	public synthetic fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/BlockInfo;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public final fun component2 ()Lapp/oreshkov/oracleformsmcp/model/BlockInfo;
-	public final fun component3 ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
-	public final fun copy (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/BlockInfo;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)Lapp/oreshkov/oracleformsmcp/dto/BlockDetail;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/BlockDetail;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/BlockInfo;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/BlockDetail;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
+	public final fun copy (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/BlockInfo;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)Lapp/oreshkov/oracleformsmcp/dto/BlockDetail;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/BlockDetail;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/BlockInfo;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/BlockDetail;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAnnotations ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
 	public final fun getBlock ()Lapp/oreshkov/oracleformsmcp/model/BlockInfo;
+	public final fun getHint ()Ljava/lang/String;
 	public final fun getModule ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -352,6 +354,21 @@ public final synthetic class app/oreshkov/oracleformsmcp/dto/BlockSummary$$seria
 }
 
 public final class app/oreshkov/oracleformsmcp/dto/BlockSummary$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class app/oreshkov/oracleformsmcp/dto/BodySource : java/lang/Enum {
+	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/BodySource$Companion;
+	public static final field EMPTY Lapp/oreshkov/oracleformsmcp/dto/BodySource;
+	public static final field INHERITED Lapp/oreshkov/oracleformsmcp/dto/BodySource;
+	public static final field OWN Lapp/oreshkov/oracleformsmcp/dto/BodySource;
+	public static final field RESOLVED Lapp/oreshkov/oracleformsmcp/dto/BodySource;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lapp/oreshkov/oracleformsmcp/dto/BodySource;
+	public static fun values ()[Lapp/oreshkov/oracleformsmcp/dto/BodySource;
+}
+
+public final class app/oreshkov/oracleformsmcp/dto/BodySource$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
@@ -644,8 +661,8 @@ public final class app/oreshkov/oracleformsmcp/dto/ModuleStatusEntry$Companion {
 
 public final class app/oreshkov/oracleformsmcp/dto/ObjectXml {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/ObjectXml$Companion;
-	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZLapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)V
-	public synthetic fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZLapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZLapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)V
+	public synthetic fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZLapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/lang/String;
@@ -653,11 +670,13 @@ public final class app/oreshkov/oracleformsmcp/dto/ObjectXml {
 	public final fun component5 ()Ljava/lang/String;
 	public final fun component6 ()I
 	public final fun component7 ()Z
-	public final fun component8 ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
-	public final fun copy (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZLapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)Lapp/oreshkov/oracleformsmcp/dto/ObjectXml;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/ObjectXml;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZLapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/ObjectXml;
+	public final fun component8 ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
+	public final fun component9 ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
+	public final fun copy (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZLapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)Lapp/oreshkov/oracleformsmcp/dto/ObjectXml;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/ObjectXml;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZLapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/ObjectXml;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAnnotations ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
+	public final fun getInherited ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
 	public final fun getModule ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public final fun getName ()Ljava/lang/String;
 	public final fun getObjectType ()Ljava/lang/String;
@@ -720,19 +739,27 @@ public final class app/oreshkov/oracleformsmcp/dto/ProgramUnitList$Companion {
 
 public final class app/oreshkov/oracleformsmcp/dto/ProgramUnitSource {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/ProgramUnitSource$Companion;
-	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)V
-	public synthetic fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/BodySource;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)V
+	public synthetic fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/BodySource;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;
 	public final fun component4 ()Ljava/lang/String;
-	public final fun component5 ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
-	public final fun copy (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)Lapp/oreshkov/oracleformsmcp/dto/ProgramUnitSource;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/ProgramUnitSource;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/ProgramUnitSource;
+	public final fun component5 ()Lapp/oreshkov/oracleformsmcp/dto/BodySource;
+	public final fun component6 ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
+	public final fun component7 ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
+	public final fun copy (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/BodySource;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)Lapp/oreshkov/oracleformsmcp/dto/ProgramUnitSource;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/ProgramUnitSource;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/BodySource;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/ProgramUnitSource;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAnnotations ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
+	public final fun getBodySource ()Lapp/oreshkov/oracleformsmcp/dto/BodySource;
+	public final fun getHint ()Ljava/lang/String;
+	public final fun getInherited ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
 	public final fun getModule ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public final fun getName ()Ljava/lang/String;
+	public final fun getResolvedFrom ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public final fun getText ()Ljava/lang/String;
 	public final fun getUnitType ()Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;
 	public fun hashCode ()I
@@ -961,24 +988,32 @@ public final class app/oreshkov/oracleformsmcp/dto/TriggerList$Companion {
 
 public final class app/oreshkov/oracleformsmcp/dto/TriggerSource {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/TriggerSource$Companion;
-	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)V
-	public synthetic fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/BodySource;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)V
+	public synthetic fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/BodySource;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component11 ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;
 	public final fun component4 ()Ljava/lang/String;
 	public final fun component5 ()Ljava/lang/String;
 	public final fun component6 ()Ljava/lang/String;
-	public final fun component7 ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
-	public final fun copy (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)Lapp/oreshkov/oracleformsmcp/dto/TriggerSource;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/TriggerSource;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/TriggerSource;
+	public final fun component7 ()Lapp/oreshkov/oracleformsmcp/dto/BodySource;
+	public final fun component8 ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
+	public final fun component9 ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
+	public final fun copy (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/BodySource;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;)Lapp/oreshkov/oracleformsmcp/dto/TriggerSource;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/TriggerSource;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/BodySource;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/TriggerSource;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAnnotations ()Lapp/oreshkov/oracleformsmcp/dto/ElementAnnotations;
 	public final fun getBlock ()Ljava/lang/String;
+	public final fun getBodySource ()Lapp/oreshkov/oracleformsmcp/dto/BodySource;
+	public final fun getHint ()Ljava/lang/String;
+	public final fun getInherited ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
 	public final fun getItem ()Ljava/lang/String;
 	public final fun getLevel ()Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;
 	public final fun getModule ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public final fun getName ()Ljava/lang/String;
+	public final fun getResolvedFrom ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public final fun getText ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -1001,18 +1036,20 @@ public final class app/oreshkov/oracleformsmcp/dto/TriggerSource$Companion {
 
 public final class app/oreshkov/oracleformsmcp/dto/TriggerSummary {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/TriggerSummary$Companion;
-	public fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V
-	public synthetic fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/dto/BodySource;)V
+	public synthetic fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/dto/BodySource;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;
 	public final fun component3 ()Ljava/lang/String;
 	public final fun component4 ()Ljava/lang/String;
 	public final fun component5 ()Ljava/lang/String;
 	public final fun component6 ()I
-	public final fun copy (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)Lapp/oreshkov/oracleformsmcp/dto/TriggerSummary;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/TriggerSummary;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/TriggerSummary;
+	public final fun component7 ()Lapp/oreshkov/oracleformsmcp/dto/BodySource;
+	public final fun copy (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/dto/BodySource;)Lapp/oreshkov/oracleformsmcp/dto/TriggerSummary;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/TriggerSummary;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/dto/BodySource;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/TriggerSummary;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getBlock ()Ljava/lang/String;
+	public final fun getBodySource ()Lapp/oreshkov/oracleformsmcp/dto/BodySource;
 	public final fun getFirstLine ()Ljava/lang/String;
 	public final fun getItem ()Ljava/lang/String;
 	public final fun getLevel ()Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;
@@ -1173,16 +1210,18 @@ public final class app/oreshkov/oracleformsmcp/model/Author$Companion {
 
 public final class app/oreshkov/oracleformsmcp/model/BlockInfo {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/model/BlockInfo$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/util/List;
 	public final fun component4 ()Ljava/util/List;
-	public final fun component5 ()Lapp/oreshkov/oracleformsmcp/model/SourceRef;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)Lapp/oreshkov/oracleformsmcp/model/BlockInfo;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/BlockInfo;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/BlockInfo;
+	public final fun component5 ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
+	public final fun component6 ()Lapp/oreshkov/oracleformsmcp/model/SourceRef;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)Lapp/oreshkov/oracleformsmcp/model/BlockInfo;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/BlockInfo;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/BlockInfo;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInherited ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
 	public final fun getItems ()Ljava/util/List;
 	public final fun getName ()Ljava/lang/String;
 	public final fun getQueryDataSourceName ()Ljava/lang/String;
@@ -1299,10 +1338,51 @@ public final class app/oreshkov/oracleformsmcp/model/ElementKind$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
+public final class app/oreshkov/oracleformsmcp/model/InheritanceRef {
+	public static final field Companion Lapp/oreshkov/oracleformsmcp/model/InheritanceRef$Companion;
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z)Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFile ()Ljava/lang/String;
+	public final fun getModule ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getObjectGroup ()Ljava/lang/String;
+	public final fun getOwnerPath ()Ljava/lang/String;
+	public final fun getParentType ()Ljava/lang/String;
+	public final fun getSubObject ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class app/oreshkov/oracleformsmcp/model/InheritanceRef$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lapp/oreshkov/oracleformsmcp/model/InheritanceRef$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class app/oreshkov/oracleformsmcp/model/InheritanceRef$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
 public final class app/oreshkov/oracleformsmcp/model/ItemInfo {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/model/ItemInfo$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/lang/String;
@@ -1310,12 +1390,14 @@ public final class app/oreshkov/oracleformsmcp/model/ItemInfo {
 	public final fun component5 ()Ljava/lang/String;
 	public final fun component6 ()Ljava/lang/String;
 	public final fun component7 ()Ljava/util/List;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)Lapp/oreshkov/oracleformsmcp/model/ItemInfo;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/ItemInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/ItemInfo;
+	public final fun component8 ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;)Lapp/oreshkov/oracleformsmcp/model/ItemInfo;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/ItemInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/ItemInfo;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCanvasName ()Ljava/lang/String;
 	public final fun getColumnName ()Ljava/lang/String;
 	public final fun getDataType ()Ljava/lang/String;
+	public final fun getInherited ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
 	public final fun getItemType ()Ljava/lang/String;
 	public final fun getName ()Ljava/lang/String;
 	public final fun getPrompt ()Ljava/lang/String;
@@ -1697,15 +1779,17 @@ public final class app/oreshkov/oracleformsmcp/model/ObjectLibraryTabInfo$Compan
 
 public final class app/oreshkov/oracleformsmcp/model/ObjectRef {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/model/ObjectRef$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()Ljava/lang/String;
-	public final fun component4 ()Lapp/oreshkov/oracleformsmcp/model/SourceRef;
-	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)Lapp/oreshkov/oracleformsmcp/model/ObjectRef;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/ObjectRef;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/ObjectRef;
+	public final fun component4 ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
+	public final fun component5 ()Lapp/oreshkov/oracleformsmcp/model/SourceRef;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)Lapp/oreshkov/oracleformsmcp/model/ObjectRef;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/ObjectRef;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/ObjectRef;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInherited ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
 	public final fun getName ()Ljava/lang/String;
 	public final fun getObjectType ()Ljava/lang/String;
 	public final fun getOwnerPath ()Ljava/lang/String;
@@ -1763,16 +1847,18 @@ public final class app/oreshkov/oracleformsmcp/model/ParameterInfo$Companion {
 
 public final class app/oreshkov/oracleformsmcp/model/ProgramUnitInfo {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/model/ProgramUnitInfo$Companion;
-	public fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;ILapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)V
-	public synthetic fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;ILapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;ILapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)V
+	public synthetic fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;ILapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;
 	public final fun component3 ()I
-	public final fun component4 ()Lapp/oreshkov/oracleformsmcp/model/SourceRef;
+	public final fun component4 ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
 	public final fun component5 ()Lapp/oreshkov/oracleformsmcp/model/SourceRef;
-	public final fun copy (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;ILapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)Lapp/oreshkov/oracleformsmcp/model/ProgramUnitInfo;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/ProgramUnitInfo;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;ILapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/ProgramUnitInfo;
+	public final fun component6 ()Lapp/oreshkov/oracleformsmcp/model/SourceRef;
+	public final fun copy (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;ILapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)Lapp/oreshkov/oracleformsmcp/model/ProgramUnitInfo;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/ProgramUnitInfo;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ProgramUnitType;ILapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/ProgramUnitInfo;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInherited ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
 	public final fun getLineCount ()I
 	public final fun getName ()Ljava/lang/String;
 	public final fun getTextRef ()Lapp/oreshkov/oracleformsmcp/model/SourceRef;
@@ -1953,21 +2039,23 @@ public final class app/oreshkov/oracleformsmcp/model/SourceRef$Companion {
 
 public final class app/oreshkov/oracleformsmcp/model/TriggerInfo {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/model/TriggerInfo$Companion;
-	public fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)V
-	public synthetic fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)V
+	public synthetic fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;
 	public final fun component3 ()Ljava/lang/String;
 	public final fun component4 ()Ljava/lang/String;
 	public final fun component5 ()Ljava/lang/String;
 	public final fun component6 ()I
-	public final fun component7 ()Lapp/oreshkov/oracleformsmcp/model/SourceRef;
+	public final fun component7 ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
 	public final fun component8 ()Lapp/oreshkov/oracleformsmcp/model/SourceRef;
-	public final fun copy (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)Lapp/oreshkov/oracleformsmcp/model/TriggerInfo;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/TriggerInfo;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/TriggerInfo;
+	public final fun component9 ()Lapp/oreshkov/oracleformsmcp/model/SourceRef;
+	public final fun copy (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;)Lapp/oreshkov/oracleformsmcp/model/TriggerInfo;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/TriggerInfo;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILapp/oreshkov/oracleformsmcp/model/InheritanceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;Lapp/oreshkov/oracleformsmcp/model/SourceRef;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/TriggerInfo;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getBlockName ()Ljava/lang/String;
 	public final fun getFirstLine ()Ljava/lang/String;
+	public final fun getInherited ()Lapp/oreshkov/oracleformsmcp/model/InheritanceRef;
 	public final fun getItemName ()Ljava/lang/String;
 	public final fun getLevel ()Lapp/oreshkov/oracleformsmcp/model/TriggerLevel;
 	public final fun getLineCount ()I

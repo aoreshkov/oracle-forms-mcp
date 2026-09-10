@@ -71,8 +71,8 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
      `%ORACLE_HOME%\bin`: `frmf2xml` for `.fmb`/`.mmb`/`.olb` (XML), `frmcmp_batch`
      (`Module_Type=LIBRARY Script=YES`) for `.pll` (a `.pld` text dump).
    - **`ORACLE_HOME` not set** — pre-converted files are expected next to the modules
-     (`orders_fmb.xml`, `dupes_fmb.xml`, `mainmenu_mmb.xml`, `objects_olb.xml`, `utils.pld`) and
-     copied into the cache.
+     (`orders_fmb.xml`, `dupes_fmb.xml`, `picker_fmb.xml`, `toolbar_fmb.xml`,
+     `mainmenu_mmb.xml`, `objects_olb.xml`, `utils.pld`) and copied into the cache.
 3. A single StAX pass parses the XML into a structured index (blocks with items, triggers with
    decoded PL/SQL, program units, LOVs, record groups, windows, canvases, …). PL/SQL bodies are
    extracted to `.sql` sidecar files; every named XML element gets a line-range reference so
@@ -92,13 +92,55 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 | `fetch_module` | Converts + indexes one module (idempotent; progress notifications) |
 | `get_module_overview` | Names of every section + counts — the first call after a fetch |
 | `list_blocks` | Blocks with base table, item count, trigger count |
-| `get_block` | One block in full: items (type, column, canvas, prompt) + trigger names |
+| `get_block` | One block in full: items (type, column, canvas, prompt) + trigger names; flags subclassed blocks/items |
 | `list_triggers` | Triggers with level/scope; filter by block, item, or level (`verbosity=detailed` adds a PL/SQL preview) |
-| `get_trigger` | One trigger's decoded PL/SQL body |
+| `get_trigger` | One trigger's decoded PL/SQL body; `resolve` follows a subclassing pointer into a cached parent module |
 | `list_program_units` | Procedures, functions, package specs/bodies with line counts |
-| `get_program_unit` | One program unit's PL/SQL (disambiguate spec/body via `unitType`) |
+| `get_program_unit` | One program unit's PL/SQL (disambiguate spec/body via `unitType`); `resolve` as for `get_trigger` |
 | `search_source` | Line search over extracted PL/SQL (`plsql`), the raw XML (`xml`), or both; paginated via `offset`/`nextOffset` |
 | `get_object_xml` | The raw XML fragment of any named object — the escape hatch |
+
+### Subclassed (inherited) objects
+
+Forms lets a block, item, trigger or program unit be **subclassed** from another module, or copied
+in with an **object group** (typically from an `.olb`). Either way the child stores only what it
+overrides, so its PL/SQL body is genuinely empty in its own file while the code that runs lives in
+the parent. Served naively that is not merely incomplete but wrong — an empty body reads as "this
+button does nothing".
+
+Every result that carries PL/SQL therefore also carries `bodySource`:
+
+| `bodySource` | Meaning |
+|---|---|
+| `own` | The body is defined in this module (the ordinary case) |
+| `inherited` | The object is subclassed; `text` is empty here and `inherited` names where the code is |
+| `resolved` | The body shown is the parent's, followed for this call (`resolvedFrom` says from where) |
+| `empty` | The object genuinely has no body |
+
+The `inherited` reference is stated in the **parent's** vocabulary and in the shape the tools take,
+so it is directly callable — `BAR_LIST.SELECT` in this form is `name: SELECT`, `ownerPath: BAR` over
+there:
+
+```jsonc
+{
+  "name": "WHEN-BUTTON-PRESSED", "block": "BAR_LIST", "item": "SELECT",
+  "text": "", "bodySource": "inherited",
+  "inherited": { "module": "TOOLBAR", "file": "toolbar.fmb", "name": "SELECT", "ownerPath": "BAR" },
+  "hint": "… Call fetch_module(module=\"TOOLBAR.fmb\"), then get_trigger(module=\"TOOLBAR.fmb\", name=\"WHEN-BUTTON-PRESSED\", ownerPath=\"BAR.SELECT\")."
+}
+```
+
+For an object-group member, `name` is the object's own name and `objectGroup` names the group that
+carried it — where the library files that group is not recorded in this module, so no `ownerPath`
+is claimed for it. A parent in the *same* module is a **property class**: it supplies properties
+rather than a definition, hides nothing, and is deliberately not reported as inheritance.
+
+`get_trigger` and `get_program_unit` take `resolve: true` to follow the pointer in one call. It
+reads only modules that are **already cached** — reaching an un-cached one would mean converting
+it, which a read-only tool must not do — and falls back to the pointer plus the `fetch_module`
+hint rather than failing. `get_block` flags subclassed blocks and items the same way, and
+`get_object_xml` returns the pointer resolved to the level it was asked about (Forms writes the
+raw `ParentModule` attribute on the enclosing owner, so the fragment alone cannot answer it).
 
 ### Annotations
 
