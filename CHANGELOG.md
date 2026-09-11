@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-11
+
 ### Fixed
 - **Doubly-escaped PL/SQL is recovered at parse time.** Some converters write a newline as
   `&amp;#10;` rather than `&#10;`, so the XML parser decodes it once and the body still holds the
@@ -339,7 +341,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.5.0...v0.6.0
