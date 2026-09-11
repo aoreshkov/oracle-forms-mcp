@@ -87,6 +87,26 @@ jobs:
           test -f "$(jq -r '.mcpServers["oracle-forms"].args[0]' plugins/oracle-forms/.mcp.json \
                      | sed 's|${CLAUDE_PLUGIN_ROOT}|plugins/oracle-forms|')"
 
+      # The skills ship by the same route as the manifests — no build step between a commit and a
+      # user's install — and a skill whose frontmatter does not parse is simply never offered.
+      - name: Validate the plugin skills
+        run: |
+          shopt -s nullglob
+          skills=(plugins/oracle-forms/skills/*/SKILL.md)
+          test ${#skills[@]} -gt 0 || { echo "No SKILL.md under plugins/oracle-forms/skills"; exit 1; }
+          for skill in "${skills[@]}"; do
+            head -n 1 "$skill" | grep -qx -- '---' || {
+              echo "${skill}: must start with YAML frontmatter"; exit 1; }
+            name=$(sed -n '2,/^---$/p' "$skill" | sed -n 's/^name: *//p')
+            sed -n '2,/^---$/p' "$skill" | grep -qE '^description: .+' || {
+              echo "${skill}: frontmatter needs a description — it is what decides when the skill loads"
+              exit 1; }
+            # The directory name is the fallback invocation name; keeping them equal means the
+            # documented `/oracle-forms:<name>` cannot drift from the directory users see.
+            test "$name" = "$(basename "$(dirname "$skill")")" || {
+              echo "${skill}: frontmatter name '${name}' must match its directory"; exit 1; }
+          done
+
       # The launcher runs in single-file source mode on the user's machine, where a compile error
       # surfaces only as an MCP server that fails to connect.
       - name: Compile the plugin launcher

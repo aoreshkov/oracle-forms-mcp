@@ -78,10 +78,21 @@ To wipe the downloaded distributions, delete the plugin's data directory
 
 The full tool set — `list_modules`, `fetch_module`, `get_module_overview`, `list_blocks`,
 `get_block`, `list_triggers`, `get_trigger`, `list_program_units`, `get_program_unit`,
-`search_source`, `get_object_xml` — plus the annotation tools that let Claude record durable notes,
-tags, and cross-references on individual elements, the `oracleforms://` resources, and the
-`explain_module` prompt. See the [main README](https://github.com/aoreshkov/oracle-forms-mcp#tools).
+`search_source`, `search_modules`, `read_source`, `get_object_xml` — plus the annotation tools that
+let Claude record durable notes, tags, and cross-references on individual elements, the
+`oracleforms://` resources, and the `explain_module` prompt. See the
+[main README](https://github.com/aoreshkov/oracle-forms-mcp#tools).
 
 Because the server is plugin-provided, its tools are namespaced:
 `mcp__plugin_oracle-forms_oracle-forms__list_modules`. Use that form in permission rules, a
 subagent's `tools` list, or a hook matcher.
+
+### The `trace-form` skill
+
+The plugin also ships one skill, `skills/trace-form/SKILL.md`. It carries what no individual tool
+description can: the order to ask in when tracing how a screen works, the four readings that are
+misleading rather than merely incomplete (an inherited body that looks empty, modality living on the
+window, a property class that *is* the item's role, and `null` meaning "not overridden" rather than
+"off"), when `get_object_xml` is the right call and when it is a detour, and a worked trace over the
+demo directory. Claude loads it on its own when a question is about how a form, field, button or
+modal behaves; `/oracle-forms:trace-form` invokes it directly.

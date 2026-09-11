@@ -46,6 +46,51 @@ import kotlinx.coroutines.cancel
 
 const val SERVER_NAME: String = "oracle-forms-mcp"
 
+/**
+ * What the server tells a client about itself, sent once at initialization.
+ *
+ * Three things belong here that no single tool description can carry, because each is about
+ * choosing *between* the tools — or about not reaching past them:
+ *
+ * 1. **The traversal order.** Discovery is a filtered list, not a directory walk, and everything
+ *    else reads a module that was fetched first.
+ * 2. **The staleness hazard of reading the files directly.** The converted XML and the extracted
+ *    PL/SQL live in a cache this server owns and fingerprints; text read straight off disk can
+ *    describe a form that no longer exists, which is the drift `STALE` exists to report. The habit
+ *    a model brings — grep, sed, a directory walk — has a call here for every case, and the
+ *    mapping is stated so the cheaper-looking path is not also the wrong one.
+ * 3. **That an empty PL/SQL body is not a fact.** It is the one result a reader cannot sanity-check
+ *    from the outside, so `bodySource` is named up front rather than left to be discovered.
+ *
+ * Kept as a named constant so it can be asserted on (`ServerInstructionsTest`): a client sees it
+ * once, and a quiet edit that dropped a hazard would be invisible in every other test.
+ */
+internal val SERVER_INSTRUCTIONS: String =
+    "Serves the content of Oracle Forms modules (.fmb forms, .mmb menus, .pll PL/SQL libraries, " +
+        ".olb object libraries) from a configured directory. " +
+        "Start with list_modules (filtered and paged) to find a module, then fetch_module to " +
+        "convert and index it; the other tools then read the cached index — blocks, items, " +
+        "triggers, program units, PL/SQL bodies, search — with get_object_xml as the escape hatch " +
+        "for raw attributes. search_source searches one module; search_modules searches every " +
+        "fetched module at once, which is how a call between forms, a shared :GLOBAL variable or a " +
+        "subclassed block is traced, and it reports the modules it could not reach rather than " +
+        "leaving them silently out of the answer. " +
+        "Read through these tools rather than through the files. A module reported as STALE changed " +
+        "on disk since it was indexed — call fetch_module again — and that is exactly the hazard " +
+        "of opening the converted XML yourself: what is on disk may describe a form that is no " +
+        "longer the one being served, and the paths in a result are cache-relative, not host " +
+        "paths. Where a habit reaches for a shell there is a call: an item's properties and " +
+        "prompts are get_block, not grep; one object's raw attributes are get_object_xml, not sed; " +
+        "the lines around a hit are read_source; and a question that spans modules is " +
+        "search_modules, not a directory walk. " +
+        "An empty PL/SQL body is never a fact on its own: bodySource tells an own body from an " +
+        "inherited one (the code lives in the module the 'inherited' pointer names, and the hint " +
+        "names the call that reaches it), from a resolved one, and from a genuinely empty one. " +
+        "You can also record durable meta-information about elements with annotate_element " +
+        "(notes/tags/summaries/classifications) and relate_elements (cross-references); it " +
+        "persists across sessions and re-indexing and is surfaced inline by the read tools " +
+        "and via get_element_annotations / search_annotations."
+
 /** Runtime configuration shared by both transports, populated from the CLI flags in `Main`. */
 data class ServerConfig(
     val formsDir: Path,
@@ -130,20 +175,7 @@ object McpServerFactory {
                     logging = EmptyJsonObject,
                 ),
             ),
-            instructions = "Serves the content of Oracle Forms modules (.fmb forms, .mmb menus, " +
-                ".pll PL/SQL libraries, .olb object libraries) from a configured directory. " +
-                "Call list_modules to discover modules and their status, then fetch_module to " +
-                "convert and index one; the other tools read the cached index (blocks, items, " +
-                "triggers, program units, PL/SQL source, search, raw object XML). A module " +
-                "reported as STALE changed on disk — call fetch_module again to re-index it. " +
-                "search_source searches one module; search_modules searches every fetched module " +
-                "at once, which is how a call between forms, a shared :GLOBAL variable or a " +
-                "subclassed block is traced — it reports the modules it could not reach rather " +
-                "than leaving them silently out of the answer. " +
-                "You can also record durable meta-information about elements with annotate_element " +
-                "(notes/tags/summaries/classifications) and relate_elements (cross-references); it " +
-                "persists across sessions and re-indexing and is surfaced inline by the read tools " +
-                "and via get_element_annotations / search_annotations.",
+            instructions = SERVER_INSTRUCTIONS,
         ) {
             registerListModulesTool(service)
             registerFetchModuleTool(service) { key ->
