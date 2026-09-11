@@ -6,6 +6,7 @@ import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.model.ProgramUnitType
 import app.oreshkov.oracleformsmcp.model.SourceRef
+import app.oreshkov.oracleformsmcp.model.TextEncoding
 import app.oreshkov.oracleformsmcp.model.TriggerLevel
 import java.nio.file.Files
 import java.nio.file.Path
@@ -341,6 +342,75 @@ class FormsXmlParserTest {
         assertTrue(index.blocks.all { it.inherited == null && it.items.all { i -> i.inherited == null } })
         assertTrue(index.triggers.all { it.inherited == null })
         assertTrue(index.objectRefs.all { it.inherited == null })
+    }
+
+    @Test
+    fun itemsCarryThePropertiesThatGiveThemTheirRole() {
+        val items = pickerIndex().blocks.single { it.name == "CUSTOMERS" }.items.associateBy { it.name }
+
+        // A property class the module actually declares.
+        assertEquals("PC_TEXT", items.getValue("NAME").propertyClass)
+        // A same-module ParentName that is *not* a declared property class is not reported as one:
+        // ParentType would say so directly, but its numbering is version-dependent and undocumented.
+        assertEquals(null, items.getValue("REF").propertyClass)
+
+        val ref = items.getValue("REF")
+        assertEquals(true, ref.visible)
+        assertEquals(true, ref.required)
+        assertEquals("LOV_REFS", ref.lovName)
+
+        // Forms writes a property only where it is overridden, so absence means "the default" —
+        // reporting false here would invent a fact.
+        assertEquals(null, items.getValue("NAME").visible)
+        assertEquals(null, items.getValue("NAME").required)
+        assertEquals(null, items.getValue("NAME").lovName)
+    }
+
+    @Test
+    fun windowsAndCanvasesCarryTheirLayoutProperties() {
+        val index = pickerIndex()
+        val window = index.windows.single { it.name == "WIN_LIST" }
+        assertEquals(true, window.modal)
+        assertEquals(600, window.width)
+        assertEquals(420, window.height)
+        assertEquals("BAR_LIST", window.horizontalToolbarCanvasName)
+        assertEquals(null, window.verticalToolbarCanvasName)
+
+        val canvas = index.canvases.single { it.name == "CV_LIST" }
+        assertEquals("WIN_LIST", canvas.windowName)
+        assertEquals(true, canvas.raiseOnEnter)
+        assertEquals(600, canvas.width)
+        assertEquals(580, canvas.viewportWidth)
+        assertEquals(360, canvas.viewportHeight)
+
+        // A window without those properties reports nothing rather than guessing at defaults.
+        val plain = ordersIndex().windows.single()
+        assertEquals(null, plain.modal)
+        assertEquals(null, plain.width)
+    }
+
+    /**
+     * A doubly-escaped file writes a newline as `&amp;#10;`, so the XML parser decodes it once and
+     * the body arrives as one physical line holding the literal characters `&#10;`. Left alone it
+     * makes `lineCount` 1 for a whole procedure, collapses every recorded range onto that line, and
+     * leaves a line-oriented search with nothing to report.
+     */
+    @Test
+    fun aDoublyEscapedBodyIsRecoveredAndSaysSo() {
+        val trigger = pickerIndex().triggers.single { it.name == "WHEN-NEW-RECORD-INSTANCE" }
+
+        assertEquals(TextEncoding.RECOVERED, trigger.textEncoding)
+        assertEquals("BEGIN\n\t:ORPHAN.FLAG := 'N';\nEND;", readRef(assertNotNull(trigger.textRef)))
+        assertEquals(3, trigger.lineCount, "the line count must describe the recovered text")
+        assertEquals("BEGIN", trigger.firstLine)
+    }
+
+    @Test
+    fun anOrdinaryBodyIsLeftExactlyAsItWas() {
+        // Correctly escaped, so it already has real newlines and nothing is touched.
+        val trigger = ordersIndex().triggers.single { it.name == "WHEN-VALIDATE-ITEM" }
+        assertEquals(TextEncoding.ORIGINAL, trigger.textEncoding)
+        assertTrue(pickerIndex().triggers.none { it.name == "KEY-HELP" && it.textEncoding != TextEncoding.ORIGINAL })
     }
 
     @Test

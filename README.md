@@ -90,9 +90,9 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 |---|---|
 | `list_modules` | Modules in the forms dir with type, size, and cache status; filter by `pattern`/`regex`, `type`, `status` and page via `limit`/`cursor` |
 | `fetch_module` | Converts + indexes one module (idempotent; progress notifications) |
-| `get_module_overview` | Names of every section + counts — the first call after a fetch |
+| `get_module_overview` | Names of every section + counts — the first call after a fetch (`verbosity=detailed` adds window and canvas objects) |
 | `list_blocks` | Blocks with base table, item count, trigger count |
-| `get_block` | One block in full: items (type, column, canvas, prompt) + trigger names; flags subclassed blocks/items |
+| `get_block` | One block: items with type, property class, prompt and trigger names (`verbosity=detailed` adds data type, column, canvas, visible/required/LOV); flags subclassed blocks/items |
 | `list_triggers` | Triggers with level/scope; filter by block, item, or level (`verbosity=detailed` adds a PL/SQL preview) |
 | `get_trigger` | One trigger's decoded PL/SQL body; `resolve` follows a subclassing pointer into a cached parent module |
 | `list_program_units` | Procedures, functions, package specs/bodies with line counts |
@@ -100,6 +100,24 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 | `search_source` | Line search over extracted PL/SQL (`plsql`), the raw XML (`xml`), or both; paginated via `offset`/`nextOffset` |
 | `read_source` | A line range of a cached file, by `uri` or `file` — the converted XML or an extracted PL/SQL sidecar |
 | `get_object_xml` | The raw XML fragment of any named object — the escape hatch |
+
+### Where an object's meaning lives
+
+Two Forms properties carry more meaning than anything else in a module, and both used to be
+reachable only one `get_object_xml` call at a time.
+
+An item's **property class** is usually its role: Forms shops name their classes for what the
+object does, so a push button is an *LOV* button and a text item is a *filter* field only because
+of the class it inherits. `get_block` reports `propertyClass` on every item and block, confirmed
+against the classes the module actually declares.
+
+A window's **modality** decides how a form is read — a modal window is a dialog, so the code that
+fills it and the code that consumes the result sit on opposite sides of one interaction.
+`get_module_overview(verbosity: "detailed")` returns the window and canvas objects behind two of
+its name lists: modality, size, toolbar canvases, and the window each canvas sits on.
+
+A property Forms did not write comes back as `null`, meaning the object keeps the Forms default —
+never `false`.
 
 ### Reading around a result
 

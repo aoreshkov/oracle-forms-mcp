@@ -31,6 +31,17 @@ paths:
   inheritance at all and must stay out of `InheritanceRef`. Getting this wrong is not a cosmetic
   slip: it emits pointers that address the wrong kind of object at paths that do not exist, on the
   majority of items in a typical form.
+- **Never report a Forms default as a value.** Forms2XML writes a property only where it is
+  overridden, so every such property is nullable and absence means "not overridden". Reading a
+  missing `Visible` as `false` invents a fact about the item.
+- **Don't hard-code `ParentType`.** Its numbering is version-dependent and the XML defines it
+  nowhere. Where the parser needs to know what kind of parent an object has, it asks the document:
+  `propertyClass` is confirmed against the declared `PropertyClass` elements in a pass at the end
+  of `parse`, because those are written after the objects that use them.
+- **Text recovery is guarded and flagged, never silent.** `decodeDoubleEscaped` undoes a
+  doubly-escaped body only when it holds no real line break *and* decoding introduces one, and the
+  result carries `TextEncoding.RECOVERED`. It cannot be proven — a body that really contained
+  `&#10;` in a literal looks identical — so it must stay visible to whoever reads the text.
 - **The XML parser never fails on unknown vocabulary.** Forms XML is huge and version-dependent;
   unknown elements are skipped generically, but a named element still gets an `ObjectRef`. Do not
   add hard failures for unexpected tags.

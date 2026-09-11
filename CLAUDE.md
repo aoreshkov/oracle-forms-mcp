@@ -84,6 +84,17 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   members is not recorded here. A `ParentModule` naming **this** module is a *property class*,
   which supplies properties and hides nothing; it is deliberately **not** an `InheritanceRef` —
   a real form carries dozens, and reporting them would be uncallable noise.
+- **A property Forms did not write is `null`, never `false`.** Forms2XML emits a property only
+  where it differs from the default, so `Visible`/`Required`/`Modal`/`RaiseOnEnter` and friends are
+  nullable: absence means "not overridden". `propertyClass` is confirmed against the module's own
+  declared `PropertyClass` elements in a pass at the end of parsing — `ParentType` would say so
+  directly, but its numbering is version-dependent and the XML defines it nowhere, and the
+  property classes are written *after* the objects that use them.
+- **Doubly-escaped bodies are recovered at parse time, and say so.** A converter that writes
+  `&amp;#10;` leaves the whole body on one physical line, which makes `lineCount` 1 for a whole
+  procedure and collapses every `SourceRef` onto that line. `decodeDoubleEscaped` undoes it only
+  when the text has no real line break *and* decoding introduces one, and marks the result
+  `TextEncoding.RECOVERED` — the transformation cannot be proven, so it is never invisible.
 - **The XML parser never fails on unknown vocabulary.** Forms XML is huge and version-dependent;
   unknown elements are skipped generically (but still get an `ObjectRef` when named).
 - **Every tool** declares title, annotations, and `outputSchemaOf<Dto>()`; DTO fields are

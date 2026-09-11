@@ -33,6 +33,7 @@ public data class TriggerInfo(
     val firstLine: String = "",
     val lineCount: Int = 0,
     val inherited: InheritanceRef? = null,
+    val textEncoding: TextEncoding = TextEncoding.ORIGINAL,
     val textRef: SourceRef? = null,
     val xmlRef: SourceRef? = null,
 )
