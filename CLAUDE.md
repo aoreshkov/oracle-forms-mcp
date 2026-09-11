@@ -106,6 +106,14 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   flag beside an honest `total` (see `MAX_LIST_ROWS`/`MAX_OVERVIEW_NAMES` next to
   `MAX_OBJECT_XML_CHARS`). Paging vocabulary is fixed: `offset`/`nextOffset` where page N is cheap
   to recompute (`search_source`), an opaque `cursor` where it is not.
+- **A cross-module scan is bounded by modules too, not only by rows.** `search_modules` reads at
+  most `MAX_MODULES_PER_SEARCH` cache entries per call, because a query that matches nothing has no
+  row cap to stop it and would read every converted file in the cache. Whichever bound stops the
+  scan, the result is `truncated` with a keyset `cursor` (module + hits already served from it) that
+  is fingerprinted against the query/scope/pattern it was minted for. Coverage is reported, never
+  assumed: un-fetched and stale modules are counted and named in the hint rather than being
+  silently absent — a search that reached a tenth of the directory must not read like one that
+  found nothing. Never search an un-cached module by converting it; `readOnlyHint` says we do not.
 - **`resources/list` stays bounded too.** It is a call the *client* issues on its own and the SDK
   answers without a cursor, so per-module index resources are capped at the 50 most recently
   fetched (`ModuleIndexResources`) and no startup snapshot of the cache is registered. Every

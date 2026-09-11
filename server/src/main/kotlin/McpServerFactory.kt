@@ -28,6 +28,7 @@ import app.oreshkov.oracleformsmcp.server.tools.registerReadSourceTool
 import app.oreshkov.oracleformsmcp.server.tools.registerRelateElementsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerRemoveAnnotationTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchAnnotationsTool
+import app.oreshkov.oracleformsmcp.server.tools.registerSearchModulesTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchSourceTool
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
@@ -135,6 +136,10 @@ object McpServerFactory {
                 "convert and index one; the other tools read the cached index (blocks, items, " +
                 "triggers, program units, PL/SQL source, search, raw object XML). A module " +
                 "reported as STALE changed on disk — call fetch_module again to re-index it. " +
+                "search_source searches one module; search_modules searches every fetched module " +
+                "at once, which is how a call between forms, a shared :GLOBAL variable or a " +
+                "subclassed block is traced — it reports the modules it could not reach rather " +
+                "than leaving them silently out of the answer. " +
                 "You can also record durable meta-information about elements with annotate_element " +
                 "(notes/tags/summaries/classifications) and relate_elements (cross-references); it " +
                 "persists across sessions and re-indexing and is surfaced inline by the read tools " +
@@ -154,6 +159,7 @@ object McpServerFactory {
             registerListProgramUnitsTool(service)
             registerGetProgramUnitTool(service)
             registerSearchSourceTool(service)
+            registerSearchModulesTool(service)
             registerReadSourceTool(service)
             registerGetObjectXmlTool(service)
             // Annotation layer: the model writes durable meta-information about elements, and the

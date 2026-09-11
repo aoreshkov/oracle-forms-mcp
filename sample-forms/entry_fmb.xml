@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+  <FormModule Name="ENTRY" Title="Calls the picker and reads back what it picked">
+    <Block Name="MISSIONS" QueryDataSourceName="MISSIONS">
+      <Item Name="AGENT_REF" ItemType="Text Item" DataType="Char" ColumnName="AGENT_REF" CanvasName="CV_ENTRY" Prompt="Mandataire">
+        <Trigger Name="KEY-HELP" TriggerText="BEGIN&#10;  :GLOBAL.picked_ref := NULL;&#10;  call_form('picker', NO_HIDE);&#10;  :MISSIONS.AGENT_REF := :GLOBAL.picked_ref;&#10;END;"/>
+      </Item>
+      <Item Name="AGENT_NAME" ItemType="Text Item" DataType="Char" ColumnName="AGENT_NAME" CanvasName="CV_ENTRY" Prompt="Nom"/>
+    </Block>
+    <Block Name="BAR_ENTRY" ParentModule="TOOLBAR" ParentModuleType="12" ParentName="BAR" ParentFilename="toolbar.fmb" ParentType="3">
+      <Item Name="SELECT" SubclassSubObject="true" CanvasName="BAR_ENTRY">
+        <Trigger Name="WHEN-BUTTON-PRESSED" SubclassSubObject="true"/>
+      </Item>
+    </Block>
+    <Canvas Name="BAR_ENTRY" CanvasType="Horizontal Toolbar" WindowName="WIN_ENTRY"/>
+    <Canvas Name="CV_ENTRY" CanvasType="Content" WindowName="WIN_ENTRY"/>
+    <ProgramUnit Name="CLEAR_PICKED" ProgramUnitType="Procedure" ProgramUnitText="PROCEDURE clear_picked IS&#10;BEGIN&#10;  :GLOBAL.picked_name := NULL;&#10;  :GLOBAL.picked_ref := NULL;&#10;END;"/>
+    <Window Name="WIN_ENTRY" Title="Missions" HorizontalToolbarCanvasName="BAR_ENTRY"/>
+  </FormModule>
+</Module>

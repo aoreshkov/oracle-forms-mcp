@@ -22,6 +22,8 @@ import app.oreshkov.oracleformsmcp.dto.ModuleAnnotationsView
 import app.oreshkov.oracleformsmcp.dto.ModuleDetail
 import app.oreshkov.oracleformsmcp.dto.ModuleList
 import app.oreshkov.oracleformsmcp.dto.ModuleOverview
+import app.oreshkov.oracleformsmcp.dto.ModuleSearchHit
+import app.oreshkov.oracleformsmcp.dto.ModuleSearchResults
 import app.oreshkov.oracleformsmcp.dto.ModuleStatusEntry
 import app.oreshkov.oracleformsmcp.dto.ObjectXml
 import app.oreshkov.oracleformsmcp.dto.ProgramUnitList
@@ -61,10 +63,12 @@ import app.oreshkov.oracleformsmcp.server.resources.sourceMimeType
 import app.oreshkov.oracleformsmcp.server.resources.sourceRefPath
 import app.oreshkov.oracleformsmcp.server.resources.sourceUri
 import co.touchlab.kermit.Logger
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.Base64
 import java.util.UUID
@@ -73,8 +77,12 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.readLines
+import kotlin.io.path.useLines
 import kotlin.streams.asSequence
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -88,6 +96,21 @@ data class FetchProgress(val step: Int, val totalSteps: Int, val message: String
  */
 internal const val DEFAULT_MODULE_PAGE: Int = 100
 internal const val MAX_MODULE_PAGE: Int = 500
+
+/**
+ * `search_modules` bounds, shared with `SearchModulesTool` so its description promises exactly what
+ * is enforced. Two of them, because a cross-module search has two ways to run away: more hits than
+ * a response can carry ([DEFAULT_SEARCH_HITS]/[MAX_SEARCH_HITS]) and more modules than one call
+ * should read ([MAX_MODULES_PER_SEARCH] — a query matching nothing would otherwise read every
+ * converted file in the cache before answering). Either bound sets `truncated` and mints a cursor.
+ *
+ * [MAX_SEARCH_HITS] is half of `search_source`'s ceiling: a cross-module hit carries its module and
+ * a longer path as well as the snippet, and the *worst-case* page — every snippet at its 200-char
+ * cap — still has to fit a client's tool-output budget, not just the typical one.
+ */
+internal const val DEFAULT_SEARCH_HITS: Int = 50
+internal const val MAX_SEARCH_HITS: Int = 100
+internal const val MAX_MODULES_PER_SEARCH: Int = 200
 
 /**
  * Orchestrates scan → convert → parse → cache and exposes the read operations the MCP tools call,
@@ -576,27 +599,19 @@ class FormsService(
         offset: Int = 0,
     ): SearchResults {
         val index = index(key) // staleness/fetched check before touching files
-        val includePlsql: Boolean
-        val includeXml: Boolean
-        when (scope?.lowercase() ?: "plsql") {
-            "plsql" -> { includePlsql = true; includeXml = false }
-            "xml" -> { includePlsql = false; includeXml = true }
-            "all" -> { includePlsql = true; includeXml = true }
-            else -> throw IllegalArgumentException("scope must be one of: plsql, xml, all")
-        }
+        val searchScope = searchScopeOf(scope)
         val cap = maxResults.coerceIn(1, MAX_SEARCH_RESULTS)
         val start = offset.coerceAtLeast(0)
-        val pattern = if (regex) Regex(query) else null
+        val matches = lineMatcher(query, regex, ignoreCase = false, tool = "search_source")
         val hits = mutableListOf<SearchHit>()
         var seen = 0 // total matches scanned across all files, for stable offset paging
         var truncated = false
 
-        val files = withContext(Dispatchers.IO) { searchableFiles(index, includePlsql, includeXml) }
+        val files = withContext(Dispatchers.IO) { searchableFiles(index, searchScope) }
         outer@ for ((refPath, file) in files) {
             val lines = withContext(Dispatchers.IO) { file.readLines() }
             for ((lineIndex, line) in lines.withIndex()) {
-                val matches = pattern?.containsMatchIn(line) ?: line.contains(query)
-                if (!matches) continue
+                if (!matches(line)) continue
                 if (seen++ < start) continue // skip earlier pages
                 if (hits.size == cap) {
                     truncated = true // a further match exists beyond this page
@@ -616,6 +631,135 @@ class FormsService(
             truncated = truncated,
             offset = start,
             nextOffset = if (truncated) start + hits.size else null,
+        )
+    }
+
+    /**
+     * Searches every **cached** module at once — the questions a single module cannot answer:
+     * which forms call a given form, where a `:GLOBAL` variable is written, which modules subclass
+     * a shared block (that last one lives in the converted XML's `ParentFilename` attributes, so
+     * `scope = "xml"` finds it).
+     *
+     * Deliberately a separate tool rather than `search_source(module = "*")`: `scope = "all"`
+     * already means "PL/SQL *and* XML within one module", and making "all" also mean "across
+     * modules" is the overlapping-purpose confusion that makes a model pick the wrong call.
+     *
+     * **Cached modules only.** Reaching an un-fetched one would mean converting it, which a
+     * read-only tool must not do, so the un-searchable ones are counted
+     * ([ModuleSearchResults.skippedNotCached]) and named in the hint instead of being quietly
+     * absent — a cross-module search that covered a tenth of the directory otherwise reads exactly
+     * like one that found nothing. A module whose source changed since it was indexed is skipped
+     * the same way rather than searched against text that no longer matches its `.fmb`.
+     *
+     * Two bounds, both reported: [maxResults] hits, and [MAX_MODULES_PER_SEARCH] modules read per
+     * call. The second exists because a query that matches nothing would otherwise read every
+     * converted file in the cache — megabytes per form — before answering. Whichever bound stops
+     * the scan, the result is [ModuleSearchResults.truncated] with a cursor that resumes at the
+     * exact position, so the walk still covers everything one page at a time.
+     *
+     * @param regex treats [query] as a regular expression; [ignoreCase] applies either way and
+     *   defaults to `true`, because Forms code names the same module `ORDERS`, `orders` and
+     *   `Call_Form('orders')` in the same code base
+     * @param modulePattern case-insensitive substring of the module name, narrowing which cached
+     *   modules are read at all
+     * @param cursor an opaque [ModuleSearchResults.nextCursor]; it carries the position *and* a
+     *   fingerprint of the arguments it was minted for, so continuing a different search fails
+     *   with a message saying so instead of returning a misaligned page
+     */
+    suspend fun searchModules(
+        query: String,
+        regex: Boolean = false,
+        ignoreCase: Boolean = true,
+        scope: String? = null,
+        modulePattern: String? = null,
+        maxResults: Int = DEFAULT_SEARCH_HITS,
+        cursor: String? = null,
+    ): ModuleSearchResults {
+        val searchScope = searchScopeOf(scope)
+        val matches = lineMatcher(query, regex, ignoreCase, tool = "search_modules")
+        val cap = maxResults.coerceIn(1, MAX_SEARCH_HITS)
+        val namePattern = modulePattern?.trim()?.takeIf { it.isNotEmpty() }
+        fun wanted(key: ModuleKey) = namePattern == null || key.name.contains(namePattern, ignoreCase = true)
+
+        // Sorted by canonical key: the scan order *is* the cursor's coordinate system.
+        val cached = cache.list().filter { wanted(it) }.sortedBy { it.toString() }
+        val cachedSet = cached.toSet()
+        val notCached = scanner.scan().count { wanted(it.key) && it.key !in cachedSet }
+
+        val fingerprint = searchFingerprint(query, regex, ignoreCase, searchScope, namePattern)
+        val resume = cursor?.let { decodeModuleSearchCursor(it, fingerprint) }
+        // Resume strictly after the cursor's module, or at it with that many of its hits already
+        // served. A module evicted since the cursor was minted leaves the position at the next one,
+        // skipping nothing: a cursor that no longer lines up degrades, it never misaligns.
+        var position = 0
+        var resumeSkip = 0
+        if (resume != null) {
+            val landing = cached.indexOfFirst { it.toString() >= resume.module }
+            position = if (landing < 0) cached.size else landing
+            if (position < cached.size && cached[position].toString() == resume.module) {
+                if (resume.hitsServed > 0) resumeSkip = resume.hitsServed else position += 1
+            }
+        }
+
+        val hits = mutableListOf<ModuleSearchHit>()
+        val firstPosition = position
+        var visited = 0 // modules whose index was read this call — the per-call budget
+        var scanned = 0 // ...of which these were actually searched
+        var staleSkipped = 0
+        var vanished = 0
+        var next: ModuleSearchPosition? = null
+
+        scan@ while (position < cached.size && hits.size < cap && visited < MAX_MODULES_PER_SEARCH) {
+            val chunk = cached.subList(
+                position,
+                minOf(position + SEARCH_MODULE_CHUNK, position + (MAX_MODULES_PER_SEARCH - visited), cached.size),
+            )
+            // Reading a chunk in parallel, assembling it in order: the scan is IO-bound over
+            // whole converted forms, while the cursor needs one deterministic sequence.
+            val outcomes = coroutineScope {
+                chunk.mapIndexed { n, key ->
+                    val skip = if (position + n == firstPosition) resumeSkip else 0
+                    async { scanCachedModule(key, skip, cap, matches, searchScope) }
+                }.awaitAll()
+            }
+            for ((n, outcome) in outcomes.withIndex()) {
+                val key = chunk[n]
+                visited++
+                if (outcome == null) { vanished++; continue } // evicted between list() and this read
+                if (outcome.stale) { staleSkipped++; continue }
+                scanned++
+                val skipUsed = if (position + n == firstPosition) resumeSkip else 0
+                val taken = minOf(cap - hits.size, outcome.hits.size)
+                hits += outcome.hits.take(taken)
+                if (hits.size < cap) continue
+                next = when {
+                    taken < outcome.hits.size || outcome.more -> ModuleSearchPosition(key.toString(), skipUsed + taken)
+                    position + n + 1 < cached.size -> ModuleSearchPosition(key.toString(), 0)
+                    else -> null
+                }
+                position += n + 1
+                break@scan
+            }
+            position += chunk.size
+        }
+        // Stopped on the module budget rather than the result cap: resume after the last one read.
+        if (next == null && position in 1..<cached.size) next = ModuleSearchPosition(cached[position - 1].toString(), 0)
+
+        return ModuleSearchResults(
+            query = query,
+            cachedModules = cached.size,
+            scannedModules = scanned,
+            skippedNotCached = notCached + vanished,
+            skippedStale = staleSkipped,
+            truncated = next != null,
+            nextCursor = next?.let { encodeModuleSearchCursor(fingerprint, it) },
+            hint = moduleSearchHint(
+                notCached = notCached + vanished,
+                stale = staleSkipped,
+                truncated = next != null,
+                namePattern = namePattern,
+            ),
+            hits = hits,
         )
     }
 
@@ -1057,16 +1201,205 @@ class FormsService(
         }
     }
 
+    // --- search: scope, matching, per-module scan, cursors (search_source and search_modules) ---
+
+    /** Which of a module's cached files a search reads. The wire vocabulary is one set for both tools. */
+    private data class SearchScope(val plsql: Boolean, val xml: Boolean) {
+        /** The `scope` value this selection came from, for the search cursor's fingerprint. */
+        val label: String get() = if (plsql && xml) SCOPE_ALL else if (xml) SCOPE_XML else SCOPE_PLSQL
+    }
+
+    private fun searchScopeOf(scope: String?): SearchScope = when (scope?.lowercase() ?: SCOPE_PLSQL) {
+        SCOPE_PLSQL -> SearchScope(plsql = true, xml = false)
+        SCOPE_XML -> SearchScope(plsql = false, xml = true)
+        SCOPE_ALL -> SearchScope(plsql = true, xml = true)
+        else -> throw IllegalArgumentException("scope must be one of: $SCOPE_PLSQL, $SCOPE_XML, $SCOPE_ALL")
+    }
+
     /**
-     * The files `search_source` scans, each with the [SourceRef]-style path a hit reports: the
-     * PL/SQL sidecars under the module's cache entry, and the module's own converted text form
-     * (never a sibling module's — the converted directory can be shared by all of them).
+     * The line predicate both search tools use. A bad regex fails as an argument error naming the
+     * way out, the way every other argument error here does — a raw pattern-syntax message tells a
+     * model nothing it can act on.
      */
-    private fun searchableFiles(
-        index: ModuleIndex,
-        plsql: Boolean,
-        xml: Boolean,
-    ): List<Pair<String, Path>> {
+    private fun lineMatcher(
+        query: String,
+        regex: Boolean,
+        ignoreCase: Boolean,
+        tool: String,
+    ): (String) -> Boolean {
+        require(query.isNotEmpty()) { "'query' must not be empty." }
+        if (!regex) return { line -> line.contains(query, ignoreCase = ignoreCase) }
+        val compiled = try {
+            if (ignoreCase) Regex(query, RegexOption.IGNORE_CASE) else Regex(query)
+        } catch (e: IllegalArgumentException) {
+            throw IllegalArgumentException(
+                "Invalid regex 'query' for $tool: ${e.message}. " +
+                    "Drop the 'regex' flag to match the query as a plain substring.",
+                e,
+            )
+        }
+        return { line -> compiled.containsMatchIn(line) }
+    }
+
+    /** One cached module's contribution to a `search_modules` page. */
+    private class ModuleScan(
+        val hits: List<ModuleSearchHit>,
+        /** At least one further match exists in this module beyond [hits]. */
+        val more: Boolean = false,
+        /** The module's source changed since it was indexed, so nothing here was searched. */
+        val stale: Boolean = false,
+    )
+
+    /**
+     * Scans one cached module, skipping its first [skip] matches and collecting at most [want].
+     *
+     * Reads the cache entry directly instead of going through [index]: a stale or evicted module is
+     * a *reported* outcome of a cross-module search, not a failure of it — one module changing on
+     * disk must not turn a search over a thousand others into an error. `null` means the entry is
+     * gone. Lines are streamed rather than read whole: one converted form runs to hundreds of
+     * thousands of them, and this is called for every module in the scan window.
+     */
+    private suspend fun scanCachedModule(
+        key: ModuleKey,
+        skip: Int,
+        want: Int,
+        matches: (String) -> Boolean,
+        scope: SearchScope,
+    ): ModuleScan? {
+        val cached = cache.get(key) ?: return null
+        val source = Path.of(cached.sourceFile)
+        if (source.exists() && !Fingerprints.matches(cached.fingerprint, source)) {
+            return ModuleScan(emptyList(), stale = true)
+        }
+        return withContext(Dispatchers.IO) {
+            val hits = mutableListOf<ModuleSearchHit>()
+            var seen = 0
+            var more = false
+            for ((refPath, file) in searchableFiles(cached, scope)) {
+                val uri = sourceUri(key, refPath)
+                val stopped = try {
+                    file.useLines { lines ->
+                        for ((lineIndex, line) in lines.withIndex()) {
+                            if (!matches(line)) continue
+                            if (seen++ < skip) continue
+                            if (hits.size == want) return@useLines true
+                            hits += ModuleSearchHit(
+                                module = key,
+                                moduleSpec = key.toString(),
+                                path = refPath,
+                                line = lineIndex + 1,
+                                snippet = line.trim().take(SNIPPET_CHARS),
+                                uri = uri,
+                            )
+                        }
+                        false
+                    }
+                } catch (e: IOException) {
+                    // One unreadable cached file must not fail a search over every other module.
+                    log.w(e) { "Skipping unreadable cached file $refPath of $key" }
+                    false
+                }
+                if (stopped) {
+                    more = true
+                    break
+                }
+            }
+            ModuleScan(hits, more = more)
+        }
+    }
+
+    /** The position a `search_modules` cursor names: a module, and how many of its hits were served. */
+    private class ModuleSearchPosition(val module: String, val hitsServed: Int)
+
+    /**
+     * Mints the opaque `search_modules` continuation token. Opaque for the reason MCP requires it
+     * of cursors — nothing may construct one by hand — and fingerprinted so a token cannot be
+     * carried over to a *different* query, where its position would name a page of some other
+     * result set. The server keeps no state behind it: the position is the whole handle, so there
+     * is nothing to expire.
+     */
+    private fun encodeModuleSearchCursor(fingerprint: String, at: ModuleSearchPosition): String =
+        Base64.getUrlEncoder().withoutPadding().encodeToString(
+            "$SEARCH_CURSOR_PREFIX$fingerprint:${at.hitsServed}:${at.module}".toByteArray(Charsets.UTF_8),
+        )
+
+    private fun decodeModuleSearchCursor(cursor: String, fingerprint: String): ModuleSearchPosition {
+        val decoded = runCatching { String(Base64.getUrlDecoder().decode(cursor), Charsets.UTF_8) }.getOrNull()
+        val parts = decoded?.removePrefix(SEARCH_CURSOR_PREFIX)?.split(':', limit = 3)
+        require(decoded?.startsWith(SEARCH_CURSOR_PREFIX) == true && parts?.size == 3) {
+            "Invalid 'cursor' for search_modules. Pass back the 'nextCursor' from a previous call " +
+                "verbatim, or omit 'cursor' to start a new search."
+        }
+        val hitsServed = parts[1].toIntOrNull()
+        require(hitsServed != null && hitsServed >= 0) {
+            "Invalid 'cursor' for search_modules. Pass back the 'nextCursor' from a previous call " +
+                "verbatim, or omit 'cursor' to start a new search."
+        }
+        require(parts[0] == fingerprint) {
+            "This 'cursor' was minted for a different search. Repeat the original 'query', " +
+                "'regex', 'ignoreCase', 'scope' and 'modulePattern' with it, or omit 'cursor' to " +
+                "start a new search."
+        }
+        return ModuleSearchPosition(parts[2], hitsServed)
+    }
+
+    /** Binds a cursor to the arguments it was minted for; not a secret, just a mismatch detector. */
+    private fun searchFingerprint(
+        query: String,
+        regex: Boolean,
+        ignoreCase: Boolean,
+        scope: SearchScope,
+        modulePattern: String?,
+    ): String {
+        // Length-prefixed, so no two argument tuples can hash the same material however the
+        // separator appears inside a query.
+        val material = listOf(query, regex.toString(), ignoreCase.toString(), scope.label, modulePattern ?: "")
+            .joinToString("|") { "${it.length}:$it" }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(material.toByteArray(Charsets.UTF_8))
+            .take(6)
+            .joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * What a `search_modules` caller should do next, when there is something to do: the coverage
+     * gaps first (a module that was not searched is the one thing a hit list cannot show), then the
+     * continuation. `null` when the scan was complete and exhaustive.
+     */
+    private fun moduleSearchHint(notCached: Int, stale: Int, truncated: Boolean, namePattern: String?): String? {
+        val patternArg = namePattern?.let { ", pattern=\"$it\"" } ?: ""
+        val sentences = buildList {
+            if (notCached > 0) {
+                add(
+                    "$notCached matching module(s) are not cached and were not searched — " +
+                        "list_modules(status=\"not_cached\"$patternArg) names them, and " +
+                        "fetch_module adds one to the search.",
+                )
+            }
+            if (stale > 0) {
+                add(
+                    "$stale cached module(s) changed on disk since they were indexed and were " +
+                        "skipped — call fetch_module on them to re-index, then search again.",
+                )
+            }
+            if (truncated) {
+                add(
+                    "More remains: call search_modules again with the same arguments and 'cursor' " +
+                        "set to the returned 'nextCursor'.",
+                )
+            }
+        }
+        return sentences.joinToString(" ").ifEmpty { null }
+    }
+
+    /**
+     * The files a search scans, each with the [SourceRef]-style path a hit reports: the PL/SQL
+     * sidecars under the module's cache entry, and the module's own converted text form (never a
+     * sibling module's — the converted directory can be shared by all of them).
+     */
+    private fun searchableFiles(index: ModuleIndex, scope: SearchScope): List<Pair<String, Path>> {
+        val plsql = scope.plsql
+        val xml = scope.xml
         val moduleDir = Path.of(cache.moduleDir(index.key)).normalize()
         val files = mutableListOf<Pair<String, Path>>()
         val plsqlDir = moduleDir.resolve(PLSQL_DIR)
@@ -1545,6 +1878,24 @@ class FormsService(
         const val MAX_SEARCH_RESULTS = 200
         const val MAX_OBJECT_XML_CHARS = 500_000
         const val FETCH_STEPS = 3
+
+        /** How much of a matching line a hit quotes, in both search tools. */
+        const val SNIPPET_CHARS = 200
+
+        /** Scope vocabulary shared by `search_source` and `search_modules`. */
+        const val SCOPE_PLSQL = "plsql"
+        const val SCOPE_XML = "xml"
+        const val SCOPE_ALL = "all"
+
+        /**
+         * How many cached modules `search_modules` reads in parallel. The scan is IO-bound over
+         * whole converted files; the chunk is assembled in key order afterwards, so this changes
+         * the speed of a page and never its contents.
+         */
+        const val SEARCH_MODULE_CHUNK = 8
+
+        /** Marks a `search_modules` cursor as ours, so a token from elsewhere fails cleanly. */
+        const val SEARCH_CURSOR_PREFIX = "module-search:v1:"
 
         /**
          * Output ceilings. Claude Code caps MCP tool output at 25,000 tokens (~100 KB) and warns
