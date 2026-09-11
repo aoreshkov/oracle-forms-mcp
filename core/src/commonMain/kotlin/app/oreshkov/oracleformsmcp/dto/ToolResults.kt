@@ -341,6 +341,56 @@ public data class SearchResults(
 )
 
 /**
+ * One hit from `search_modules`: a [SearchHit] plus the module the file belongs to.
+ *
+ * A cross-module hit is only actionable if it says which module it came from — every other tool
+ * takes a module, and the same cache-relative [path] shape exists under every one of them. Hence
+ * [moduleSpec] beside the canonical [module]: it is the flat `NAME.ext` string those tools accept,
+ * so following a hit is a copy rather than a reassembly of the key's two fields.
+ */
+@Serializable
+@SerialName("ModuleSearchHit")
+public data class ModuleSearchHit(
+    val module: ModuleKey,
+    val moduleSpec: String = "",
+    val path: String,
+    val line: Int,
+    val snippet: String,
+    /** Resource URI of [path] in [module], so a hit can be opened rather than only reported. */
+    val uri: String? = null,
+)
+
+/**
+ * `search_modules` — hits across every **cached** module, plus what the scan could and could not
+ * reach.
+ *
+ * The counts are part of the answer rather than decoration. A search that silently covered a tenth
+ * of the forms directory reads exactly like one that found nothing, so: [cachedModules] is the
+ * searchable universe after `modulePattern`, [scannedModules] what this call actually read, and
+ * [skippedNotCached]/[skippedStale] the matching modules that could not be searched because they
+ * were never fetched or have changed on disk since they were. [hint] names the call that fixes
+ * each of those.
+ *
+ * [truncated] says work remains — either more hits than the result cap or more modules than one
+ * call scans — and [nextCursor] is then the opaque token that resumes exactly where this call
+ * stopped. It is bound to the query, scope and module pattern it was minted for, so it cannot
+ * silently continue a different search.
+ */
+@Serializable
+@SerialName("ModuleSearchResults")
+public data class ModuleSearchResults(
+    val query: String,
+    val cachedModules: Int = 0,
+    val scannedModules: Int = 0,
+    val skippedNotCached: Int = 0,
+    val skippedStale: Int = 0,
+    val truncated: Boolean = false,
+    val nextCursor: String? = null,
+    val hint: String? = null,
+    val hits: List<ModuleSearchHit> = emptyList(),
+)
+
+/**
  * `get_object_xml` — the raw XML fragment of one named object, sliced from the converted file by
  * its recorded line range. [truncated] flags a fragment cut at the response size cap.
  *

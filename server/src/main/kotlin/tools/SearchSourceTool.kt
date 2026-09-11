@@ -10,8 +10,10 @@ fun Server.registerSearchSourceTool(service: FormsService) {
         description = "Search a fetched module line by line. Scope 'plsql' (default) searches the " +
             "extracted trigger/program-unit/menu-command PL/SQL (and .pld library source); 'xml' " +
             "searches the raw converted XML (properties, layout); 'all' searches both. Returns " +
-            "file:line hits with a snippet. When 'truncated' is true, call again with 'offset' set " +
-            "to the returned 'nextOffset' to page through the rest.",
+            "file:line hits with a snippet. Matching is case-sensitive (search_modules, which " +
+            "searches every cached module at once, matches case-insensitively by default). When " +
+            "'truncated' is true, call again with 'offset' set to the returned 'nextOffset' to " +
+            "page through the rest.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "query" to stringProp("Substring (default) or regex to search for"),

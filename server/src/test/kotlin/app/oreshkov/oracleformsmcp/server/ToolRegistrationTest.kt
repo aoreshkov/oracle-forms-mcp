@@ -12,9 +12,11 @@ import app.oreshkov.oracleformsmcp.server.tools.registerListBlocksTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListModulesTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListProgramUnitsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListTriggersTool
+import app.oreshkov.oracleformsmcp.server.tools.registerReadSourceTool
 import app.oreshkov.oracleformsmcp.server.tools.registerRelateElementsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerRemoveAnnotationTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchAnnotationsTool
+import app.oreshkov.oracleformsmcp.server.tools.registerSearchModulesTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchSourceTool
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
@@ -33,8 +35,8 @@ class ToolRegistrationTest {
 
     private val readOnlyLocal = setOf(
         "list_modules", "get_module_overview", "list_blocks", "get_block", "list_triggers",
-        "get_trigger", "list_program_units", "get_program_unit", "search_source", "get_object_xml",
-        "get_element_annotations", "search_annotations",
+        "get_trigger", "list_program_units", "get_program_unit", "search_source", "search_modules",
+        "read_source", "get_object_xml", "get_element_annotations", "search_annotations",
     )
 
     private val writeTools = setOf(
@@ -59,6 +61,8 @@ class ToolRegistrationTest {
             registerListProgramUnitsTool(service)
             registerGetProgramUnitTool(service)
             registerSearchSourceTool(service)
+            registerSearchModulesTool(service)
+            registerReadSourceTool(service)
             registerGetObjectXmlTool(service)
             registerAnnotateElementTool(service)
             registerRelateElementsTool(service)

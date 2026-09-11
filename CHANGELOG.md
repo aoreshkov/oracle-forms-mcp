@@ -44,6 +44,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the `oracleforms://{module}/index` URI template, which addresses all of them.
 
 ### Added
+- **`search_modules` — one search across every cached module.** `search_source` searches the module
+  it is given, so the questions that leave a form had no answer: which forms call this one, what
+  else writes the `:GLOBAL` a modal hands its result back through, which modules subclass a shared
+  toolbar block. Each of those meant fetching candidate modules one at a time, which on a directory
+  of a few thousand is not a strategy. A distinct tool rather than `search_source(module: "*")`:
+  `scope: "all"` already means "PL/SQL *and* XML within one module", and overloading it would make
+  the choice between the two tools ambiguous. Hits carry the module (as `moduleSpec`, the `NAME.ext`
+  string the other tools take), the file, the line, a snippet and the `uri` that opens it, ordered
+  by module, file and line. Matching is case-insensitive by default — Forms code writes the same
+  name as `PICKER`, `picker` and `Call_Form('picker')` — with `ignoreCase: false` for precision.
+  Only fetched modules are searched, since reaching an un-fetched one would mean converting it, so
+  `cachedModules`, `scannedModules`, `skippedNotCached` and `skippedStale` report the coverage and
+  the hint names the `fetch_module` call that widens it: a search that reached a tenth of the
+  directory must not read like one that found nothing. Bounded twice — hits per page, and modules
+  read per call, because a query that matches nothing would otherwise read every converted file in
+  the cache — with an opaque `cursor` that resumes at the exact position and is bound to the
+  arguments it was minted for.
 - **The properties that give an object its role.** `ItemInfo` gains `propertyClass`, `visible`,
   `required` and `lovName`; in most Forms applications the property class *is* an item's semantics
   — a push button is an LOV button only because of the class it inherits — and without it every

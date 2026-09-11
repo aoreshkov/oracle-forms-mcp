@@ -97,7 +97,8 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 | `get_trigger` | One trigger's decoded PL/SQL body; `resolve` follows a subclassing pointer into a cached parent module |
 | `list_program_units` | Procedures, functions, package specs/bodies with line counts |
 | `get_program_unit` | One program unit's PL/SQL (disambiguate spec/body via `unitType`); `resolve` as for `get_trigger` |
-| `search_source` | Line search over extracted PL/SQL (`plsql`), the raw XML (`xml`), or both; paginated via `offset`/`nextOffset` |
+| `search_source` | Line search over one fetched module: extracted PL/SQL (`plsql`), the raw XML (`xml`), or both; paginated via `offset`/`nextOffset` |
+| `search_modules` | The same search across **every cached module** — cross-form calls, shared `:GLOBAL`s, subclassing pointers; reports the modules it could not reach; paged via an opaque `cursor` |
 | `read_source` | A line range of a cached file, by `uri` or `file` — the converted XML or an extracted PL/SQL sidecar |
 | `get_object_xml` | The raw XML fragment of any named object — the escape hatch |
 
@@ -184,6 +185,41 @@ it, which a read-only tool must not do — and falls back to the pointer plus th
 hint rather than failing. `get_block` flags subclassed blocks and items the same way, and
 `get_object_xml` returns the pointer resolved to the level it was asked about (Forms writes the
 raw `ParentModule` attribute on the enclosing owner, so the fragment alone cannot answer it).
+
+### Tracing across modules
+
+A question about one form rarely stays inside it. A modal window is opened by whoever calls it, the
+value it hands back travels through a `:GLOBAL`, and its toolbar is defined in a third form
+entirely — so `search_source`, which searches the module you name, cannot answer any of the three:
+
+```text
+search_modules "PICKER"                                    → which forms call it
+search_modules ":GLOBAL.picked_ref"                        → every module that writes or reads it
+search_modules 'ParentFilename="toolbar.fmb"' scope=xml    → every module that subclasses it
+```
+
+Each hit names its module (`moduleSpec`, the `NAME.ext` string the other tools take), the
+cache-relative file, the line, a snippet, and the `uri` that opens it. Matching is
+case-insensitive by default, because Forms code writes the same module name as `PICKER`, `picker`
+and `Call_Form('picker')` in the same code base; pass `ignoreCase: false` when precision matters.
+
+Only modules that have been fetched are searched — reaching an un-fetched one would mean converting
+it, which a read-only tool must not do. So the coverage is part of the answer rather than an
+assumption:
+
+```jsonc
+{
+  "query": ":GLOBAL.picked_ref",
+  "cachedModules": 12, "scannedModules": 12, "skippedNotCached": 3090, "skippedStale": 1,
+  "hint": "3090 matching module(s) are not cached and were not searched — list_modules(status=\"not_cached\") names them, and fetch_module adds one to the search. 1 cached module(s) changed on disk …"
+}
+```
+
+Both bounds are enforced and resumable: `maxResults` hits per page, and a ceiling on how many
+modules one call reads — a query that matches nothing would otherwise read every converted file in
+the cache before answering. Either one sets `truncated` and returns a `nextCursor` to pass back
+with the same arguments. The cursor is bound to those arguments, so it cannot silently continue a
+different search.
 
 ### Annotations
 
