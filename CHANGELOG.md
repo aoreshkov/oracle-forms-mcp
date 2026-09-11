@@ -44,6 +44,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the `oracleforms://{module}/index` URI template, which addresses all of them.
 
 ### Added
+- **The server's `instructions` now carry the guidance that no single tool description can.** They
+  state the traversal order, the hazard of reading the cached files directly — text on disk can
+  describe a form that is no longer the one being served, which is what `STALE` reports, and the
+  paths in a result are cache-relative rather than host paths — and the call that replaces each
+  shell reflex (`get_block` not `grep`, `get_object_xml` not `sed`, `read_source` for the lines
+  around a hit, `search_modules` not a directory walk). They also say up front that an empty PL/SQL
+  body means nothing without `bodySource`. A regression test pins those facts: a client sees the
+  instructions once, so a quiet edit dropping one would otherwise be invisible.
+- **A `trace-form` skill in the Claude Code plugin.** The plugin shipped only `.mcp.json`; it now
+  also carries the traversal order at the length a worked example needs — the four readings that are
+  misleading rather than merely incomplete, when `get_object_xml` is the right call and when it is a
+  detour, and a full trace over the demo directory. Claude loads it when a question is about how a
+  form, field, button or modal behaves; `/oracle-forms:trace-form` invokes it directly. The plugin
+  version tracks its own files and is deliberately not bumped by a server release.
+- **The trace itself is a regression test.** `TraceScenarioTest` follows a modal window through a
+  subclassed toolbar block, an inherited trigger, a `Do_Key` into a block-level `KEY-HELP`, and a
+  `:GLOBAL` back into the field on the calling form — driving the registered MCP tools, with each
+  call's arguments taken from the previous call's result. Nothing in it opens a file, so a
+  regression that forced a reader back to raw XML could not be written this way at all. Each
+  response's size is recorded and asserted under a client's tool-output budget, so a field added to
+  a DTO later cannot quietly re-create the day discovery returned more than any client would accept.
 - **`search_modules` — one search across every cached module.** `search_source` searches the module
   it is given, so the questions that leave a form had no answer: which forms call this one, what
   else writes the `:GLOBAL` a modal hands its result back through, which modules subclass a shared

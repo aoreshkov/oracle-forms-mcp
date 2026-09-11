@@ -261,7 +261,8 @@ Code, the [`.mcpb` bundle](#claude-desktop-one-click-bundle) for Claude Desktop,
 
 Claude Code prompts for your forms directory, then fetches and checksum-verifies the released
 server into the plugin's data directory on first use — no clone, no build, no JSON to edit. The
-tools are live after `/reload-plugins`.
+tools are live after `/reload-plugins`, and the plugin's `trace-form` skill teaches the traversal
+above — the order to ask in, and the readings that mislead — so a trace does not start with `grep`.
 
 > **Requires a JDK 21+ on your `PATH`** (`javac -version`), because the plugin's bootstrap runs in
 > Java's single-file source mode. With only a JRE, use the `.mcpb` bundle or `claude mcp add` below.

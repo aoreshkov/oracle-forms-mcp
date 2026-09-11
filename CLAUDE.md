@@ -37,7 +37,10 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   source mode (hence **JDK** 21+, not JRE), which downloads the release zip, verifies its published
   sha256, unpacks it under `${CLAUDE_PLUGIN_DATA}`, and loads it in-process. The
   `claude-code-plugin` CI job validates the manifests and compiles the launcher — nothing else
-  stands between a commit on main and a user's install.
+  stands between a commit on main and a user's install. It also carries one skill,
+  `skills/trace-form/SKILL.md`: the traversal order and the habit→tool mapping that the server's
+  `instructions` state in brief, at the length a worked example needs. Both are guidance, not
+  behaviour — keep them agreeing with each other and with the tools they name.
 
 ## Invariants
 
