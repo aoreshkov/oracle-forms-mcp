@@ -14,7 +14,11 @@ fun Server.registerGetObjectXmlTool(service: FormsService) {
             "'ORDERS.ORDER_ID') when the name exists at several scopes. Large fragments are " +
             "truncated (flagged in the result). Forms writes the subclassing pointer on the " +
             "enclosing owner, so a fragment of a subclassed object shows only " +
-            "SubclassSubObject=\"true\"; the resolved pointer is returned beside it as 'inherited'.",
+            "SubclassSubObject=\"true\"; the resolved pointer is returned beside it as 'inherited'. " +
+            "Raw XML from some converters carries doubly-escaped newlines (a literal '&amp;#10;' " +
+            "inside a body, leaving the whole body on one line); the bodies served by get_trigger " +
+            "and get_program_unit are recovered from that and marked textEncoding=RECOVERED, so " +
+            "prefer them for code and read this for properties.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "objectType" to stringProp("XML element name, e.g. 'Block', 'Trigger', 'LOV'"),

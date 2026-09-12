@@ -289,9 +289,9 @@ class FormsXmlParserTest {
         assertEquals(null, ref.ownerPath)
 
         // Members inherit the group and hang off the object's own path, not the group's name.
-        val item = assertNotNull(block.items.single { it.name == "LVL" }.inherited)
+        val item = assertNotNull(block.items.single { it.name == "SEVERITY" }.inherited)
         assertEquals("MSG", item.ownerPath)
-        assertEquals("LVL", item.name)
+        assertEquals("SEVERITY", item.name)
         assertEquals("STD", item.objectGroup)
 
         // Top-level triggers and program units come in the same way, and are empty here.
@@ -369,7 +369,7 @@ class FormsXmlParserTest {
     @Test
     fun windowsAndCanvasesCarryTheirLayoutProperties() {
         val index = pickerIndex()
-        val window = index.windows.single { it.name == "WIN_LIST" }
+        val window = index.windows.single { it.name == "WIN_PICKER" }
         assertEquals(true, window.modal)
         assertEquals(600, window.width)
         assertEquals(420, window.height)
@@ -377,7 +377,7 @@ class FormsXmlParserTest {
         assertEquals(null, window.verticalToolbarCanvasName)
 
         val canvas = index.canvases.single { it.name == "CV_LIST" }
-        assertEquals("WIN_LIST", canvas.windowName)
+        assertEquals("WIN_PICKER", canvas.windowName)
         assertEquals(true, canvas.raiseOnEnter)
         assertEquals(600, canvas.width)
         assertEquals(580, canvas.viewportWidth)

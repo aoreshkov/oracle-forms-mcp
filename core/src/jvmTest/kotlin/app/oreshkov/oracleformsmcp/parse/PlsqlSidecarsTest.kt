@@ -6,6 +6,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class PlsqlSidecarsTest {
 
@@ -54,5 +55,22 @@ class PlsqlSidecarsTest {
         val unit = sidecars.write(PlsqlSidecars.PROGRAM_UNITS, "SAME", "-- unit")
         assertEquals("plsql/triggers/SAME.sql", trigger.file)
         assertEquals("plsql/program-units/SAME.sql", unit.file)
+    }
+
+    /**
+     * "One line" is not a size. A body that really is one physical line — minified, or escaped in
+     * a way [decodeDoubleEscaped] could not prove — would otherwise arrive whole in a field
+     * documented as a one-line preview, once per row, on a module with hundreds of triggers.
+     */
+    @Test
+    fun theOneLinePreviewIsCappedAndSaysSo() {
+        val preview = firstCodeLine("BEGIN " + "x := x + 1; ".repeat(500))
+        assertEquals(PREVIEW_CHARS + 1, preview.length)
+        assertTrue(preview.endsWith("…"))
+    }
+
+    @Test
+    fun aPreviewThatFitsIsLeftAlone() {
+        assertEquals("BEGIN", firstCodeLine("\n\n   BEGIN\n  NULL;\nEND;"))
     }
 }

@@ -75,8 +75,10 @@ internal val SERVER_INSTRUCTIONS: String =
         "fetched module at once, which is how a call between forms, a shared :GLOBAL variable or a " +
         "subclassed block is traced, and it reports the modules it could not reach rather than " +
         "leaving them silently out of the answer. " +
-        "Read through these tools rather than through the files. A module reported as STALE changed " +
-        "on disk since it was indexed — call fetch_module again — and that is exactly the hazard " +
+        "Read through these tools rather than through the files. A module reported as STALE is one " +
+        "to call fetch_module on again: its staleReason says whether it changed on disk " +
+        "(SOURCE_CHANGED) or was indexed by an older build of this server (INDEX_OUTDATED), whose " +
+        "answers can be wrong in ways that read as plausible. That is exactly the hazard " +
         "of opening the converted XML yourself: what is on disk may describe a form that is no " +
         "longer the one being served, and the paths in a result are cache-relative, not host " +
         "paths. Where a habit reaches for a shell there is a call: an item's properties and " +

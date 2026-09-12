@@ -99,6 +99,10 @@ public abstract interface class app/oreshkov/oracleformsmcp/core/ModuleConverter
 	public abstract fun getDescription ()Ljava/lang/String;
 }
 
+public final class app/oreshkov/oracleformsmcp/core/ModuleIndexOutdatedException : java/lang/Exception {
+	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;II)V
+}
+
 public final class app/oreshkov/oracleformsmcp/core/ModuleNotFetchedException : java/lang/Exception {
 	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;)V
 }
@@ -738,8 +742,8 @@ public final class app/oreshkov/oracleformsmcp/dto/ModuleSearchResults$Companion
 
 public final class app/oreshkov/oracleformsmcp/dto/ModuleStatusEntry {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/ModuleStatusEntry$Companion;
-	public fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/ModuleType;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleStatus;Z)V
-	public synthetic fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/ModuleType;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleStatus;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/ModuleType;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleStatus;Lapp/oreshkov/oracleformsmcp/dto/StaleReason;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/ModuleType;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleStatus;Lapp/oreshkov/oracleformsmcp/dto/StaleReason;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component2 ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public final fun component3 ()Lapp/oreshkov/oracleformsmcp/model/ModuleType;
@@ -747,9 +751,10 @@ public final class app/oreshkov/oracleformsmcp/dto/ModuleStatusEntry {
 	public final fun component5 ()Ljava/lang/Long;
 	public final fun component6 ()Ljava/lang/String;
 	public final fun component7 ()Lapp/oreshkov/oracleformsmcp/model/ModuleStatus;
-	public final fun component8 ()Z
-	public final fun copy (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/ModuleType;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleStatus;Z)Lapp/oreshkov/oracleformsmcp/dto/ModuleStatusEntry;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/ModuleStatusEntry;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/ModuleType;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleStatus;ZILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/ModuleStatusEntry;
+	public final fun component8 ()Lapp/oreshkov/oracleformsmcp/dto/StaleReason;
+	public final fun component9 ()Z
+	public final fun copy (Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/ModuleType;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleStatus;Lapp/oreshkov/oracleformsmcp/dto/StaleReason;Z)Lapp/oreshkov/oracleformsmcp/dto/ModuleStatusEntry;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/ModuleStatusEntry;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Lapp/oreshkov/oracleformsmcp/model/ModuleType;Ljava/lang/String;Ljava/lang/Long;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleStatus;Lapp/oreshkov/oracleformsmcp/dto/StaleReason;ZILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/ModuleStatusEntry;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getHasPreConverted ()Z
 	public final fun getLastModified ()Ljava/lang/String;
@@ -757,6 +762,7 @@ public final class app/oreshkov/oracleformsmcp/dto/ModuleStatusEntry {
 	public final fun getName ()Ljava/lang/String;
 	public final fun getPath ()Ljava/lang/String;
 	public final fun getSizeBytes ()Ljava/lang/Long;
+	public final fun getStaleReason ()Lapp/oreshkov/oracleformsmcp/dto/StaleReason;
 	public final fun getStatus ()Lapp/oreshkov/oracleformsmcp/model/ModuleStatus;
 	public final fun getType ()Lapp/oreshkov/oracleformsmcp/model/ModuleType;
 	public fun hashCode ()I
@@ -1148,6 +1154,19 @@ public final synthetic class app/oreshkov/oracleformsmcp/dto/SourceText$$seriali
 }
 
 public final class app/oreshkov/oracleformsmcp/dto/SourceText$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class app/oreshkov/oracleformsmcp/dto/StaleReason : java/lang/Enum {
+	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/StaleReason$Companion;
+	public static final field INDEX_OUTDATED Lapp/oreshkov/oracleformsmcp/dto/StaleReason;
+	public static final field SOURCE_CHANGED Lapp/oreshkov/oracleformsmcp/dto/StaleReason;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lapp/oreshkov/oracleformsmcp/dto/StaleReason;
+	public static fun values ()[Lapp/oreshkov/oracleformsmcp/dto/StaleReason;
+}
+
+public final class app/oreshkov/oracleformsmcp/dto/StaleReason$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 
@@ -1809,8 +1828,8 @@ public final class app/oreshkov/oracleformsmcp/model/ModuleFingerprint$Companion
 
 public final class app/oreshkov/oracleformsmcp/model/ModuleIndex {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/model/ModuleIndex$Companion;
-	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleFingerprint;Ljava/lang/String;Lkotlin/time/Instant;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;)V
-	public synthetic fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleFingerprint;Ljava/lang/String;Lkotlin/time/Instant;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;ILjava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleFingerprint;Ljava/lang/String;Lkotlin/time/Instant;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;ILjava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleFingerprint;Ljava/lang/String;Lkotlin/time/Instant;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public final fun component10 ()Ljava/util/List;
 	public final fun component11 ()Ljava/util/List;
@@ -1826,15 +1845,16 @@ public final class app/oreshkov/oracleformsmcp/model/ModuleIndex {
 	public final fun component20 ()Ljava/util/List;
 	public final fun component21 ()Ljava/util/List;
 	public final fun component22 ()Ljava/util/List;
-	public final fun component3 ()Ljava/lang/String;
-	public final fun component4 ()Lapp/oreshkov/oracleformsmcp/model/ModuleFingerprint;
-	public final fun component5 ()Ljava/lang/String;
-	public final fun component6 ()Lkotlin/time/Instant;
-	public final fun component7 ()Ljava/util/List;
+	public final fun component23 ()Ljava/util/List;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Lapp/oreshkov/oracleformsmcp/model/ModuleFingerprint;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Lkotlin/time/Instant;
 	public final fun component8 ()Ljava/util/List;
 	public final fun component9 ()Ljava/util/List;
-	public final fun copy (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleFingerprint;Ljava/lang/String;Lkotlin/time/Instant;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;)Lapp/oreshkov/oracleformsmcp/model/ModuleIndex;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/ModuleIndex;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleFingerprint;Ljava/lang/String;Lkotlin/time/Instant;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/ModuleIndex;
+	public final fun copy (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;ILjava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleFingerprint;Ljava/lang/String;Lkotlin/time/Instant;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;)Lapp/oreshkov/oracleformsmcp/model/ModuleIndex;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/model/ModuleIndex;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;ILjava/lang/String;Lapp/oreshkov/oracleformsmcp/model/ModuleFingerprint;Ljava/lang/String;Lkotlin/time/Instant;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/model/ModuleIndex;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAlerts ()Ljava/util/List;
 	public final fun getAttachedLibraries ()Ljava/util/List;
@@ -1844,6 +1864,7 @@ public final class app/oreshkov/oracleformsmcp/model/ModuleIndex {
 	public final fun getEditors ()Ljava/util/List;
 	public final fun getFingerprint ()Lapp/oreshkov/oracleformsmcp/model/ModuleFingerprint;
 	public final fun getFormsVersion ()Ljava/lang/String;
+	public final fun getIndexVersion ()I
 	public final fun getKey ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
 	public final fun getLovs ()Ljava/util/List;
 	public final fun getMenus ()Ljava/util/List;
@@ -1875,6 +1896,10 @@ public final synthetic class app/oreshkov/oracleformsmcp/model/ModuleIndex$$seri
 
 public final class app/oreshkov/oracleformsmcp/model/ModuleIndex$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class app/oreshkov/oracleformsmcp/model/ModuleIndexKt {
+	public static final field CURRENT_INDEX_VERSION I
 }
 
 public final class app/oreshkov/oracleformsmcp/model/ModuleKey {

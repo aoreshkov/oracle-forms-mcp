@@ -63,11 +63,11 @@ class ItemAndLayoutSemanticsTest {
         assertEquals(concise.canvases, detailed.canvases)
         val detail = assertNotNull(detailed.detail)
 
-        val window = detail.windows.single { it.name == "WIN_LIST" }
+        val window = detail.windows.single { it.name == "WIN_PICKER" }
         assertEquals(true, window.modal)
         assertEquals("BAR_LIST", window.horizontalToolbarCanvasName)
         // ...which answers "which window hosts this canvas?" in the same call.
-        assertEquals("WIN_LIST", detail.canvases.single { it.name == "CV_LIST" }.windowName)
+        assertEquals("WIN_PICKER", detail.canvases.single { it.name == "CV_LIST" }.windowName)
         assertEquals(true, detail.canvases.single { it.name == "CV_LIST" }.raiseOnEnter)
     }
 

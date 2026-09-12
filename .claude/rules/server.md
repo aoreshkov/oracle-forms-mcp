@@ -20,6 +20,14 @@ URIs are built in `resources/SourceUris.kt` — kept apart from `ModuleResources
 and the resource handlers can both use it without depending on each other. Never mint a URI for a
 ref shape no resource covers: an omitted field is honest, a dead link is not.
 
+The location therefore appears twice — inside the JSON and again as the link block — and that is
+**deliberate, not an oversight to tidy away** (it has been filed as redundancy twice now). The spec
+blesses exactly this (*"a tool MAY return links to resources"*), and which of the two a client puts
+in front of the model is the client's choice, not ours: the roadmap names "a `tools/call` response
+can carry the same output in more than one form… no way to know which form a given client will put
+in front of the model" as a protocol-level gap to be standardised. Drop the link when that contract
+lands, not before.
+
 **stdout is the stdio protocol channel.** Never `println`/write to stdout to debug — all logging
 goes Kermit → SLF4J → Logback → stderr.
 

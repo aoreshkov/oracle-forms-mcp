@@ -20,7 +20,9 @@ fun Server.registerFetchModuleTool(
         description = "Convert an Oracle Forms module to its text form and index it, warming the " +
             "local cache. With ORACLE_HOME set the binary is converted via frmf2xml/frmcmp; " +
             "otherwise a pre-converted file next to the module is copied. Idempotent — a cached " +
-            "module whose source is unchanged returns immediately. Call this once per module " +
+            "module whose source is unchanged, indexed by this build, returns immediately; one " +
+            "indexed by an older build is re-parsed from the converted file it already has, " +
+            "without re-converting. Call this once per module " +
             "(and again when list_modules reports STALE) before using the other tools. Returns " +
             "a summary (block/item/trigger/program-unit counts, attached libraries).",
         inputSchema = moduleSchema(),

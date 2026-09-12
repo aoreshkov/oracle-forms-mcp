@@ -168,7 +168,7 @@ class TraceScenarioTest {
         // 3. The field's trigger — and, read out of its PL/SQL, the form it opens.
         val keyHelp = call(
             "get_trigger",
-            args("module" to entry, "name" to "KEY-HELP", "block" to "MISSIONS", "item" to "AGENT_REF"),
+            args("module" to entry, "name" to "KEY-HELP", "block" to "ASSIGNMENTS", "item" to "AGENT_REF"),
         )
         val body = keyHelp.str("text")
         assertEquals(null, keyHelp["bodySource"], "an own body is the default and carries no qualifier")
@@ -183,7 +183,7 @@ class TraceScenarioTest {
         //    canvas, both in one overview call instead of one get_object_xml per object.
         val detail = call("get_module_overview", args("module" to "PICKER.fmb", "verbosity" to "detailed"))
             .getValue("detail").jsonObject
-        val window = detail.getValue("windows").jsonArray.map { it.jsonObject }.single { it.str("name") == "WIN_LIST" }
+        val window = detail.getValue("windows").jsonArray.map { it.jsonObject }.single { it.str("name") == "WIN_PICKER" }
         assertEquals("true", window.str("modal"))
         val toolbarCanvas = window.str("horizontalToolbarCanvasName")
         assertEquals("BAR_LIST", toolbarCanvas)
@@ -262,7 +262,7 @@ class TraceScenarioTest {
             "read_source",
             args("module" to entry, "uri" to homeward.str("uri"), "startLine" to 1, "maxLines" to 20),
         )
-        assertTrue(source.str("text").contains(":MISSIONS.AGENT_REF := :GLOBAL.picked_ref"), source.str("text"))
+        assertTrue(source.str("text").contains(":ASSIGNMENTS.AGENT_REF := :GLOBAL.picked_ref"), source.str("text"))
 
         // The trace is closed: modal → subclassed toolbar → inherited trigger → Do_Key →
         // block-level KEY-HELP → :GLOBAL → the field on the calling form.

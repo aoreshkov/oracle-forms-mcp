@@ -1,7 +1,9 @@
 package app.oreshkov.oracleformsmcp.server
 
+import app.oreshkov.oracleformsmcp.core.ModuleIndexOutdatedException
 import app.oreshkov.oracleformsmcp.core.ModuleNotFetchedException
 import app.oreshkov.oracleformsmcp.core.ModuleStaleException
+import app.oreshkov.oracleformsmcp.dto.StaleReason
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
 import app.oreshkov.oracleformsmcp.model.ModuleType
@@ -197,6 +199,90 @@ class FormsServiceTest {
 
         assertEquals(0, blocks.total)
         assertFalse(blocks.truncated)
+    }
+
+    /**
+     * The upgrade path. Nothing about a new build of this server touches an `.fmb`, so the source
+     * fingerprint of an entry written by the previous build still matches and the entry stays
+     * warm — which is how a v0.9.0 server spent a session answering with v0.8.0's facts
+     * (subclassed triggers reported empty, whole procedures reported as one line). The index
+     * version is the only thing that can tell them apart.
+     */
+    @Test
+    fun anIndexFromAnotherBuildIsStaleAndSaysWhich() = runTest {
+        val cache = InMemoryCache(temp.resolve("cache"))
+        val service = fakeService(
+            scanner = FakeScanner(listOf(ordersModule(preConverted("orders_fmb.xml")))),
+            cacheRoot = temp.resolve("cache"),
+            cache = cache,
+        )
+        service.fetchModule(ordersKey)
+
+        // Exactly what an older build left behind: current source, index without the stamp.
+        cache.indexes[ordersKey] = cache.indexes.getValue(ordersKey).copy(indexVersion = 0)
+
+        val error = assertFailsWith<ModuleIndexOutdatedException> { service.overview(ordersKey) }
+        assertTrue(error.message!!.contains("fetch_module"), "the message must name the fixing call")
+
+        val row = service.listModules().modules.single { it.module == ordersKey }
+        assertEquals(ModuleStatus.STALE, row.status)
+        assertEquals(StaleReason.INDEX_OUTDATED, row.staleReason)
+    }
+
+    /**
+     * Healing one re-parses; it must not re-convert. On a directory of thousands of modules an
+     * upgrade that re-ran Forms' converter over every warm entry would be unaffordable, and it is
+     * provably unnecessary: the source fingerprint still matches, so the converted file in the
+     * cache entry is the one this source produces.
+     */
+    @Test
+    fun healingAnOutdatedIndexReparsesWithoutConverting() = runTest {
+        val cache = InMemoryCache(temp.resolve("cache"))
+        val converter = CopyingConverter()
+        var parses = 0
+        val service = fakeService(
+            scanner = FakeScanner(listOf(ordersModule(preConverted("orders_fmb.xml")))),
+            cacheRoot = temp.resolve("cache"),
+            converter = converter,
+            parser = FakeParser { key, converted -> parses++; minimalIndex(key, converted) },
+            cache = cache,
+        )
+        service.fetchModule(ordersKey)
+        assertEquals(1, converter.targetDirs.size)
+        assertEquals(1, parses)
+        cache.indexes[ordersKey] = cache.indexes.getValue(ordersKey).copy(indexVersion = 0)
+
+        val summary = service.fetchModule(ordersKey)
+
+        assertFalse(summary.fromCache, "the outdated entry was served instead of rebuilt")
+        assertEquals(1, converter.targetDirs.size, "the converter ran again for an unchanged source")
+        assertEquals(2, parses, "the index was re-stamped without being re-parsed")
+        service.overview(ordersKey) // heals: no longer throws
+        assertEquals(ModuleStatus.CACHED, service.listModules().modules.single().status)
+    }
+
+    /**
+     * The fall-back half of the same path: with no converted file to re-parse (an entry pruned by
+     * hand, a relocated `--converted-dir`), healing runs the full conversion rather than failing.
+     */
+    @Test
+    fun healingFallsBackToConversionWhenTheConvertedFileIsGone() = runTest {
+        val cache = InMemoryCache(temp.resolve("cache"))
+        val converter = CopyingConverter()
+        val service = fakeService(
+            scanner = FakeScanner(listOf(ordersModule(preConverted("orders_fmb.xml")))),
+            cacheRoot = temp.resolve("cache"),
+            converter = converter,
+            cache = cache,
+        )
+        service.fetchModule(ordersKey)
+        cache.indexes[ordersKey] = cache.indexes.getValue(ordersKey).copy(indexVersion = 0)
+        Path.of(converter.targetDirs.single()).toFile().deleteRecursively()
+
+        service.fetchModule(ordersKey)
+
+        assertEquals(2, converter.targetDirs.size, "nothing was left to re-parse, so it had to convert")
+        service.overview(ordersKey) // heals
     }
 
     @Test
