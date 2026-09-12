@@ -4,6 +4,7 @@ import app.oreshkov.oracleformsmcp.core.AnnotationStore
 import app.oreshkov.oracleformsmcp.core.FormsDirectoryScanner
 import app.oreshkov.oracleformsmcp.core.ModuleCache
 import app.oreshkov.oracleformsmcp.core.ModuleConverter
+import app.oreshkov.oracleformsmcp.core.ModuleIndexOutdatedException
 import app.oreshkov.oracleformsmcp.core.ModuleNotFetchedException
 import app.oreshkov.oracleformsmcp.core.ModuleParser
 import app.oreshkov.oracleformsmcp.core.ModuleStaleException
@@ -35,6 +36,7 @@ import app.oreshkov.oracleformsmcp.dto.SearchHit
 import app.oreshkov.oracleformsmcp.dto.SearchResults
 import app.oreshkov.oracleformsmcp.dto.SourceLocation
 import app.oreshkov.oracleformsmcp.dto.SourceText
+import app.oreshkov.oracleformsmcp.dto.StaleReason
 import app.oreshkov.oracleformsmcp.dto.TriggerList
 import app.oreshkov.oracleformsmcp.dto.TriggerSource
 import app.oreshkov.oracleformsmcp.dto.TriggerSummary
@@ -42,6 +44,7 @@ import app.oreshkov.oracleformsmcp.io.Fingerprints
 import app.oreshkov.oracleformsmcp.model.Annotation
 import app.oreshkov.oracleformsmcp.model.AnnotationKind
 import app.oreshkov.oracleformsmcp.model.Author
+import app.oreshkov.oracleformsmcp.model.CURRENT_INDEX_VERSION
 import app.oreshkov.oracleformsmcp.model.ElementId
 import app.oreshkov.oracleformsmcp.model.ElementKind
 import app.oreshkov.oracleformsmcp.model.InheritanceRef
@@ -251,8 +254,13 @@ class FormsService(
 
     /**
      * Converts (or copies) and indexes [key]. Fingerprint-idempotent: a warm entry whose source
-     * is unchanged returns immediately with `fromCache = true`. [onProgress] fires at each phase
-     * boundary (never on a warm hit).
+     * is unchanged *and* whose index this build wrote returns immediately with `fromCache = true`.
+     * [onProgress] fires at each phase boundary (never on a warm hit).
+     *
+     * An entry whose source is unchanged but whose [ModuleIndex.indexVersion] is not
+     * [CURRENT_INDEX_VERSION] is re-parsed from the converted file already in the cache entry —
+     * see [reindexInPlace]. That is the upgrade path: nothing about a new server build changes an
+     * `.fmb`, so without it a warm module keeps answering with the facts the previous build knew.
      */
     suspend fun fetchModule(
         key: ModuleKey,
@@ -276,7 +284,10 @@ class FormsService(
             if (cached.sourceFile == source.toString() &&
                 Fingerprints.matches(cached.fingerprint, source)
             ) {
-                return cached.summary(fromCache = true)
+                if (cached.indexVersion == CURRENT_INDEX_VERSION) return cached.summary(fromCache = true)
+                // The file is unchanged and only the parser moved on: re-parse, do not re-convert.
+                // Falls through to a full conversion when the converted file is gone.
+                reindexInPlace(key, cached, source, onProgress)?.let { return it }
             }
         }
 
@@ -291,13 +302,54 @@ class FormsService(
         // Parsing a large form is CPU-bound; keep it off the caller's dispatcher.
         val parsed = withContext(Dispatchers.Default) { parser.parse(key, textForm.toString(), moduleDir) }
         onProgress(FetchProgress(3, FETCH_STEPS, "Caching the index of $key"))
-        val index = parsed.copy(
-            sourceFile = source.toString(),
-            fingerprint = Fingerprints.of(source),
-        )
+        val index = parsed.stamped(source)
         cache.putIndex(index)
         return index.summary(fromCache = false)
     }
+
+    /**
+     * Rebuilds [cached] from the converted file it already names, without running the converter.
+     *
+     * The expensive half of a fetch is the conversion, and here it is provably unnecessary: the
+     * source fingerprint still matches, so the converted text form in the cache entry is the one
+     * this very file produces. Only the *parse* is out of date, and re-running it also rewrites the
+     * PL/SQL sidecars — which is the point, since a parser fix (decoded bodies, real line counts)
+     * lands in them, not only in the index JSON.
+     *
+     * Returns `null` when the converted file is missing — a cache entry someone pruned by hand, or
+     * a relocated `--converted-dir` — leaving the caller to do the full conversion.
+     */
+    private suspend fun reindexInPlace(
+        key: ModuleKey,
+        cached: ModuleIndex,
+        source: Path,
+        onProgress: suspend (FetchProgress) -> Unit,
+    ): FetchModuleSummary? {
+        val converted = runCatching { resolveRef(key, cached.convertedFile) }.getOrNull()
+        if (converted == null || !converted.exists()) return null
+        log.i {
+            "Re-indexing $key from $converted without converting: cached index " +
+                "v${cached.indexVersion}, current v$CURRENT_INDEX_VERSION"
+        }
+        onProgress(FetchProgress(1, REINDEX_STEPS, "Re-parsing $key (converted file reused)"))
+        val moduleDir = cache.moduleDir(key)
+        val parsed = withContext(Dispatchers.Default) { parser.parse(key, converted.toString(), moduleDir) }
+        onProgress(FetchProgress(2, REINDEX_STEPS, "Caching the index of $key"))
+        val index = parsed.stamped(source)
+        cache.putIndex(index)
+        return index.summary(fromCache = false)
+    }
+
+    /**
+     * The cache contract stamped onto a freshly parsed index: the file staleness is judged against,
+     * and the parser version that wrote it. Both live here rather than in the parser so that every
+     * entry this service caches carries them, whichever [ModuleParser] produced it.
+     */
+    private fun ModuleIndex.stamped(source: Path): ModuleIndex = copy(
+        sourceFile = source.toString(),
+        fingerprint = Fingerprints.of(source),
+        indexVersion = CURRENT_INDEX_VERSION,
+    )
 
     /**
      * The module's sections by name, plus — at [detailed] — the window and canvas objects behind
@@ -590,6 +642,14 @@ class FormsService(
         )
     }
 
+    /**
+     * Searches one module's cached files line by line.
+     *
+     * [ignoreCase] defaults to `true`, as it does in `search_modules`: PL/SQL is case-insensitive
+     * and Forms writes its own names in upper case, so a case-sensitive default made the two
+     * search tools disagree about the same query — and the workaround it taught was to drop the
+     * first letter of a word and search for the remainder.
+     */
     suspend fun searchSource(
         key: ModuleKey,
         query: String,
@@ -597,12 +657,13 @@ class FormsService(
         scope: String?,
         maxResults: Int,
         offset: Int = 0,
+        ignoreCase: Boolean = true,
     ): SearchResults {
         val index = index(key) // staleness/fetched check before touching files
         val searchScope = searchScopeOf(scope)
         val cap = maxResults.coerceIn(1, MAX_SEARCH_RESULTS)
         val start = offset.coerceAtLeast(0)
-        val matches = lineMatcher(query, regex, ignoreCase = false, tool = "search_source")
+        val matches = lineMatcher(query, regex, ignoreCase = ignoreCase, tool = "search_source")
         val hits = mutableListOf<SearchHit>()
         var seen = 0 // total matches scanned across all files, for stable offset paging
         var truncated = false
@@ -1013,13 +1074,21 @@ class FormsService(
     /**
      * The cached index for [key], with the staleness contract every read tool relies on:
      * no entry → [ModuleNotFetchedException]; source changed on disk → [ModuleStaleException];
+     * written by another build of the parser → [ModuleIndexOutdatedException];
      * source deleted → still served (list_modules reports it as SOURCE_MISSING).
+     *
+     * The two staleness checks are independent and the source one runs first, because it is the
+     * one that needs a conversion to heal. An entry can fail only the second: the file on disk is
+     * untouched, and the answers in the entry are still the previous build's.
      */
     suspend fun index(key: ModuleKey): ModuleIndex {
         val cached = cache.get(key) ?: throw ModuleNotFetchedException(key)
         val source = Path.of(cached.sourceFile)
         if (source.exists() && !Fingerprints.matches(cached.fingerprint, source)) {
             throw ModuleStaleException(key)
+        }
+        if (cached.indexVersion != CURRENT_INDEX_VERSION) {
+            throw ModuleIndexOutdatedException(key, cached.indexVersion, CURRENT_INDEX_VERSION)
         }
         return cached
     }
@@ -1066,10 +1135,15 @@ class FormsService(
         }
         val path = fingerprintSource(module)
         val cached = if (isCached) cache.get(key) else null
-        val status = when {
-            cached == null -> ModuleStatus.NOT_CACHED
-            Fingerprints.matches(cached.fingerprint, Path.of(cached.sourceFile)) -> ModuleStatus.CACHED
-            else -> ModuleStatus.STALE
+        // Both ways an entry goes stale report STALE — the action is `fetch_module` either way —
+        // and the reason says which, because only one of them re-runs the converter.
+        val (status, staleReason) = when {
+            cached == null -> ModuleStatus.NOT_CACHED to null
+            !Fingerprints.matches(cached.fingerprint, Path.of(cached.sourceFile)) ->
+                ModuleStatus.STALE to StaleReason.SOURCE_CHANGED
+            cached.indexVersion != CURRENT_INDEX_VERSION ->
+                ModuleStatus.STALE to StaleReason.INDEX_OUTDATED
+            else -> ModuleStatus.CACHED to null
         }
         // One stat, not two: size and mtime come from the same attribute read.
         val attributes = runCatching { Files.readAttributes(path, BasicFileAttributes::class.java) }.getOrNull()
@@ -1081,6 +1155,7 @@ class FormsService(
             sizeBytes = attributes?.size(),
             lastModified = attributes?.let { Instant.ofEpochMilli(it.lastModifiedTime().toMillis()).toString() },
             status = status,
+            staleReason = staleReason,
             hasPreConverted = module.preConvertedPath != null,
         )
     }
@@ -1271,6 +1346,13 @@ class FormsService(
         if (source.exists() && !Fingerprints.matches(cached.fingerprint, source)) {
             return ModuleScan(emptyList(), stale = true)
         }
+        // An index another build wrote counts as stale here too, and for a reason particular to
+        // this tool: what it searches are the PL/SQL sidecars, which are that build's output. A
+        // module indexed before bodies were decoded holds each of them on one line, so it would be
+        // searched and would honestly report one useless hit — worse than being counted as skipped.
+        if (cached.indexVersion != CURRENT_INDEX_VERSION) {
+            return ModuleScan(emptyList(), stale = true)
+        }
         return withContext(Dispatchers.IO) {
             val hits = mutableListOf<ModuleSearchHit>()
             var seen = 0
@@ -1378,8 +1460,10 @@ class FormsService(
             }
             if (stale > 0) {
                 add(
-                    "$stale cached module(s) changed on disk since they were indexed and were " +
-                        "skipped — call fetch_module on them to re-index, then search again.",
+                    "$stale cached module(s) are stale — they changed on disk since they were " +
+                        "indexed, or an older build of this server indexed them — and were " +
+                        "skipped. list_modules(status=\"stale\"$patternArg) names them with a " +
+                        "'staleReason'; call fetch_module on them, then search again.",
                 )
             }
             if (truncated) {
@@ -1878,6 +1962,9 @@ class FormsService(
         const val MAX_SEARCH_RESULTS = 200
         const val MAX_OBJECT_XML_CHARS = 500_000
         const val FETCH_STEPS = 3
+
+        /** Phases of a re-index: the conversion phase of [FETCH_STEPS] is the one it skips. */
+        const val REINDEX_STEPS = 2
 
         /** How much of a matching line a hit quotes, in both search tools. */
         const val SNIPPET_CHARS = 200

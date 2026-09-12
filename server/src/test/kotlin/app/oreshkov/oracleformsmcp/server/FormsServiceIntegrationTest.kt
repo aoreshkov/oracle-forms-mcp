@@ -109,6 +109,42 @@ class FormsServiceIntegrationTest {
         assertTrue(!objectXml.truncated)
     }
 
+    /**
+     * The two search tools must answer the same question the same way. PL/SQL is case-insensitive
+     * and Forms writes its own names upper-case, so folding is the useful default — and a caller
+     * who wants the literal spelling can still ask for it.
+     */
+    @Test
+    fun searchSourceFoldsCaseByDefaultAndOnRequestDoesNot() = runTest {
+        service.fetchModule(ordersKey)
+
+        val folded = service.searchSource(ordersKey, "CALC_TOTAL", regex = false, scope = "plsql", maxResults = 50)
+        assertTrue(folded.hits.isNotEmpty(), "an upper-case query missed a lower-case body")
+
+        val exact = service.searchSource(
+            ordersKey,
+            "CALC_TOTAL",
+            regex = false,
+            scope = "plsql",
+            maxResults = 50,
+            ignoreCase = false,
+        )
+        assertTrue(
+            exact.hits.size < folded.hits.size,
+            "ignoreCase = false matched as much as the folded search, so it did nothing",
+        )
+
+        // Regex queries fold too — the flag applies to the matcher, not to one of its two modes.
+        val foldedRegex = service.searchSource(
+            ordersKey,
+            "CALC_[A-Z]+",
+            regex = true,
+            scope = "plsql",
+            maxResults = 50,
+        )
+        assertTrue(foldedRegex.hits.isNotEmpty())
+    }
+
     @Test
     fun listTriggersVerbosityControlsThePlsqlPreview() = runTest {
         service.fetchModule(ordersKey)

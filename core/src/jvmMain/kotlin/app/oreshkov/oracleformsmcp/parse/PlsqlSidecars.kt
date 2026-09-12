@@ -49,9 +49,25 @@ internal class PlsqlSidecars(private val moduleCacheDir: Path) {
     }
 }
 
-/** First non-blank line of [text], trimmed, for one-line previews. */
-internal fun firstCodeLine(text: String): String =
-    text.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+/**
+ * Longest one-line preview kept in the index, matching the snippet cap the search tools apply.
+ * A preview is a triage aid; past this it is a body, and `list_triggers(detailed)` on a
+ * 158-trigger module would return one.
+ */
+internal const val PREVIEW_CHARS: Int = 200
+
+/**
+ * First non-blank line of [text], trimmed, for one-line previews — cut at [PREVIEW_CHARS] with an
+ * ellipsis, because "line" is not a bound.
+ *
+ * A body that really is one physical line can be any length at all: a minified body, or one whose
+ * escaping [decodeDoubleEscaped] could not prove (so it was rightly left alone). `lineCount`
+ * carries the true size beside this, so the cut costs nothing and states itself.
+ */
+internal fun firstCodeLine(text: String): String {
+    val line = text.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+    return if (line.length <= PREVIEW_CHARS) line else line.take(PREVIEW_CHARS) + "…"
+}
 
 /** Number of lines in normalized [text]. */
 internal fun lineCountOf(text: String): Int =

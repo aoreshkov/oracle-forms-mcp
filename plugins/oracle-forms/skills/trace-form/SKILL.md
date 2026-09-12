@@ -21,6 +21,12 @@ describe a form that is no longer the one being served; that drift is exactly wh
 reports. The paths in a result are cache-relative by design, so they are not host paths you could
 open anyway.
 
+A `STALE` row's `staleReason` says which kind of drift it is: `SOURCE_CHANGED` (the `.fmb` moved on)
+or `INDEX_OUTDATED` (an older build of the server indexed it — its answers can be wrong in ways
+that read as plausible, such as an inherited trigger reported empty). Both are healed by
+`fetch_module`; the second re-parses the converted file and runs no conversion. After upgrading the
+server, `list_modules(status="stale")` is the one call worth making before trusting a warm cache.
+
 Every reflex has a call:
 
 | Reflex | Call instead |
@@ -105,10 +111,10 @@ Against the repository's own `sample-forms` directory — *how does the value pi
 into the field on the calling form?*
 
 1. `fetch_module ENTRY.fmb`
-2. `get_trigger ENTRY.fmb KEY-HELP block=MISSIONS item=AGENT_REF` → the body calls
+2. `get_trigger ENTRY.fmb KEY-HELP block=ASSIGNMENTS item=AGENT_REF` → the body calls
    `call_form('picker')`
 3. `fetch_module picker` — the name out of the PL/SQL is a usable module spec
-4. `get_module_overview PICKER.fmb verbosity=detailed` → `WIN_LIST` is `modal: true`, toolbar canvas
+4. `get_module_overview PICKER.fmb verbosity=detailed` → `WIN_PICKER` is `modal: true`, toolbar canvas
    `BAR_LIST`
 5. `get_block PICKER.fmb block=BAR_LIST` → the block is subclassed from `TOOLBAR`; item `SELECT`
    carries `ownerPath: BAR`
@@ -119,7 +125,7 @@ into the field on the calling form?*
 8. `list_triggers PICKER.fmb` → `KEY-HELP` at block level on `CUSTOMERS`; `get_trigger` it → it
    writes `:GLOBAL.picked_name` / `:GLOBAL.picked_ref` and exits the form
 9. `search_modules ":GLOBAL.picked_ref"` → the calling form reads it back into
-   `:MISSIONS.AGENT_REF`
+   `:ASSIGNMENTS.AGENT_REF`
 10. `read_source` with that hit's `uri` → the line in context
 
 Not one step needed a file. If a trace of your own seems to, say what was missing rather than

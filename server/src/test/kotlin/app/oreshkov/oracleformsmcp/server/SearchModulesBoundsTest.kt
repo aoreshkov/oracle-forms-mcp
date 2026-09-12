@@ -53,10 +53,7 @@ class SearchModulesBoundsTest {
         val service = FormsService(
             scanner = FakeScanner(modules),
             converter = CopyingConverter(),
-            // The cache-relative path of the text form the converter wrote, as a real index carries it.
-            parser = FakeParser { key, converted ->
-                minimalIndex(key, converted).copy(convertedFile = "converted/${Path.of(converted).name}")
-            },
+            parser = FakeParser(),
             cache = cache,
             annotationStore = InMemoryAnnotationStore(),
             formsDir = temp,

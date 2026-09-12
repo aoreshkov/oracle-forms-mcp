@@ -15,7 +15,9 @@ fun Server.registerGetBlockTool(service: FormsService) {
             "properties Forms records only where they are overridden. A subclassed block (or " +
             "item) carries an 'inherited' pointer to the module that defines it — what is listed " +
             "here is then only this module's overrides, and the result's hint names the call that " +
-            "reaches the full definition.",
+            "reaches the full definition. 'propertyClass' is reported only for classes this " +
+            "module declares (they are listed by get_module_overview); one an item inherits from " +
+            "a parent module is left unset rather than guessed.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "block" to stringProp("Block name, e.g. 'ORDERS'"),

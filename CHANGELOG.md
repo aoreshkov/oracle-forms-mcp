@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A cached module is no longer served by a build that did not index it.** Upgrading the server
+  changes no `.fmb`, so every already-fetched module stayed warm against its source fingerprint and
+  kept answering with the previous build's facts — indefinitely, and invisibly. A session run on
+  0.9.0 against modules indexed by 0.8.0 saw every one of that release's fixed defects: subclassed
+  triggers reported empty, whole procedures reported as one line, items with no property class.
+  The index now records the parser version that wrote it. A mismatch reads as stale — reads say so
+  and name the call that fixes it, `list_modules` reports `STALE` with
+  `staleReason: "INDEX_OUTDATED"` — and `fetch_module` heals it by re-parsing the converted file
+  already in the cache entry. **No conversion runs**: the source is unchanged by definition, so
+  healing a large directory after an upgrade costs a parse per module and no Oracle tooling.
+- **One-line PL/SQL previews are capped.** `firstLine` took the first non-blank line whole, and a
+  body that really is one physical line has no bound — `list_triggers(verbosity: "detailed")` on a
+  large module could return several bodies in the field documented as a one-line preview. It is now
+  cut at 200 characters with an ellipsis, beside the honest `lineCount`.
+
+### Changed
+- **`search_source` now ignores case by default**, as `search_modules` already did, and takes
+  `ignoreCase` to opt out. The two search tools disagreeing about the same query was a trap:
+  PL/SQL is case-insensitive and Forms writes its own names in upper case, so the case-sensitive
+  default silently under-reported. Pass `ignoreCase: false` for the previous behaviour.
+
 ## [0.9.0] - 2026-09-11
 
 ### Fixed

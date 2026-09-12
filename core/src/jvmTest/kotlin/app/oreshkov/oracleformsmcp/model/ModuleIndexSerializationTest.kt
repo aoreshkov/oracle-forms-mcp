@@ -2,6 +2,7 @@ package app.oreshkov.oracleformsmcp.model
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.time.Instant
 import kotlinx.serialization.json.Json
@@ -73,5 +74,25 @@ class ModuleIndexSerializationTest {
         assertEquals(ModuleKey.of("UTILS", ModuleType.LIBRARY), decoded.key)
         assertEquals(emptyList(), decoded.blocks)
         assertNull(decoded.formsVersion)
+    }
+
+    /**
+     * An entry written before the stamp existed reads back as version 0, not as the current one.
+     * The default is load-bearing: it is the only thing that distinguishes an index an older build
+     * wrote — a file every installed server upgrade inherits — from one this build wrote.
+     */
+    @Test
+    fun anIndexWithoutTheVersionStampReadsAsVersionZero() {
+        val unstamped = """
+            {
+              "key": {"name": "UTILS", "type": "LIBRARY"},
+              "sourceFile": "C:/forms/UTILS.pll",
+              "fingerprint": {"sizeBytes": 1, "lastModifiedMillis": 2, "sha256": "x"},
+              "convertedFile": "converted/utils.pld",
+              "parsedAt": "2026-07-11T00:00:00Z"
+            }
+        """.trimIndent()
+        assertEquals(0, json.decodeFromString<ModuleIndex>(unstamped).indexVersion)
+        assertNotEquals(0, CURRENT_INDEX_VERSION, "version 0 must stay reserved for unstamped entries")
     }
 }

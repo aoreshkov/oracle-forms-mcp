@@ -16,8 +16,11 @@ fun Server.registerListModulesTool(service: FormsService) {
         name = "list_modules",
         description = "List Oracle Forms modules in the configured directory (.fmb, .mmb, .pll, " +
             ".olb) with their cache status: NOT_CACHED (call fetch_module first), CACHED (ready " +
-            "to read), STALE (changed on disk — re-fetch), or SOURCE_MISSING (cached but the file " +
-            "is gone). Also reports whether a pre-converted XML/pld sibling exists. A real forms " +
+            "to read), STALE (re-fetch), or SOURCE_MISSING (cached but the file is gone). A STALE " +
+            "row carries 'staleReason': SOURCE_CHANGED (the module changed on disk) or " +
+            "INDEX_OUTDATED (an older build of this server indexed it, so its facts may be " +
+            "incomplete; re-fetching only re-parses, it does not re-convert). Also reports " +
+            "whether a pre-converted XML/pld sibling exists. A real forms " +
             "directory holds thousands of modules, so the answer is filtered and paged: narrow " +
             "with 'pattern', 'type' and 'status', and when 'truncated' is true call again with " +
             "'cursor' set to the returned 'nextCursor'. 'countsByStatus' always summarises the " +

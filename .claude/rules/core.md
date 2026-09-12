@@ -11,6 +11,12 @@ paths:
 - **Cache entries are fingerprinted** (size+mtime, sha256-confirmed) against the file the
   pipeline consumed. Reads throw `ModuleStaleException` on mismatch — and its message is written
   for the model: it must name the tool call that fixes the situation (e.g. re-run `fetch_module`).
+- **The index also carries the parser version that wrote it** (`ModuleIndex.indexVersion` vs
+  `CURRENT_INDEX_VERSION`), because an upgrade changes no `.fmb` and would otherwise keep serving
+  the old parser's answers out of a cache that looks current. **Any change to what the parser
+  writes — a new field, a different meaning for an existing one, a recovery like
+  `decodeDoubleEscaped` — bumps `CURRENT_INDEX_VERSION` in the same commit.** Version `0` is
+  reserved: it is what every entry written before the stamp existed deserializes to.
 - **Annotations never go into `index.json`.** AI/user-supplied notes, tags, and relations belong
   to the `AnnotationStore` (its own root, keyed by a stable `ElementId` — never `SourceRef` line
   ranges), decoupled from the derived cache so they survive re-fetch. A source-fingerprint mismatch

@@ -107,11 +107,18 @@ internal class InMemoryAnnotationStore : AnnotationStore {
     }
 }
 
+/**
+ * The index a parser would return for [sourceFile], with nothing in it.
+ *
+ * [ModuleIndex.convertedFile] is the cache-relative `converted/<name>` form the real parsers write
+ * (`cacheRelative`), not a bare file name: it is what `FormsService.resolveRef` resolves, and the
+ * re-index path follows it to skip a conversion.
+ */
 internal fun minimalIndex(key: ModuleKey, sourceFile: String): ModuleIndex = ModuleIndex(
     key = key,
     sourceFile = sourceFile,
     fingerprint = Fingerprints.of(Path.of(sourceFile)),
-    convertedFile = Path.of(sourceFile).name,
+    convertedFile = "converted/${Path.of(sourceFile).name}",
     parsedAt = Instant.fromEpochMilliseconds(0),
 )
 
@@ -124,11 +131,14 @@ internal fun fakeService(
     converter: ModuleConverter = CopyingConverter(),
     convertedDir: Path? = null,
     parser: ModuleParser = FakeParser(),
+    // Passed in when a test needs to reach the entries — to leave one behind the way an older
+    // build of the server would have written it, for instance.
+    cache: ModuleCache = InMemoryCache(cacheRoot),
 ): FormsService = FormsService(
     scanner = scanner,
     converter = converter,
     parser = parser,
-    cache = InMemoryCache(cacheRoot),
+    cache = cache,
     annotationStore = annotationStore,
     formsDir = Path.of("."),
     binaryConversion = binaryConversion,

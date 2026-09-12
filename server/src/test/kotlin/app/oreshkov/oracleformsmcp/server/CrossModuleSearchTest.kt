@@ -41,11 +41,14 @@ class CrossModuleSearchTest {
     private val picker = ModuleKey.of("picker", ModuleType.FORM)
     private val toolbar = ModuleKey.of("toolbar", ModuleType.FORM)
 
+    /** Named so a test can leave an entry behind the way another build of the server would have. */
+    private val cache = OnDiskModuleCache(temp.resolve("cache"))
+
     private val service = FormsService(
         scanner = FormsDirectoryScannerImpl(formsDir),
         converter = PreConvertedCopyConverter(),
         parser = FormsModuleParser(),
-        cache = OnDiskModuleCache(temp.resolve("cache")),
+        cache = cache,
         annotationStore = OnDiskAnnotationStore(temp.resolve("annotations")),
         formsDir = formsDir,
         binaryConversion = false,
@@ -172,8 +175,28 @@ class CrossModuleSearchTest {
         assertEquals(1, result.skippedStale)
         assertEquals(2, result.scannedModules)
         val hint = assertNotNull(result.hint)
-        assertTrue(hint.contains("1 cached module(s) changed on disk"), hint)
+        assertTrue(hint.contains("1 cached module(s) are stale"), hint)
         assertTrue(hint.contains("fetch_module"), hint)
+    }
+
+    /**
+     * The other way a cache entry goes stale, and the reason it matters *here*: this tool searches
+     * the PL/SQL sidecars, which are parser output. An entry an older build wrote holds that
+     * build's sidecars — bodies still undecoded and a whole procedure on one line — so searching
+     * it would report a hit that is honest about the file and useless about the code. It is
+     * skipped and counted, like any other stale module.
+     */
+    @Test
+    fun aModuleIndexedByAnotherBuildIsSkippedLikeAnyOtherStaleOne() = runTest {
+        fetchAll()
+        val outdated = assertNotNull(cache.get(picker)).copy(indexVersion = 0)
+        cache.putIndex(outdated)
+
+        val result = service.searchModules(query = ":GLOBAL.picked_ref")
+
+        assertEquals(listOf(entry), result.hits.modules())
+        assertEquals(1, result.skippedStale)
+        assertTrue(assertNotNull(result.hint).contains("older build"), result.hint)
     }
 
     @Test

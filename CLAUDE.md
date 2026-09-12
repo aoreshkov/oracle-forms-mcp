@@ -65,6 +65,15 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
 - **Cache entries are fingerprinted** (size+mtime, sha256-confirmed) against the file the
   pipeline consumed; reads throw `ModuleStaleException` on mismatch. Exception messages are
   written for the model — they must say which tool call fixes the situation.
+- **An entry also carries the parser version that wrote it.** Nothing about a new build changes an
+  `.fmb`, so the fingerprint alone keeps a warm entry warm across an upgrade and it answers with
+  the previous build's facts forever — which is exactly what happened to the inheritance, decoding
+  and property-class fixes. `ModuleIndex.indexVersion` vs `CURRENT_INDEX_VERSION` closes that:
+  reads throw `ModuleIndexOutdatedException`, `list_modules` reports `STALE` with
+  `staleReason = INDEX_OUTDATED`, and `fetch_module` heals it by **re-parsing the converted file
+  already in the entry — never re-converting**, since the source is unchanged by definition.
+  **Bump `CURRENT_INDEX_VERSION` in the same commit as any parser change that alters what is
+  written or what a written field means.**
 - **Annotations are asserted, not derived.** They live in `AnnotationStore` (own root, separate
   from the fingerprinted cache), keyed by a stable `ElementId` (module + kind + name + ownerPath —
   never `SourceRef` line ranges), so they survive re-fetch and cache eviction. A source-fingerprint

@@ -80,8 +80,24 @@ public enum class BodySource {
 }
 
 /**
+ * Why a `STALE` row is stale. The action is the same either way — `fetch_module` — but the cost
+ * is not, and neither is the reason a warm-looking module is being re-fetched.
+ */
+@Serializable
+@SerialName("StaleReason")
+public enum class StaleReason {
+    /** The source file changed since it was indexed; re-fetching re-converts it. */
+    SOURCE_CHANGED,
+
+    /** An older build of this server wrote the index; re-fetching only re-parses it. */
+    INDEX_OUTDATED,
+}
+
+/**
  * One row of `list_modules`. [name] is the flat identifier to match and reason about; [module]
  * carries the same name with its type as the canonical key every other tool takes.
+ *
+ * [staleReason] is set only on a `STALE` row: the status says what to do, this says why.
  */
 @Serializable
 @SerialName("ModuleStatusEntry")
@@ -93,6 +109,7 @@ public data class ModuleStatusEntry(
     val sizeBytes: Long? = null,
     val lastModified: String? = null,
     val status: ModuleStatus,
+    val staleReason: StaleReason? = null,
     val hasPreConverted: Boolean = false,
 )
 
