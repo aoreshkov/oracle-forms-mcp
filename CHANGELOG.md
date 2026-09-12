@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-12
+
 ### Fixed
 - **A cached module is no longer served by a build that did not index it.** Upgrading the server
   changes no `.fmb`, so every already-fetched module stayed warm against its source fingerprint and
@@ -363,7 +365,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.6.0...v0.7.0
