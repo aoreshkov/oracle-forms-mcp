@@ -26,6 +26,8 @@ import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Every registered tool must carry the metadata the MCP spec encourages: a display title,
@@ -98,6 +100,24 @@ class ToolRegistrationTest {
             assertEquals(false, annotations.destructiveHint, name)
             assertEquals(true, annotations.idempotentHint, name)
             assertEquals(false, annotations.openWorldHint, name)
+        }
+    }
+
+    /**
+     * `anthropic/maxResultSizeChars` makes Claude Code's limit for a tool the character ceiling the
+     * server enforces. It is declared exactly where the server caps the result below it: on an
+     * uncapped tool the key would lower the client's limit rather than raise it.
+     */
+    @Test
+    fun onlyCappedToolsDeclareTheirResultSizeCeiling() {
+        val declared = tools().filterValues { it.meta?.get("anthropic/maxResultSizeChars") != null }
+        assertEquals(setOf("read_source", "get_object_xml"), declared.keys)
+        declared.forEach { (name, tool) ->
+            assertEquals(
+                MAX_RESULT_CHARS,
+                tool.meta?.get("anthropic/maxResultSizeChars")?.jsonPrimitive?.int,
+                name,
+            )
         }
     }
 

@@ -12,7 +12,8 @@ fun Server.registerGetObjectXmlTool(service: FormsService) {
             "is the Forms2XML element name (Block, Item, Trigger, Canvas, Window, LOV, " +
             "RecordGroup, Alert, VisualAttribute, …). Pass 'owner' (e.g. 'ORDERS' or " +
             "'ORDERS.ORDER_ID') when the name exists at several scopes. Large fragments are " +
-            "truncated (flagged in the result). Forms writes the subclassing pointer on the " +
+            "truncated ('truncated', with a 'hint' naming the read_source call that continues). " +
+            "Forms writes the subclassing pointer on the " +
             "enclosing owner, so a fragment of a subclassed object shows only " +
             "SubclassSubObject=\"true\"; the resolved pointer is returned beside it as 'inherited'. " +
             "Raw XML from some converters carries doubly-escaped newlines (a literal '&amp;#10;' " +
@@ -30,6 +31,7 @@ fun Server.registerGetObjectXmlTool(service: FormsService) {
         title = "Get raw object XML",
         outputSchema = outputSchemaOf<ObjectXml>(),
         toolAnnotations = LOCAL_READ_ONLY,
+        meta = CAPPED_RESULT_META,
     ) { request ->
         guarded {
             val args = request.args()

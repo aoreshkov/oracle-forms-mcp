@@ -480,9 +480,11 @@ class FormsService(
                     item = it.itemName,
                     // The PL/SQL preview is the bulky per-row field; omit it unless asked.
                     firstLine = if (detailed) it.firstLine else "",
-                    lineCount = it.lineCount,
                     // firstLine is the parsed body's first non-blank line, so an empty one means
                     // the body holds no code — the same test getTrigger makes against the text.
+                    // Such a body counts zero lines: the stored count never goes below one, and
+                    // "1 line" beside an inherited body reads as a one-line trigger.
+                    lineCount = if (it.firstLine.isBlank()) 0 else it.lineCount,
                     bodySource = bodySourceOf(it.firstLine, it.inherited),
                 )
             }
@@ -838,24 +840,45 @@ class FormsService(
             )
         }
         val xml = readRef(key, ref.ref)
-        val capped = xml.length > MAX_OBJECT_XML_CHARS
+        val kept = jsonEscapedPrefixLength(xml, MAX_OBJECT_XML_CHARS)
+        val capped = kept < xml.length
+        val served = xml.take(kept)
+        val location = locationOf(index.key, ref.ref)
         return ObjectXml(
             module = index.key,
             objectType = ref.objectType,
             name = ref.name,
             ownerPath = ref.ownerPath,
-            xml = if (capped) xml.take(MAX_OBJECT_XML_CHARS) else xml,
+            xml = served,
             startLine = ref.ref.startLine,
             truncated = capped,
-            source = locationOf(index.key, ref.ref),
+            source = location,
             // The fragment itself only shows SubclassSubObject="true"; the parent pointer lives on
             // the enclosing element, so it is served here rather than left one call away.
             inherited = ref.inherited,
+            hint = if (capped) objectXmlHint(index.key, ref.ref, served, location) else null,
             annotations = elementAnnotations(
                 index,
                 ElementId(index.key, ElementKind.OBJECT, ref.name, ref.ownerPath),
             ),
         )
+    }
+
+    /**
+     * Where a cut `get_object_xml` fragment continues. The cut can fall inside a line, so the
+     * continuation starts *at* that line rather than after it — re-reading part of a line is cheap,
+     * skipping the rest of one is a silent hole. A cut inside the fragment's first line has no
+     * useful continuation (the same line would be cut again), so it points at a search instead.
+     */
+    private fun objectXmlHint(key: ModuleKey, ref: SourceRef, served: String, location: SourceLocation?): String {
+        val cutLine = ref.startLine + served.count { it == '\n' }
+        if (cutLine == ref.startLine || location == null || location.uri.isEmpty()) {
+            return "The fragment was cut at the response size cap inside its first line. Find the " +
+                "attributes you need with search_source(module=\"$key\", scope=\"xml\", query=...)."
+        }
+        return "The fragment was cut at the response size cap, inside line $cutLine. Continue with " +
+            "read_source(module=\"$key\", uri=\"${location.uri}\", startLine=$cutLine, " +
+            "endLine=${ref.endLine}), a few dozen lines at a time."
     }
 
     /**
@@ -893,19 +916,69 @@ class FormsService(
             "startLine $from is past the end of $refPath, which has ${lines.size} lines."
         }
         val requestedTo = (endLine ?: lines.size).coerceAtMost(lines.size)
-        val (text, lastLine, cut) = slice(lines, from, requestedTo, maxLines)
+        val slice = slice(lines, from, requestedTo, maxLines)
+        val uri = sourceUri(key, refPath).orEmpty()
+        val nextStartLine = (slice.lastLine + 1).takeIf { slice.truncated && it <= requestedTo }
         return SourceText(
             module = key,
-            source = SourceLocation(
-                uri = sourceUri(key, refPath).orEmpty(),
-                file = refPath,
-                startLine = from,
-                endLine = lastLine,
-            ),
+            source = SourceLocation(uri = uri, file = refPath, startLine = from, endLine = slice.lastLine),
             totalLines = lines.size,
-            truncated = cut,
-            text = text,
+            truncated = slice.truncated,
+            requestedEndLine = requestedTo,
+            nextStartLine = nextStartLine,
+            lineCut = slice.lineCut,
+            hint = if (!slice.truncated) {
+                null
+            } else {
+                // Continue in the form the caller used, so the next call is this one with new lines.
+                val byUri = uri.isNotEmpty() && target.contains("://")
+                readSourceHint(
+                    key = key,
+                    target = if (byUri) uri else refPath,
+                    byUri = byUri,
+                    from = from,
+                    slice = slice,
+                    requestedTo = requestedTo.takeIf { endLine != null },
+                    nextStartLine = nextStartLine,
+                )
+            },
+            text = slice.text,
         )
+    }
+
+    /**
+     * What a cut `read_source` page says, in the order a caller acts on it: what came back against
+     * what was asked, why it stopped, and the exact call that continues. A line cut part-way gets
+     * its own sentence, because continuing at the next line silently drops the rest of it.
+     */
+    private fun readSourceHint(
+        key: ModuleKey,
+        target: String,
+        byUri: Boolean,
+        from: Int,
+        slice: SourceSlice,
+        requestedTo: Int?,
+        nextStartLine: Int?,
+    ): String = buildString {
+        if (slice.lineCut) {
+            append(
+                "Line ${slice.lastLine} alone is longer than one response, so only its start was " +
+                    "returned. A line of converted XML is one whole object: read it with " +
+                    "get_object_xml, or find the attribute you need with search_source(scope=\"xml\").",
+            )
+        } else {
+            append("Returned lines $from-${slice.lastLine}")
+            if (requestedTo != null) append(" of the requested $from-$requestedTo")
+            append(if (slice.stoppedAtLineCap) " (the line cap was reached)." else " (the size cap was reached).")
+        }
+        if (nextStartLine != null) {
+            val arg = if (byUri) "uri" else "file"
+            val end = if (requestedTo != null) ", endLine=$requestedTo" else ""
+            append(" Continue with read_source(module=\"$key\", $arg=\"$target\", startLine=$nextStartLine$end).")
+            if (!slice.stoppedAtLineCap && !slice.lineCut) {
+                append(" Lines of converted XML can run to thousands of characters, so ask for fewer at a time.")
+            }
+        }
     }
 
     /**
@@ -916,7 +989,7 @@ class FormsService(
     suspend fun readSourceResource(key: ModuleKey, target: String): String {
         val slice = readSource(key, target, maxLines = MAX_SOURCE_LINES)
         if (!slice.truncated) return slice.text
-        val next = slice.source.endLine + 1
+        val next = slice.nextStartLine ?: (slice.source.endLine + 1)
         val note = "truncated at line ${slice.source.endLine} of ${slice.totalLines}; " +
             "call read_source(module=\"$key\", uri=\"${slice.source.uri}\", startLine=$next) for the rest"
         return slice.text + if (sourceMimeType(slice.source.file) == "application/xml") {
@@ -1546,39 +1619,62 @@ class FormsService(
         )
     }
 
+    /** One [slice]: the text, the last line it reaches, and why it stopped short of the request. */
+    private class SourceSlice(
+        val text: String,
+        val lastLine: Int,
+        val truncated: Boolean,
+        val lineCut: Boolean,
+        val stoppedAtLineCap: Boolean,
+    )
+
     /**
      * Lines [from]..[to] of [lines], stopping at whichever ceiling comes first, with the last line
      * actually taken and whether anything was left behind.
      *
-     * The character budget is checked per line rather than on the joined result so a file of very
-     * long lines costs one line of overshoot, not the whole slice — except for a first line that
-     * alone exceeds the budget, which is taken and then cut, because returning nothing would be
-     * worse than returning a prefix that says it is one.
+     * The character budget is measured in **JSON-escaped** characters ([jsonEscapedLength]), because
+     * that is what a client receives: converted XML is dense with quotes, each of which travels as
+     * two characters, so a budget counted on the raw text overshoots on exactly the files most
+     * likely to reach it. It is checked per line, so a slice never overshoots — except for a first
+     * line that alone exceeds the budget, which is taken and cut ([SourceSlice.lineCut]), because
+     * returning nothing would be worse than returning a prefix that says it is one.
      */
     private fun slice(
         lines: List<String>,
         from: Int,
         to: Int,
         maxLines: Int?,
-    ): Triple<String, Int, Boolean> {
+    ): SourceSlice {
         val cap = (maxLines ?: DEFAULT_SOURCE_LINES).coerceIn(1, MAX_SOURCE_LINES)
         val taken = mutableListOf<String>()
         var chars = 0
         var last = from - 1
+        var stoppedAtLineCap = false
         for (i in from..to) {
-            if (taken.size == cap) break
+            if (taken.size == cap) {
+                stoppedAtLineCap = true
+                break
+            }
             val line = lines[i - 1]
-            if (taken.isNotEmpty() && chars + line.length + 1 > MAX_SOURCE_CHARS) break
+            val cost = jsonEscapedLength(line) + 2 // plus the escaped newline that joins it
+            if (chars + cost > MAX_SOURCE_CHARS) {
+                if (taken.isEmpty()) {
+                    val prefix = line.take(jsonEscapedPrefixLength(line, MAX_SOURCE_CHARS))
+                    return SourceSlice(prefix, i, truncated = true, lineCut = true, stoppedAtLineCap = false)
+                }
+                break
+            }
             taken += line
-            chars += line.length + 1
+            chars += cost
             last = i
         }
-        val joined = taken.joinToString("\n")
-        return if (joined.length > MAX_SOURCE_CHARS) {
-            Triple(joined.take(MAX_SOURCE_CHARS), last, true)
-        } else {
-            Triple(joined, maxOf(last, from), last < to)
-        }
+        return SourceSlice(
+            text = taken.joinToString("\n"),
+            lastLine = maxOf(last, from),
+            truncated = last < to,
+            lineCut = false,
+            stoppedAtLineCap = stoppedAtLineCap,
+        )
     }
 
     // --- subclassing (inherited objects) ---
@@ -1960,7 +2056,6 @@ class FormsService(
 
     private companion object {
         const val MAX_SEARCH_RESULTS = 200
-        const val MAX_OBJECT_XML_CHARS = 500_000
         const val FETCH_STEPS = 3
 
         /** Phases of a re-index: the conversion phase of [FETCH_STEPS] is the one it skips. */
@@ -1998,10 +2093,16 @@ class FormsService(
          * form is hundreds of thousands of lines, while a doubly-escaped PL/SQL body can be one
          * line holding a whole procedure. [DEFAULT_SOURCE_LINES] is what a caller gets without
          * asking — enough for a trigger body or an XML fragment, small enough to read twice.
+         *
+         * [MAX_SOURCE_CHARS] (and `get_object_xml`'s [MAX_OBJECT_XML_CHARS]) count JSON-escaped
+         * characters and sit well inside [MAX_RESULT_CHARS]. They were 100,000 and 500,000 raw
+         * characters: a slice of attribute-dense XML that obeyed them was still over Claude Code's
+         * 25,000-token default, so a call that respected every ceiling here was spilled to a file.
          */
         const val DEFAULT_SOURCE_LINES = 200
         const val MAX_SOURCE_LINES = 2_000
-        const val MAX_SOURCE_CHARS = 100_000
+        const val MAX_SOURCE_CHARS = 40_000
+        const val MAX_OBJECT_XML_CHARS = 40_000
 
         /**
          * How far `resolve` walks a subclassing chain. Forms allows a parent to be subclassed in

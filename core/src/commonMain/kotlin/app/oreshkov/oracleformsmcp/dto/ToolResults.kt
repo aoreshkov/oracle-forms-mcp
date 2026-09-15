@@ -47,6 +47,13 @@ public data class SourceLocation(
  * [source] echoes the range actually returned, which is not necessarily the range asked for:
  * [truncated] says the request was cut at the line or character ceiling, and [totalLines] gives
  * the size of the whole file so the next call can pick up where this one stopped.
+ *
+ * A cut is also stated the way a reader acts on it, because the flag alone was read past: a range
+ * of 320 converted-XML lines came back as 147 of them, and the next request started where the
+ * caller *thought* the first had ended. [nextStartLine] is where to continue (`null` when nothing
+ * of the requested range is left), [requestedEndLine] is the end the request was clamped to, and
+ * [hint] spells out the call. [lineCut] means the last line returned is itself only a prefix — one
+ * line of converted XML is one whole object and can outgrow a response on its own.
  */
 @Serializable
 @SerialName("SourceText")
@@ -55,6 +62,10 @@ public data class SourceText(
     val source: SourceLocation = SourceLocation(),
     val totalLines: Int = 0,
     val truncated: Boolean = false,
+    val requestedEndLine: Int? = null,
+    val nextStartLine: Int? = null,
+    val lineCut: Boolean = false,
+    val hint: String? = null,
     val text: String = "",
 )
 
@@ -411,7 +422,8 @@ public data class ModuleSearchResults(
 
 /**
  * `get_object_xml` — the raw XML fragment of one named object, sliced from the converted file by
- * its recorded line range. [truncated] flags a fragment cut at the response size cap.
+ * its recorded line range. [truncated] flags a fragment cut at the response size cap, and [hint]
+ * then names the `read_source` call that continues it.
  *
  * [inherited] answers the subclassing question *at this object's level*: Forms writes the parent
  * pointer on the enclosing owner, so the fragment of a subclassed item shows only
@@ -431,6 +443,7 @@ public data class ObjectXml(
     val truncated: Boolean = false,
     val source: SourceLocation? = null,
     val inherited: InheritanceRef? = null,
+    val hint: String? = null,
     val annotations: ElementAnnotations = ElementAnnotations(),
 )
 
