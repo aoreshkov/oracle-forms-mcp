@@ -45,7 +45,6 @@ class FormsServiceIntegrationTest {
         cache = OnDiskModuleCache(temp.resolve(if (convertedDir == null) "cache" else "cache-relocated")),
         annotationStore = OnDiskAnnotationStore(temp.resolve("annotations")),
         formsDir = formsDir,
-        binaryConversion = false,
         convertedDir = convertedDir,
     )
 
@@ -463,7 +462,6 @@ class FormsServiceIntegrationTest {
             cache = OnDiskModuleCache(temp.resolve("cache-shared")),
             annotationStore = OnDiskAnnotationStore(temp.resolve("annotations-shared")),
             formsDir = formsDir,
-            binaryConversion = false,
             convertedDir = convertedDir,
         )
 

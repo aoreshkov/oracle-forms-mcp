@@ -20,7 +20,8 @@ private val USAGE = """
     Conversion of .fmb/.mmb/.olb/.pll binaries uses, in order: the --convert-command command if
     given, else the frmf2xml/frmcmp tools under ORACLE_HOME if that is set; otherwise
     pre-converted files (*_fmb.xml, *_mmb.xml, *_olb.xml, *.pld) are expected next to the
-    modules and copied into the cache.
+    modules and copied into the cache. A .pll library goes to the --compile-command command
+    first when one is given; the other module types are unaffected by it.
 
     Options:
       --forms-dir <path>          Directory containing the Forms modules
@@ -29,11 +30,16 @@ private val USAGE = """
                                   ("C:\tools\my conv.bat" -xml), or a JSON array of arguments
                                   (["wine","f2x.exe","-xml"]). It is spawned directly, never
                                   through a shell. The module's absolute path replaces {} and is
-                                  appended as the last argument when {} does not appear. Runs with
-                                  the cwd set to the converted directory (--converted-dir, else the
-                                  module's cache dir) and must write the text forms there
-                                  (*_fmb.xml etc., .pld for .pll). Takes precedence over
-                                  ORACLE_HOME.
+                                  appended as the last argument when {} does not appear; the
+                                  output file's absolute path replaces {out} (never appended). Runs
+                                  with the cwd set to the converted directory (--converted-dir,
+                                  else the module's cache dir) and must write the text forms there
+                                  or to {out} (*_fmb.xml etc., .pld for .pll). Takes precedence
+                                  over ORACLE_HOME.
+      --compile-command <cmd>     Converter for .pll libraries only, run instead of whatever would
+                                  convert them otherwise; same syntax and placeholders as
+                                  --convert-command. frmcmp writes its .pld next to the module
+                                  unless told otherwise, so pass it Output_File={out}.
       --converted-dir <path>      Directory the converted XML/.pld text forms are written into:
                                   one flat directory for all modules, each file named after its
                                   module (orders_fmb.xml, utils.pld). The converter runs with this
@@ -52,6 +58,7 @@ private val USAGE = """
     Environment (a flag always wins over its variable):
       ORACLE_HOME                 Oracle Forms installation providing frmf2xml/frmcmp
       $ENV_CONVERT_COMMAND       Same as --convert-command
+      $ENV_COMPILE_COMMAND       Same as --compile-command
       $ENV_CONVERTED_DIR         Same as --converted-dir
 
     Examples:
@@ -59,10 +66,13 @@ private val USAGE = """
       server --forms-dir /srv/forms --transport http --port 3000   # http://127.0.0.1:3000/mcp
       server --forms-dir C:\forms --convert-command C:\tools\fmb2xml.bat --converted-dir C:\forms-xml
       server --forms-dir /srv/forms --convert-command "/opt/forms/convert.sh --xml {}"
+      server --forms-dir /srv/forms --converted-dir /srv/forms-xml \
+        --compile-command "frmcmp_batch Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}"
 """.trimIndent()
 
-/** Environment variables mirroring the two converter flags, for launchers that can only set env. */
+/** Environment variables mirroring the converter flags, for launchers that can only set env. */
 internal const val ENV_CONVERT_COMMAND: String = "OFMCP_CONVERT_COMMAND"
+internal const val ENV_COMPILE_COMMAND: String = "OFMCP_COMPILE_COMMAND"
 internal const val ENV_CONVERTED_DIR: String = "OFMCP_CONVERTED_DIR"
 
 internal enum class TransportKind { STDIO, HTTP }
@@ -77,6 +87,7 @@ internal data class CliOptions(
     val annotationsDir: Path? = null,
     val conversionTimeoutSeconds: Int = 120,
     val convertCommand: String? = null,
+    val compileCommand: String? = null,
     val convertedDir: Path? = null,
 )
 
@@ -129,6 +140,7 @@ internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::g
             // An unset optional option (see `configured`) falls back to ORACLE_HOME / the cache
             // instead of failing every conversion.
             "--convert-command" -> options = options.copy(convertCommand = configured(value(arg)))
+            "--compile-command" -> options = options.copy(compileCommand = configured(value(arg)))
             "--converted-dir" -> options = options.copy(convertedDir = configured(value(arg))?.let(Path::of))
             "--cache-dir" -> options = options.copy(cacheDir = Path.of(value(arg)))
             "--annotations-dir" -> options = options.copy(annotationsDir = Path.of(value(arg)))
@@ -150,6 +162,7 @@ internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::g
     // an MCPB `env` block). A flag always wins.
     return options.copy(
         convertCommand = options.convertCommand ?: configured(env(ENV_CONVERT_COMMAND)),
+        compileCommand = options.compileCommand ?: configured(env(ENV_COMPILE_COMMAND)),
         convertedDir = options.convertedDir ?: configured(env(ENV_CONVERTED_DIR))?.let(Path::of),
     )
 }
@@ -197,6 +210,7 @@ fun main(args: Array<String>) {
         annotationsDir = options.annotationsDir ?: cacheDir.resolve("annotations"),
         conversionTimeout = options.conversionTimeoutSeconds.seconds,
         convertCommand = options.convertCommand,
+        compileCommand = options.compileCommand,
         convertedDir = options.convertedDir?.let { convertedDir(it, formsDir) },
     )
     runBlocking {

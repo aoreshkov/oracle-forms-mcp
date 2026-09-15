@@ -10,6 +10,7 @@ import app.oreshkov.oracleformsmcp.model.Annotation
 import app.oreshkov.oracleformsmcp.model.ModuleAnnotations
 import app.oreshkov.oracleformsmcp.model.ModuleIndex
 import app.oreshkov.oracleformsmcp.model.ModuleKey
+import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.model.Relation
 import app.oreshkov.oracleformsmcp.model.ScannedModule
 import java.nio.file.Files
@@ -30,8 +31,14 @@ internal class FakeScanner(var modules: List<ScannedModule> = emptyList()) : For
     override suspend fun scan(): List<ScannedModule> = modules
 }
 
-internal class CopyingConverter : ModuleConverter {
+/**
+ * Copies whatever source it is handed. [binaryTypes] are the module types it claims to convert
+ * from the binary — which decides whether the service hands it the binary or the text form.
+ */
+internal class CopyingConverter(private val binaryTypes: Set<ModuleType> = emptySet()) : ModuleConverter {
     override val description: String = "fake copy converter"
+
+    override fun convertsBinary(type: ModuleType): Boolean = type in binaryTypes
 
     /**
      * Every `targetDir` the service handed over, in call order — the conversion output directory.
@@ -126,7 +133,6 @@ internal fun minimalIndex(key: ModuleKey, sourceFile: String): ModuleIndex = Mod
 internal fun fakeService(
     scanner: FakeScanner = FakeScanner(),
     cacheRoot: Path = Files.createTempDirectory("fake-service-cache"),
-    binaryConversion: Boolean = false,
     annotationStore: AnnotationStore = InMemoryAnnotationStore(),
     converter: ModuleConverter = CopyingConverter(),
     convertedDir: Path? = null,
@@ -141,6 +147,5 @@ internal fun fakeService(
     cache = cache,
     annotationStore = annotationStore,
     formsDir = Path.of("."),
-    binaryConversion = binaryConversion,
     convertedDir = convertedDir,
 )

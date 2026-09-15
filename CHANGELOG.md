@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **PL/SQL libraries can have a converter command of their own: `--compile-command`** (also
+  `OFMCP_COMPILE_COMMAND`, and a `compile_command` field in the `.mcpb` bundle). No Oracle tool
+  converts a `.pll` to XML — `frmf2xml` rejects libraries — so a site that set `--convert-command`
+  to a wrapper around `frmf2xml` lost every library, with "produced no output file" as the only
+  clue. The new command runs for `.pll` modules only, ahead of `--convert-command`, `ORACLE_HOME`,
+  and copy-mode; every other module type is unaffected, and **with it unset nothing changes**.
+- **`{out}` in a converter command** is replaced with the absolute path the text form belongs at,
+  for tools that ignore their working directory. `frmcmp` is one: given no `Output_File`, it writes
+  the `.pld` next to the module, in the forms directory. `{out}` is never appended, so existing
+  commands run exactly as before. When a run leaves nothing in the converted directory but a fresh
+  file next to the module, the error now names that file and says to add `{out}`.
+
 ## [0.10.0] - 2026-09-12
 
 ### Fixed

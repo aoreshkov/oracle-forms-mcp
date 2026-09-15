@@ -57,7 +57,6 @@ class SearchModulesBoundsTest {
             cache = cache,
             annotationStore = InMemoryAnnotationStore(),
             formsDir = temp,
-            binaryConversion = false,
         )
         modules.forEach { service.fetchModule(it.key) }
         return service

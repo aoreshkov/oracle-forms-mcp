@@ -51,7 +51,6 @@ class SearchModulesToolTest {
         cache = OnDiskModuleCache(temp.resolve("cache")),
         annotationStore = OnDiskAnnotationStore(temp.resolve("annotations")),
         formsDir = formsDir,
-        binaryConversion = false,
     )
 
     private val server = Server(

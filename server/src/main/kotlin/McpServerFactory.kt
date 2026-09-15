@@ -108,6 +108,12 @@ data class ServerConfig(
      */
     val convertCommand: String? = null,
     /**
+     * Converter for `.pll` libraries only, from `--compile-command` — the same kind of command line
+     * as [convertCommand], run for libraries instead of whichever converter would take them
+     * otherwise. Operator configuration only. Leaves every other module type where it was.
+     */
+    val compileCommand: String? = null,
+    /**
      * One flat directory holding every module's converted XML (and `.pld`) text form, from
      * `--converted-dir`. It is the directory the converter *writes into* — it runs with this as its
      * working directory — not somewhere files are moved afterwards. Operator configuration only.
@@ -151,13 +157,12 @@ object McpServerFactory {
                 formsDir = config.formsDir,
                 timeout = config.conversionTimeout,
                 convertCommand = config.convertCommand,
+                compileCommand = config.compileCommand,
             ),
             parser = FormsModuleParser(),
             cache = cache,
             annotationStore = annotationStore,
             formsDir = config.formsDir,
-            // Either configured converter can read binaries; only copy-mode cannot.
-            binaryConversion = !config.convertCommand.isNullOrBlank() || !config.oracleHome.isNullOrBlank(),
             convertedDir = config.convertedDir,
         )
 

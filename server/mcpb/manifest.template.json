@@ -29,6 +29,7 @@
       "args": ["--forms-dir", "${user_config.forms_dir}"],
       "env": {
         "OFMCP_CONVERT_COMMAND": "${user_config.convert_command}",
+        "OFMCP_COMPILE_COMMAND": "${user_config.compile_command}",
         "OFMCP_CONVERTED_DIR": "${user_config.converted_dir}"
       },
       "platform_overrides": {
@@ -48,7 +49,14 @@
     "convert_command": {
       "type": "string",
       "title": "Custom converter command (optional)",
-      "description": "Command run instead of Oracle's frmf2xml, with its arguments — quote any part containing spaces (\"C:\\tools\\my conv.bat\" -xml), or give a JSON array ([\"wine\",\"f2x.exe\",\"-xml\"]). It is spawned directly, never through a shell. The module's path replaces {}, or is appended when {} is absent; the working directory is the converted XML directory below, or the module's cache directory when that is empty, and the command must write the text form there. Leave empty to use an ORACLE_HOME installation, or pre-converted files next to the modules.",
+      "description": "Command run instead of Oracle's frmf2xml, with its arguments — quote any part containing spaces (\"C:\\tools\\my conv.bat\" -xml), or give a JSON array ([\"wine\",\"f2x.exe\",\"-xml\"]). It is spawned directly, never through a shell. The module's path replaces {}, or is appended when {} is absent, and the output file's path replaces {out}; the working directory is the converted XML directory below, or the module's cache directory when that is empty, and the command must write the text form there or to {out}. Leave empty to use an ORACLE_HOME installation, or pre-converted files next to the modules.",
+      "required": false,
+      "default": ""
+    },
+    "compile_command": {
+      "type": "string",
+      "title": "PL/SQL library converter command (optional)",
+      "description": "Command run for .pll libraries only, instead of whatever would convert them otherwise — same syntax as the converter command above. The library's path replaces {} and the output .pld path replaces {out}. frmcmp writes next to the module unless told otherwise, so give it Output_File={out}: frmcmp_batch Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}. Leave empty to convert libraries like every other module.",
       "required": false,
       "default": ""
     },

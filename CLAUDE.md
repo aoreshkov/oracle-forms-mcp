@@ -173,6 +173,19 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   `${user_config.…}` template as unset — that is how the MCPB/plugin channels pass "not set". Shared output/exit-code handling lives in `ConversionSupport.kt`: an output
   file older than `startedAt` (minus 2s FAT slack) is rejected as a leftover, so a converter that
   copies with preserved mtimes (`copy`, `cp -p`) reads as having produced nothing.
+- `--compile-command` (`OFMCP_COMPILE_COMMAND`) is a second command of the same kind for `.pll`
+  only, because `frmf2xml` rejects libraries and a `--convert-command` built on it loses them all.
+  `ModuleConverters.forEnvironment` wraps the usual choice in `ByModuleTypeConverter`, so a `.pll`
+  goes compile → convert → `ORACLE_HOME` → copy and every other type is untouched; unset, nothing is
+  wrapped. `frmcmp` writes the `.pld` **next to the module**, whatever its cwd, unless given
+  `Output_File` — hence `{out}` (the absolute canonical output path, substituted in the same single
+  pass as `{}`, **never appended**) and the stray-file hint on "produced no output file". Messages
+  name the right option through the internal `ConverterOption`, whose fallback advice differs per
+  option. **Whether a module's binary or its text form is consumed — and fingerprinted — is
+  `ModuleConverter.convertsBinary(type)`, asked per module type.** Never re-derive it from the
+  configuration in the server: with only `--compile-command` set, forms stay in copy-mode, and a
+  form fingerprinted against its `.fmb` would never go stale when its XML is re-exported
+  (`PerTypeConversionTest`).
 - This project deliberately does NOT add a custom `SegmentTemplateMatcher` (the SDK default
   matcher works); see `.claude/rules/server.md` for the shadowing cause and the
   `ModuleResourcesTest.sdkDefaultMatcherExtractsTheModuleSegment` regression canary.

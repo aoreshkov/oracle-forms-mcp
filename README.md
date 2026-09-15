@@ -389,6 +389,7 @@ the container user can write.
 ```
 --forms-dir <path>          Directory containing the Forms modules (or pass it positionally)
 --convert-command <cmd>     Site-supplied converter command (with its arguments) instead of frmf2xml
+--compile-command <cmd>     Separate converter command for .pll libraries (0.11.0+)
 --converted-dir <path>      Directory the converted XML/.pld is written into (default: the cache)
 --transport stdio|http      Transport (default: stdio)
 --port <int>                HTTP port (default: 3000)
@@ -398,20 +399,22 @@ the container user can write.
 --conversion-timeout <sec>  Kill a stuck conversion (default: 120)
 ```
 
-The two converter options can also be set as environment variables, for clients that configure a
+The converter options can also be set as environment variables, for clients that configure a
 server with variables rather than arguments (`docker run -e`, the `env` block of an MCP config).
 A flag always wins over its variable:
 
 | Flag | Variable |
 | --- | --- |
 | `--convert-command` | `OFMCP_CONVERT_COMMAND` |
+| `--compile-command` | `OFMCP_COMPILE_COMMAND` |
 | `--converted-dir` | `OFMCP_CONVERTED_DIR` |
 
-Both are also exposed as configuration in the [Claude Code plugin](plugins/oracle-forms/README.md)
-(`/plugin` → Oracle Forms), the `.mcpb` bundle (Claude Desktop's connector settings), and the
-registry listing for the Docker image — so whichever channel you install from, you can point the
-server at your own converter and your own output directory without editing JSON by hand. Leaving
-either unset is always valid: an empty value counts as "not configured".
+`--convert-command` and `--converted-dir` are also exposed as configuration in the
+[Claude Code plugin](plugins/oracle-forms/README.md) (`/plugin` → Oracle Forms), and all three in
+the `.mcpb` bundle (Claude Desktop's connector settings) and the registry listing for the Docker
+image — so whichever channel you install from, you can point the server at your own converter and
+your own output directory without editing JSON by hand. Leaving any of them unset is always valid:
+an empty value counts as "not configured".
 
 ### Keeping the converted XML
 
@@ -470,7 +473,10 @@ before this option accepted arguments keeps working unquoted.
 The module's absolute path goes wherever you write **`{}`**; with no `{}` in the command it is
 appended as the last argument, which is what the earlier `<command> <module>` convention did. The
 command runs with the **working directory set to the converted directory** — that module's cache
-directory by default — and is expected to write the text form there. This mirrors how `frmf2xml` is
+directory by default — and is expected to write the text form there. A tool that cannot be pointed
+at a working directory is given the output file instead: **`{out}`** is replaced with its absolute
+path (`<converted dir>/orders_fmb.xml`, `<converted dir>/utils.pld`). `{out}` is only ever
+substituted, never appended, so a command without it is run exactly as before. This mirrors how `frmf2xml` is
 driven, so a script that already wraps it needs no changes. Emit the same formats the parser reads:
 XML for `.fmb`/`.mmb`/`.olb`, a `.pld` dump for `.pll`. Oracle's `<name>_fmb.xml` naming is
 preferred but not required — any `.xml` (or `.pld` for a library) written into the working directory
@@ -485,9 +491,11 @@ by pointing `--converted-dir` at it. Scripts that write into their working direc
 adjustment either way.
 
 Precedence is `--convert-command` → `ORACLE_HOME` → copy-mode, so an explicitly configured
-command wins even on a machine with a Forms installation. A blank value counts as unset. Like
-`ORACLE_HOME`, the command is parsed and validated at the first conversion rather than at startup,
-so a stale setting still leaves cached modules readable; the error then names the flag to fix.
+command wins even on a machine with a Forms installation (`.pll` libraries can be taken out of
+that order — see [below](#converting-plsql-libraries-with-their-own-command)). A blank value counts
+as unset. Like `ORACLE_HOME`, the command is parsed and validated at the first conversion rather
+than at startup, so a stale setting still leaves cached modules readable; the error then names the
+flag to fix.
 
 > **The output must be freshly written.** Because Forms-era tools return unreliable exit codes,
 > a run is judged by its output file, and a file older than the run is treated as a leftover from
@@ -499,6 +507,52 @@ The command is **operator configuration only** — no tool argument can choose o
 callers supply a module name, which is resolved against the scanned forms directory before the
 converter sees it, and the command is spawned directly with an argv list rather than through a
 shell, so nothing in a module's path or in your own quoting can turn into a second command.
+
+#### Converting PL/SQL libraries with their own command
+
+*Since 0.11.0.* No Oracle tool converts a `.pll` to XML: `frmf2xml` accepts forms, menus, and object
+libraries only, and a library is dumped to `.pld` text by `frmcmp` instead. A `--convert-command`
+built around `frmf2xml` therefore fails on every library. `--compile-command` gives `.pll` modules
+a command line of their own, with the same syntax and placeholders, and leaves every other module
+type where it was:
+
+```
+server --forms-dir /srv/forms --converted-dir /srv/forms-xml --convert-command "/opt/forms/f2xml.sh {}" --compile-command "frmcmp_batch Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}"
+```
+
+or, as a JSON array:
+
+```
+--compile-command '["frmcmp_batch", "Module={}", "Module_Type=LIBRARY", "Script=YES", "Batch=YES", "Logon=NO", "Output_File={out}"]'
+```
+
+Write it on one line. The value is split into arguments without a shell, so a `\` line
+continuation copied into a configuration field would reach the tool as a literal argument.
+
+**Give `frmcmp` `Output_File={out}`.** Without it, `frmcmp` writes the `.pld` next to the *module* —
+into the forms directory, whatever its working directory — where the server would then read it as
+a pre-converted file. When a run produces nothing in the converted directory but did leave a fresh
+file next to the module, the error names that file and says to add `{out}`; the server does not
+delete it.
+
+`Logon=NO` matters too: without it (or a real `Userid=`), `frmcmp` prints its usage and exits 0
+having written nothing.
+
+Which converter a module reaches:
+
+| `--compile-command` | `--convert-command` | `ORACLE_HOME` | `.pll` | `.fmb` / `.mmb` / `.olb` |
+| --- | --- | --- | --- | --- |
+| — | — | — | copy-mode | copy-mode |
+| — | — | set | `frmcmp` | `frmf2xml` |
+| — | set | — / set | convert command | convert command |
+| set | — | — | compile command | copy-mode |
+| set | — | set | compile command | `frmf2xml` |
+| set | set | — / set | compile command | convert command |
+
+With `--compile-command` unset, nothing changes: a `--convert-command` that already handles
+libraries keeps receiving them. Where a type is served in copy-mode, its pre-converted text form is
+what the cache entry is checked against, so re-exporting an `_fmb.xml` still marks that form stale
+while its libraries are converted from their binaries.
 
 ## Cache
 
@@ -529,8 +583,9 @@ tags, and relations you recorded intact.
   converted directory as cwd (`--converted-dir`, else the module's cache dir) and passes
   `OVERWRITE=YES USE_PROPERTY_IDS=NO`.
 - `frmcmp_batch` is preferred over `frmcmp` (headless); the server passes
-  `Script=YES Batch=YES Logon=NO` and augments `FORMS_PATH` with the forms dir so attached
-  libraries resolve.
+  `Script=YES Batch=YES Logon=NO` and an explicit `Output_File` — without one, `frmcmp` writes the
+  `.pld` next to the module rather than into its working directory — and augments `FORMS_PATH`
+  with the forms dir so attached libraries resolve.
 - Forms tools have unreliable exit codes — success is judged by the output file existing,
   being non-empty, and being newer than the invocation; failures surface the tool's output tail.
 - `.pld` files may be written in the client NLS charset; the parser reads UTF-8 with a

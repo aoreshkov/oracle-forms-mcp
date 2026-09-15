@@ -37,7 +37,6 @@ class ItemAndLayoutSemanticsTest {
         cache = OnDiskModuleCache(temp.resolve("cache")),
         annotationStore = OnDiskAnnotationStore(temp.resolve("annotations")),
         formsDir = formsDir,
-        binaryConversion = false,
     )
 
     init {
