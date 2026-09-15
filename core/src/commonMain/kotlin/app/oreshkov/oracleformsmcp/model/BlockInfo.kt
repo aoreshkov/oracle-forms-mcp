@@ -35,6 +35,26 @@ public data class BlockInfo(
 )
 
 /**
+ * One column of a block's data source, as Forms recorded it from the table or view (Forms2XML's
+ * `DataSourceColumn`, whose attributes are `DSCName`, `DSCType`, `DSCLength`, …).
+ *
+ * [mandatory] is the database's NOT NULL, not the item's `Required`: a mandatory column that no
+ * item supplies has to be assigned by a trigger, or the insert fails. [type] is Forms' own
+ * classification of the column's use (`Query` in every export seen so far).
+ */
+@Serializable
+@SerialName("DataSourceColumnInfo")
+public data class DataSourceColumnInfo(
+    val name: String,
+    val dataType: String? = null,
+    val length: Int = 0,
+    val precision: Int = 0,
+    val scale: Int = 0,
+    val mandatory: Boolean = false,
+    val type: String? = null,
+)
+
+/**
  * A block's data-manipulation properties, as written in this module.
  *
  * Every field is `null` when the file did not write it, meaning "not overridden here" — which is

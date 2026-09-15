@@ -4,8 +4,10 @@ import app.oreshkov.oracleformsmcp.model.AnnotationKind
 import app.oreshkov.oracleformsmcp.model.Author
 import app.oreshkov.oracleformsmcp.model.BlockInfo
 import app.oreshkov.oracleformsmcp.model.CanvasInfo
+import app.oreshkov.oracleformsmcp.model.DataSourceColumnInfo
 import app.oreshkov.oracleformsmcp.model.ElementId
 import app.oreshkov.oracleformsmcp.model.InheritanceRef
+import app.oreshkov.oracleformsmcp.model.ItemDml
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
 import app.oreshkov.oracleformsmcp.model.ModuleType
@@ -48,9 +50,9 @@ public data class SourceLocation(
  * [truncated] says the request was cut at the line or character ceiling, and [totalLines] gives
  * the size of the whole file so the next call can pick up where this one stopped.
  *
- * A cut is also stated the way a reader acts on it, because the flag alone was read past: a range
- * of 320 converted-XML lines came back as 147 of them, and the next request started where the
- * caller *thought* the first had ended. [nextStartLine] is where to continue (`null` when nothing
+ * A cut is also stated the way a reader acts on it, because the flag alone gets read past: a long
+ * range of converted XML comes back as a fraction of it, and the next request starts where the
+ * caller *thought* the first had ended, leaving a hole. [nextStartLine] is where to continue (`null` when nothing
  * of the requested range is left), [requestedEndLine] is the end the request was clamped to, and
  * [hint] spells out the call. [lineCut] means the last line returned is itself only a prefix — one
  * line of converted XML is one whole object and can outgrow a response on its own.
@@ -242,6 +244,16 @@ public data class BlockList(
  *
  * A subclassed block carries `block.inherited` (and so may its items); [hint] then names the call
  * that reaches the full definition, because what this module stores is only its overrides.
+ *
+ * At `verbosity: "detailed"`, [effectiveDml] maps item name → the item's DML properties with its
+ * property class applied: what the item writes wins, then its class, then whatever that class is
+ * based on — followed into other modules only when they are already fetched. An item is present
+ * only when that chain resolved to the end, so an entry's `null` field really is the Forms
+ * default; an item missing from the map has an unresolved class (see [propertyClasses] and [hint])
+ * or is itself subclassed from another module. `block.items[].dml` stays what the item wrote.
+ *
+ * [propertyClasses] says, once per class the block's items use, whether it resolved and from which
+ * modules. [columns] is present only when asked for.
  */
 @Serializable
 @SerialName("BlockDetail")
@@ -250,7 +262,47 @@ public data class BlockDetail(
     val block: BlockInfo,
     val source: SourceLocation? = null,
     val hint: String? = null,
+    val effectiveDml: Map<String, ItemDml> = emptyMap(),
+    val propertyClasses: List<PropertyClassResolution> = emptyList(),
+    val columns: BlockColumns? = null,
     val annotations: ElementAnnotations = ElementAnnotations(),
+)
+
+/**
+ * How one property class used by a block's items was resolved for `get_block`.
+ *
+ * [resolvedThrough] lists the modules the chain was read from, starting with this one. When
+ * [resolved] is `false`, [missingModule] names the module the chain needed and could not read —
+ * not fetched, or stale — which `fetch_module` fixes; it is `null` when the chain broke for a
+ * reason fetching cannot fix (a class that is not declared where the pointer says, a loop).
+ */
+@Serializable
+@SerialName("PropertyClassResolution")
+public data class PropertyClassResolution(
+    val name: String,
+    val resolved: Boolean = false,
+    val resolvedThrough: List<ModuleKey> = emptyList(),
+    val missingModule: ModuleKey? = null,
+    val itemCount: Int = 0,
+)
+
+/**
+ * `get_block(columns: true)` — the block's data-source columns and how they meet its items.
+ *
+ * [columnsWithoutItem] are columns no item of the block names — by `ColumnName` with any table
+ * alias stripped (`C.OWNER` supplies `OWNER`), or by the item's own name when it has no
+ * `ColumnName`. It is structural and does not ask whether each item is a database item.
+ * [mandatoryColumnsWithoutItem] is the part of it that is NOT NULL in the database: an insert fails
+ * unless a trigger assigns those. [total] counts every column; [truncated] says [columns] was cut.
+ */
+@Serializable
+@SerialName("BlockColumns")
+public data class BlockColumns(
+    val total: Int = 0,
+    val truncated: Boolean = false,
+    val columns: List<DataSourceColumnInfo> = emptyList(),
+    val columnsWithoutItem: List<String> = emptyList(),
+    val mandatoryColumnsWithoutItem: List<String> = emptyList(),
 )
 
 /**

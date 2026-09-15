@@ -12,6 +12,7 @@ import app.oreshkov.oracleformsmcp.dto.AnnotationCreated
 import app.oreshkov.oracleformsmcp.dto.AnnotationRemoved
 import app.oreshkov.oracleformsmcp.dto.AnnotationSearchResults
 import app.oreshkov.oracleformsmcp.dto.AnnotationView
+import app.oreshkov.oracleformsmcp.dto.BlockColumns
 import app.oreshkov.oracleformsmcp.dto.BlockDetail
 import app.oreshkov.oracleformsmcp.dto.BlockList
 import app.oreshkov.oracleformsmcp.dto.BlockSummary
@@ -30,6 +31,7 @@ import app.oreshkov.oracleformsmcp.dto.ObjectXml
 import app.oreshkov.oracleformsmcp.dto.ProgramUnitList
 import app.oreshkov.oracleformsmcp.dto.ProgramUnitSource
 import app.oreshkov.oracleformsmcp.dto.ProgramUnitSummary
+import app.oreshkov.oracleformsmcp.dto.PropertyClassResolution
 import app.oreshkov.oracleformsmcp.dto.RelationCreated
 import app.oreshkov.oracleformsmcp.dto.RelationView
 import app.oreshkov.oracleformsmcp.dto.SearchHit
@@ -47,7 +49,9 @@ import app.oreshkov.oracleformsmcp.model.Author
 import app.oreshkov.oracleformsmcp.model.CURRENT_INDEX_VERSION
 import app.oreshkov.oracleformsmcp.model.ElementId
 import app.oreshkov.oracleformsmcp.model.ElementKind
+import app.oreshkov.oracleformsmcp.model.BlockInfo
 import app.oreshkov.oracleformsmcp.model.InheritanceRef
+import app.oreshkov.oracleformsmcp.model.ItemDml
 import app.oreshkov.oracleformsmcp.model.ItemInfo
 import app.oreshkov.oracleformsmcp.model.ModuleFingerprint
 import app.oreshkov.oracleformsmcp.model.ModuleIndex
@@ -61,6 +65,7 @@ import app.oreshkov.oracleformsmcp.model.ScannedModule
 import app.oreshkov.oracleformsmcp.model.SourceRef
 import app.oreshkov.oracleformsmcp.model.TriggerInfo
 import app.oreshkov.oracleformsmcp.model.TriggerLevel
+import app.oreshkov.oracleformsmcp.parse.DataSourceColumnReader
 import app.oreshkov.oracleformsmcp.server.resources.moduleConvertedUri
 import app.oreshkov.oracleformsmcp.server.resources.sourceMimeType
 import app.oreshkov.oracleformsmcp.server.resources.sourceRefPath
@@ -428,27 +433,55 @@ class FormsService(
      * semantics live), its prompt, its trigger names, and its subclassing pointer. Dropping that
      * last one to save bytes would re-create the absence bug `bodySource` exists to prevent.
      */
-    suspend fun getBlock(key: ModuleKey, blockName: String, detailed: Boolean = false): BlockDetail {
+    /**
+     * One block. [detailed] adds the descriptive item properties and resolves each item's DML
+     * properties through its property class ([BlockDetail.effectiveDml]); [columns] reads the
+     * block's data-source columns out of its XML and sets them against the items.
+     *
+     * Resolution follows a class into another module only when that module is already cached and
+     * current — the same read-only rule as `resolve` on bodies — and says which module to fetch
+     * when it could not.
+     */
+    suspend fun getBlock(
+        key: ModuleKey,
+        blockName: String,
+        detailed: Boolean = false,
+        columns: Boolean = false,
+    ): BlockDetail {
         val index = index(key)
         val full = index.blocks.firstOrNull { it.name.equals(blockName, ignoreCase = true) }
             ?: throw IllegalArgumentException(
                 "No block '$blockName' in $key. Blocks: ${index.blocks.joinToString(", ") { it.name }}",
             )
         val block = if (detailed) full else full.copy(items = full.items.map(::conciseItem))
+        val effective = if (detailed) effectiveItemDml(index, full) else null
+        val blockColumns = if (columns) blockColumns(index.key, full) else null
+        val hints = buildList {
+            block.inherited?.let { ref ->
+                add(
+                    inheritedHint(
+                        subject = "Block '${block.name}'",
+                        ref = ref,
+                        parentKey = inheritedModuleKey(ref),
+                        nextCall = { "get_block(module=\"$it\", block=\"${ref.name ?: block.name}\")" },
+                        resolveAttempted = false,
+                        resolvable = false,
+                    ),
+                )
+            }
+            effective?.let { addAll(effectiveDmlHints(key, block.name, it, columns)) }
+            if (blockColumns != null && blockColumns.total == 0 && block.inherited != null) {
+                add("This module records no data-source columns for the subclassed block; they are defined with it.")
+            }
+        }
         return BlockDetail(
             module = index.key,
             block = block,
             source = locationOf(index.key, block.sourceRef),
-            hint = block.inherited?.let { ref ->
-                inheritedHint(
-                    subject = "Block '${block.name}'",
-                    ref = ref,
-                    parentKey = inheritedModuleKey(ref),
-                    nextCall = { "get_block(module=\"$it\", block=\"${ref.name ?: block.name}\")" },
-                    resolveAttempted = false,
-                    resolvable = false,
-                )
-            },
+            hint = hints.joinToString(" ").ifEmpty { null },
+            effectiveDml = effective?.items.orEmpty(),
+            propertyClasses = effective?.classes.orEmpty(),
+            columns = blockColumns,
             annotations = elementAnnotations(index, ElementId(index.key, ElementKind.BLOCK, block.name)),
         )
     }
@@ -1590,6 +1623,179 @@ class FormsService(
         triggerNames = item.triggerNames,
         inherited = item.inherited,
     )
+
+    // --- get_block: effective DML properties and data-source columns ---
+
+    /** A property class followed to the end of its chain, or as far as the cache allowed. */
+    private class ClassChain(
+        val dml: ItemDml,
+        val resolved: Boolean,
+        val through: List<ModuleKey>,
+        val missingModule: ModuleKey?,
+    )
+
+    /** [effectiveItemDml]'s result: the resolved items, and one account per class used. */
+    private class EffectiveDml(
+        val items: Map<String, ItemDml>,
+        val classes: List<PropertyClassResolution>,
+        val subclassedItems: Int,
+    )
+
+    /**
+     * Each item's DML properties with its property class applied, field by field: what the item
+     * writes, else what its class writes, else what that class is based on.
+     *
+     * An item is included only when its chain resolved to the end, because only then is a `null`
+     * field the Forms default rather than "not known". An item subclassed from another module is
+     * never included: its properties live with its parent object, which this does not walk.
+     */
+    private suspend fun effectiveItemDml(index: ModuleIndex, block: BlockInfo): EffectiveDml {
+        val chains = mutableMapOf<String, ClassChain>()
+        val usage = mutableMapOf<String, Int>()
+        val items = linkedMapOf<String, ItemDml>()
+        var subclassed = 0
+        for (item in block.items) {
+            if (item.inherited != null) {
+                subclassed++
+                continue
+            }
+            val own = item.dml ?: ItemDml()
+            val className = item.propertyClass
+            if (className == null) {
+                items[item.name] = own
+                continue
+            }
+            val canonical = className.uppercase()
+            usage.merge(canonical, 1, Int::plus)
+            val chain = chains.getOrPut(canonical) {
+                resolveClassChain(index, className, visited = mutableSetOf(), hops = 0)
+            }
+            if (chain.resolved) items[item.name] = own.over(chain.dml)
+        }
+        val classes = chains.map { (canonical, chain) ->
+            PropertyClassResolution(
+                name = index.propertyClassDetails.firstOrNull { it.name.uppercase() == canonical }?.name ?: canonical,
+                resolved = chain.resolved,
+                resolvedThrough = chain.through,
+                missingModule = chain.missingModule,
+                itemCount = usage[canonical] ?: 0,
+            )
+        }
+        return EffectiveDml(items, classes, subclassed)
+    }
+
+    /**
+     * Follows one property class: its own values, then the class it is based on in the same module,
+     * or — for a stub — the class its pointer names in another module, read only if that module is
+     * cached and current. Bounded by [MAX_INHERITANCE_HOPS] and guarded against loops, since the
+     * chain is data read from converted files.
+     */
+    private suspend fun resolveClassChain(
+        index: ModuleIndex,
+        className: String,
+        visited: MutableSet<String>,
+        hops: Int,
+    ): ClassChain {
+        val here = listOf(index.key)
+        val info = index.propertyClassDetails.firstOrNull { it.name.equals(className, ignoreCase = true) }
+        if (info == null || hops >= MAX_INHERITANCE_HOPS || !visited.add("${index.key}:${className.uppercase()}")) {
+            return ClassChain(ItemDml(), resolved = false, through = here, missingModule = null)
+        }
+        val own = info.item ?: ItemDml()
+        val pointer = info.inherited
+        val parent: ClassChain = when {
+            pointer != null -> {
+                val parentKey = inheritedModuleKey(pointer)
+                    ?: return ClassChain(own, resolved = false, through = here, missingModule = null)
+                val parentIndex = runCatching { index(parentKey) }.getOrNull()
+                    ?: return ClassChain(own, resolved = false, through = here, missingModule = parentKey)
+                resolveClassChain(parentIndex, pointer.name ?: className, visited, hops + 1)
+            }
+            info.propertyClass != null -> resolveClassChain(index, info.propertyClass!!, visited, hops + 1)
+            else -> return ClassChain(own, resolved = true, through = here, missingModule = null)
+        }
+        return ClassChain(
+            dml = own.over(parent.dml),
+            resolved = parent.resolved,
+            through = (here + parent.through).distinct(),
+            missingModule = parent.missingModule,
+        )
+    }
+
+    /** This value where it is written, [fallback]'s where it is not. */
+    private fun ItemDml.over(fallback: ItemDml): ItemDml = ItemDml(
+        databaseItem = databaseItem ?: fallback.databaseItem,
+        insertAllowed = insertAllowed ?: fallback.insertAllowed,
+        updateAllowed = updateAllowed ?: fallback.updateAllowed,
+        updateIfNull = updateIfNull ?: fallback.updateIfNull,
+        queryAllowed = queryAllowed ?: fallback.queryAllowed,
+        enabled = enabled ?: fallback.enabled,
+        keyboardNavigable = keyboardNavigable ?: fallback.keyboardNavigable,
+        primaryKey = primaryKey ?: fallback.primaryKey,
+        required = required ?: fallback.required,
+        maximumLength = maximumLength ?: fallback.maximumLength,
+        initialValue = initialValue ?: fallback.initialValue,
+        copyValueFromItem = copyValueFromItem ?: fallback.copyValueFromItem,
+    )
+
+    /**
+     * What a detailed `get_block` says about the items it could not resolve: the module to fetch,
+     * named with the exact call, and the subclassed items it does not try to resolve.
+     */
+    private fun effectiveDmlHints(key: ModuleKey, block: String, effective: EffectiveDml, columns: Boolean): List<String> =
+        buildList {
+            effective.classes.filter { !it.resolved }.groupBy { it.missingModule }.forEach { (missing, classes) ->
+                val itemCount = classes.sumOf { it.itemCount }
+                val names = classes.joinToString(", ") { it.name }
+                if (missing != null) {
+                    val again = "get_block(module=\"$key\", block=\"$block\", verbosity=\"detailed\"" +
+                        (if (columns) ", columns=true" else "") + ")"
+                    add(
+                        "$itemCount item(s) take their properties from $names, defined in '$missing', " +
+                            "which is not fetched or is stale, so they are missing from 'effectiveDml'. " +
+                            "Call fetch_module(module=\"$missing\"), then $again.",
+                    )
+                } else {
+                    add(
+                        "$itemCount item(s) use $names, whose definition could not be followed; " +
+                            "they are missing from 'effectiveDml' — get_object_xml(objectType=\"PropertyClass\") " +
+                            "shows the raw attributes.",
+                    )
+                }
+            }
+            if (effective.subclassedItems > 0) {
+                add(
+                    "${effective.subclassedItems} item(s) are subclassed from another module and are " +
+                        "not in 'effectiveDml'; their properties are defined with the parent object " +
+                        "(see each item's 'inherited').",
+                )
+            }
+        }
+
+    /**
+     * The block's data-source columns, read from its own slice of the converted XML, and the columns
+     * no item names. Items name a column by `ColumnName` — whose table alias, if any, is dropped,
+     * since a block over an inline subquery writes `S.OWNER` against a column recorded as `OWNER` —
+     * or by their own name when they have none.
+     */
+    private suspend fun blockColumns(key: ModuleKey, block: BlockInfo): BlockColumns {
+        val ref = block.sourceRef
+        val all = if (ref == null || block.dataSourceColumnCount == 0) {
+            emptyList()
+        } else {
+            DataSourceColumnReader.read(readRef(key, ref))
+        }
+        val named = block.items.mapTo(HashSet()) { (it.columnName?.substringAfterLast('.') ?: it.name).uppercase() }
+        val withoutItem = all.filter { it.name.uppercase() !in named }
+        val (rows, truncated) = capRows(all)
+        return BlockColumns(
+            total = all.size,
+            truncated = truncated,
+            columns = rows,
+            columnsWithoutItem = withoutItem.map { it.name },
+            mandatoryColumnsWithoutItem = withoutItem.filter { it.mandatory }.map { it.name },
+        )
+    }
 
     // --- addressable source (SourceLocation, read_source) ---
 
