@@ -32,6 +32,8 @@ public class OracleToolsModuleConverter(
 
     override val description: String = "Oracle tools conversion (ORACLE_HOME=$oracleHome)"
 
+    override fun convertsBinary(type: ModuleType): Boolean = true
+
     override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String {
         val source = Path.of(sourcePath)
         val target = Path.of(targetDir).createDirectories()
@@ -81,7 +83,9 @@ public class OracleToolsModuleConverter(
             extraEnv = formsPathEnv(formsDir),
         )
         return checkOutput(key, tool, result, startedAt) {
-            // Some frmcmp versions ignore Output_File and write into the cwd instead.
+            // Output_File is what keeps the .pld out of the forms directory: without it frmcmp
+            // writes next to the *module*, whatever its cwd. Some versions are reported to write
+            // into the cwd even when it is given, hence the fallback.
             outputFile.takeIf { it.isRegularFile() && it.fileSize() > 0 }
                 ?: newestMatching(target, startedAt) { it.endsWith(".pld", ignoreCase = true) }
         }
@@ -112,7 +116,7 @@ public class OracleToolsModuleConverter(
         result: ExternalTool.Result,
         startedAt: Long,
         findOutput: () -> Path?,
-    ): Path = ConversionOutput.check(key, tool.name, result, startedAt, timeout, findOutput)
+    ): Path = ConversionOutput.check(key, tool.name, result, startedAt, timeout, findOutput = findOutput)
 
     private fun newestMatching(dir: Path, startedAt: Long, predicate: (String) -> Boolean): Path? =
         ConversionOutput.newestMatching(dir, startedAt, predicate)

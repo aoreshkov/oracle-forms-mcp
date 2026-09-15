@@ -121,6 +121,8 @@ public data class ModuleStatusEntry(
  * follow — in which case [nextCursor] is the opaque token to pass back as `cursor`.
  * [countsByStatus] summarises the name/type-filtered set *before* any `status` filter, so a first
  * call stays small and still orients ("of 40 matches, 3 are CACHED").
+ * [oracleHomeConversion] says the server converts binaries itself for at least one module type
+ * (Oracle tools or a site command) rather than only copying pre-converted text forms.
  */
 @Serializable
 @SerialName("ModuleList")

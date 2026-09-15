@@ -35,11 +35,13 @@ public final class app/oreshkov/oracleformsmcp/convert/CustomCommandModuleConver
 	public synthetic fun <init> (Ljava/lang/String;Ljava/nio/file/Path;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/nio/file/Path;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun convert (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun convertsBinary (Lapp/oreshkov/oracleformsmcp/model/ModuleType;)Z
 	public fun getDescription ()Ljava/lang/String;
 }
 
 public final class app/oreshkov/oracleformsmcp/convert/ModuleConverters {
 	public static final field INSTANCE Lapp/oreshkov/oracleformsmcp/convert/ModuleConverters;
+	public final fun forEnvironment-1Y68eR8 (Ljava/lang/String;Ljava/nio/file/Path;JLjava/lang/String;Ljava/lang/String;)Lapp/oreshkov/oracleformsmcp/core/ModuleConverter;
 	public final fun forEnvironment-exY8QGI (Ljava/lang/String;Ljava/nio/file/Path;JLjava/lang/String;)Lapp/oreshkov/oracleformsmcp/core/ModuleConverter;
 	public static synthetic fun forEnvironment-exY8QGI$default (Lapp/oreshkov/oracleformsmcp/convert/ModuleConverters;Ljava/lang/String;Ljava/nio/file/Path;JLjava/lang/String;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/core/ModuleConverter;
 }
@@ -48,12 +50,14 @@ public final class app/oreshkov/oracleformsmcp/convert/OracleToolsModuleConverte
 	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/nio/file/Path;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/nio/file/Path;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun convert (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun convertsBinary (Lapp/oreshkov/oracleformsmcp/model/ModuleType;)Z
 	public fun getDescription ()Ljava/lang/String;
 }
 
 public final class app/oreshkov/oracleformsmcp/convert/PreConvertedCopyConverter : app/oreshkov/oracleformsmcp/core/ModuleConverter {
 	public fun <init> ()V
 	public fun convert (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun convertsBinary (Lapp/oreshkov/oracleformsmcp/model/ModuleType;)Z
 	public fun getDescription ()Ljava/lang/String;
 }
 
@@ -96,7 +100,12 @@ public abstract interface class app/oreshkov/oracleformsmcp/core/ModuleCache {
 
 public abstract interface class app/oreshkov/oracleformsmcp/core/ModuleConverter {
 	public abstract fun convert (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun convertsBinary (Lapp/oreshkov/oracleformsmcp/model/ModuleType;)Z
 	public abstract fun getDescription ()Ljava/lang/String;
+}
+
+public final class app/oreshkov/oracleformsmcp/core/ModuleConverter$DefaultImpls {
+	public static fun convertsBinary (Lapp/oreshkov/oracleformsmcp/core/ModuleConverter;Lapp/oreshkov/oracleformsmcp/model/ModuleType;)Z
 }
 
 public final class app/oreshkov/oracleformsmcp/core/ModuleIndexOutdatedException : java/lang/Exception {

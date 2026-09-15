@@ -90,6 +90,38 @@ class CliOptionsTest {
     }
 
     @Test
+    fun readsTheCompileCommandFromItsFlagOrItsVariable() {
+        val command = "frmcmp_batch Module={} Module_Type=LIBRARY Output_File={out}"
+        assertEquals(command, parse("/srv/forms", "--compile-command", command).compileCommand)
+
+        val env = mapOf(ENV_COMPILE_COMMAND to """["frmcmp_batch", "Module={}", "Output_File={out}"]""")
+        assertEquals(
+            """["frmcmp_batch", "Module={}", "Output_File={out}"]""",
+            parse("/srv/forms", env = env::get).compileCommand,
+        )
+    }
+
+    @Test
+    fun theCompileCommandFlagWinsOverItsVariable() {
+        val env = mapOf(ENV_COMPILE_COMMAND to "/from/env.sh")
+        assertEquals(
+            "/from/flag.sh",
+            parse("/srv/forms", "--compile-command", "/from/flag.sh", env = env::get).compileCommand,
+        )
+    }
+
+    /** Both channels that fill in user configuration pass an unset `compile_command` somehow. */
+    @Test
+    fun anUnsetCompileCommandIsNull() {
+        assertNull(parse("/srv/forms", "--compile-command", "\${user_config.compile_command}").compileCommand)
+        assertNull(parse("/srv/forms", "--compile-command", " ").compileCommand)
+        val env = mapOf(ENV_COMPILE_COMMAND to "\${user_config.compile_command}")
+        assertNull(parse("/srv/forms", env = env::get).compileCommand)
+        // Setting it leaves the whole-server converter alone.
+        assertNull(parse("/srv/forms", "--compile-command", "/opt/c.sh").convertCommand)
+    }
+
+    @Test
     fun anUnsetOptionalOptionDoesNotShadowTheEnvironment() {
         // The flag is present but empty (a bundle always passes it); the variable still applies.
         val env = mapOf(ENV_CONVERTED_DIR to "/srv/forms-xml")

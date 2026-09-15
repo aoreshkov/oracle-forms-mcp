@@ -48,10 +48,18 @@
         {
           "type": "named",
           "name": "--convert-command",
-          "description": "Optional. Site-supplied converter run instead of Oracle's frmf2xml: a whole command line with its arguments, quoting any part that contains spaces, or a JSON array of arguments. It is spawned directly, never through a shell; the module's path replaces {} and is appended when {} is absent, and the working directory is the converted directory (--converted-dir, else the module's cache directory), which is where it must write the text form. Mount the converter into the container and point this at it. Also settable as OFMCP_CONVERT_COMMAND.",
+          "description": "Optional. Site-supplied converter run instead of Oracle's frmf2xml: a whole command line with its arguments, quoting any part that contains spaces, or a JSON array of arguments. It is spawned directly, never through a shell; the module's path replaces {} and is appended when {} is absent, the output file's path replaces {out}, and the working directory is the converted directory (--converted-dir, else the module's cache directory), which is where it must write the text form unless it writes to {out}. Mount the converter into the container and point this at it. Also settable as OFMCP_CONVERT_COMMAND.",
           "isRequired": false,
           "format": "string",
           "placeholder": "/opt/forms/convert.sh --xml {}"
+        },
+        {
+          "type": "named",
+          "name": "--compile-command",
+          "description": "Optional. Converter for .pll libraries only, run instead of whatever would convert them otherwise; same syntax and placeholders as --convert-command. frmcmp writes its .pld next to the module unless told otherwise, so give it Output_File={out}. Also settable as OFMCP_COMPILE_COMMAND.",
+          "isRequired": false,
+          "format": "string",
+          "placeholder": "/opt/forms/frmcmp.sh Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}"
         }
       ],
       "environmentVariables": [
@@ -64,6 +72,12 @@
         {
           "name": "OFMCP_CONVERT_COMMAND",
           "description": "Same as --convert-command — the whole command line, not just an executable — for clients that set environment variables rather than arguments. The flag wins when both are given.",
+          "isRequired": false,
+          "format": "string"
+        },
+        {
+          "name": "OFMCP_COMPILE_COMMAND",
+          "description": "Same as --compile-command — the whole command line for converting .pll libraries — for clients that set environment variables rather than arguments. The flag wins when both are given.",
           "isRequired": false,
           "format": "string"
         }

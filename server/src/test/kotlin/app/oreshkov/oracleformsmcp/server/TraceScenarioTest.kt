@@ -80,7 +80,6 @@ class TraceScenarioTest {
         cache = OnDiskModuleCache(temp.resolve("cache")),
         annotationStore = OnDiskAnnotationStore(temp.resolve("annotations")),
         formsDir = formsDir,
-        binaryConversion = false,
     )
 
     /** The tools a client would have; the trace may use any of them and nothing else. */

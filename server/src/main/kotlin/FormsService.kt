@@ -128,12 +128,6 @@ class FormsService(
     private val annotationStore: AnnotationStore,
     private val formsDir: Path,
     /**
-     * The configured [converter] can turn a binary module into its text form (ORACLE_HOME tools or
-     * a `--convert-command` command line), as opposed to copy-mode which can only read files that were
-     * converted elsewhere.
-     */
-    private val binaryConversion: Boolean,
-    /**
      * Where converted XML (and `.pld`) files are kept, from `--converted-dir`. One flat directory
      * shared by every module, each file named canonically after its [ModuleKey]
      * (`orders_fmb.xml`, `utils.pld`), so the text forms are browsable and reusable outside the
@@ -242,7 +236,7 @@ class FormsService(
         val truncated = page.size < remaining.size
         return ModuleList(
             formsDir = formsDir.toAbsolutePath().toString(),
-            oracleHomeConversion = binaryConversion,
+            oracleHomeConversion = ModuleType.entries.any(converter::convertsBinary),
             total = selected.size,
             returned = page.size,
             truncated = truncated,
@@ -1203,8 +1197,14 @@ class FormsService(
         }
     }
 
+    /**
+     * The binary when the converter this module's type reaches can convert one, else the
+     * pre-converted text form. Asked of the converter per type, never derived from configuration
+     * here: `--compile-command` alone converts `.pll` while forms stay in copy-mode, and a copy-mode
+     * form fingerprinted against its binary would never go stale when its XML is re-exported.
+     */
     private fun conversionSource(module: ScannedModule): String =
-        if (binaryConversion) {
+        if (converter.convertsBinary(module.key.type)) {
             module.binaryPath ?: module.preConvertedPath!!
         } else {
             module.preConvertedPath ?: module.binaryPath!!

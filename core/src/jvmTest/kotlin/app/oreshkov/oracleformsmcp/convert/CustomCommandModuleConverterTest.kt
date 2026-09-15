@@ -11,6 +11,7 @@ import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 import java.time.Instant
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
 import kotlin.io.path.name
 import kotlin.io.path.readText
 import kotlin.io.path.setLastModifiedTime
@@ -19,6 +20,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.test.runTest
@@ -40,6 +42,9 @@ class CustomCommandModuleConverterTest {
 
     private fun converter(command: Path, timeoutSeconds: Int = 30) =
         converter(command.toString(), timeoutSeconds)
+
+    private fun compileConverter(command: String) =
+        CustomCommandModuleConverter(command, formsDir, 30.seconds, ConverterOption.COMPILE)
 
     private fun fakeBinary(name: String): Path = formsDir.resolve(name).also { it.writeText("binary") }
 
@@ -234,6 +239,75 @@ class CustomCommandModuleConverterTest {
         val error = assertFailsWith<ConversionFailedException> { convertOrders(converter(script)) }
 
         assertTrue("no output file" in error.message!!)
+        assertFalse("next to the module" in error.message!!)
+    }
+
+    /** `{out}` is how a tool that ignores its working directory is told where the text form goes. */
+    @Test
+    fun writesToTheOutputPlaceholderPath() = runTest {
+        val fixture = copyFixture("utils.pld", temp)
+        val record = scriptDir.resolve("args.txt")
+        val script = FakeOracleHome.stubScript(
+            scriptDir,
+            "compile",
+            // Writes only to the path it is given — never to its working directory.
+            batchLines = listOf("echo %* >\"$record\"", "copy /Y \"$fixture\" \"%~2\" >nul"),
+            shellLines = listOf("echo \"\$@\" >\"$record\"", "cp \"$fixture\" \"\$2\""),
+        )
+        val module = fakeBinary("UTILS.pll")
+
+        val output = compileConverter("$script --out {out} --in {}").convert(
+            ModuleKey.of("utils", ModuleType.LIBRARY), module.toString(), targetDir.toString(),
+        )
+
+        val expected = targetDir.resolve("utils.pld").toAbsolutePath()
+        assertEquals(expected, Path.of(output))
+        assertEquals("--out $expected --in $module", record.readText().replace("\"", "").trim())
+    }
+
+    /**
+     * The regression canary for real `frmcmp`: given no output file it writes the `.pld` next to the
+     * *module*, whatever its working directory. The failure has to say where the file went and how
+     * to fix the command — and leave the file alone, since the forms directory is the operator's.
+     */
+    @Test
+    fun namesAStrayOutputWrittenNextToTheModule() = runTest {
+        val fixture = copyFixture("utils.pld", temp)
+        val script = FakeOracleHome.stubScript(
+            scriptDir,
+            "compile",
+            batchLines = listOf("copy /Y \"$fixture\" \"%~dp1UTILS.pld\" >nul"),
+            shellLines = listOf("cp \"$fixture\" \"\$(dirname \"\$1\")/UTILS.pld\""),
+        )
+
+        val error = assertFailsWith<ConversionFailedException> {
+            compileConverter(script.toString()).convert(
+                ModuleKey.of("utils", ModuleType.LIBRARY), fakeBinary("UTILS.pll").toString(), targetDir.toString(),
+            )
+        }
+
+        val stray = formsDir.resolve("UTILS.pld")
+        assertTrue("next to the module" in error.message!!, error.message)
+        assertTrue(stray.toString() in error.message!!, error.message)
+        assertTrue("Output_File={out}" in error.message!!)
+        assertTrue("--compile-command" in error.message!!)
+        assertTrue(stray.exists())
+    }
+
+    /** Dropping `--compile-command` hands `.pll` to the other converters, not straight to ORACLE_HOME. */
+    @Test
+    fun compileOptionMessagesNameTheCompileFlag() = runTest {
+        val missing = scriptDir.resolve("nope")
+
+        val error = assertFailsWith<ConverterNotFoundException> {
+            compileConverter("$missing --xml").convert(
+                ModuleKey.of("utils", ModuleType.LIBRARY), fakeBinary("UTILS.pll").toString(), targetDir.toString(),
+            )
+        }
+
+        assertTrue("--compile-command is set" in error.message!!, error.message)
+        assertTrue("with --convert-command" in error.message!!, error.message)
+        assertFalse("fall back to ORACLE_HOME" in error.message!!, error.message)
     }
 
     @Test

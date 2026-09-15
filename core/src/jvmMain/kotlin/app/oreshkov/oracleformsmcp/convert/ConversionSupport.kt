@@ -31,7 +31,8 @@ internal object ConversionOutput {
     /**
      * Validates the run of [toolName] for [key] and returns the file [findOutput] located, or
      * throws with a message naming the fix. A non-zero exit code is only a warning when an output
-     * file was still produced.
+     * file was still produced. [hint] is asked only when nothing was produced, and what it returns
+     * is added to that message — for a converter that can tell *where* the output went instead.
      */
     fun check(
         key: ModuleKey,
@@ -39,6 +40,7 @@ internal object ConversionOutput {
         result: ExternalTool.Result,
         startedAt: Long,
         timeout: Duration,
+        hint: () -> String? = { null },
         findOutput: () -> Path?,
     ): Path {
         if (result.timedOut) {
@@ -49,9 +51,10 @@ internal object ConversionOutput {
         }
         val output = findOutput()
         if (output == null || !output.isRegularFile() || output.fileSize() == 0L) {
+            val why = hint()?.let { " $it" }.orEmpty()
             throw ConversionFailedException(
                 "Converting $key with $toolName produced no output file " +
-                    "(exit code ${result.exitCode}). Output tail:\n${result.output}",
+                    "(exit code ${result.exitCode}).$why Output tail:\n${result.output}",
             )
         }
         if (result.exitCode != 0) {
