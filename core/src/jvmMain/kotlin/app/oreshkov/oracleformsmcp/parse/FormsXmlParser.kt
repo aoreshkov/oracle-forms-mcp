@@ -2,9 +2,11 @@ package app.oreshkov.oracleformsmcp.parse
 
 import app.oreshkov.oracleformsmcp.model.AlertInfo
 import app.oreshkov.oracleformsmcp.model.AttachedLibraryInfo
+import app.oreshkov.oracleformsmcp.model.BlockDml
 import app.oreshkov.oracleformsmcp.model.BlockInfo
 import app.oreshkov.oracleformsmcp.model.CanvasInfo
 import app.oreshkov.oracleformsmcp.model.InheritanceRef
+import app.oreshkov.oracleformsmcp.model.ItemDml
 import app.oreshkov.oracleformsmcp.model.ItemInfo
 import app.oreshkov.oracleformsmcp.model.LovInfo
 import app.oreshkov.oracleformsmcp.model.MenuInfo
@@ -18,6 +20,7 @@ import app.oreshkov.oracleformsmcp.model.ObjectRef
 import app.oreshkov.oracleformsmcp.model.ParameterInfo
 import app.oreshkov.oracleformsmcp.model.ProgramUnitInfo
 import app.oreshkov.oracleformsmcp.model.ProgramUnitType
+import app.oreshkov.oracleformsmcp.model.PropertyClassInfo
 import app.oreshkov.oracleformsmcp.model.RecordGroupInfo
 import app.oreshkov.oracleformsmcp.model.SourceRef
 import app.oreshkov.oracleformsmcp.model.TextEncoding
@@ -64,9 +67,11 @@ internal object FormsXmlParser {
         val queryDataSourceName: String?,
         val propertyClass: String?,
         val inherited: InheritanceRef?,
+        val dml: BlockDml?,
     ) {
         val items = mutableListOf<ItemInfo>()
         val triggerNames = mutableListOf<String>()
+        var dataSourceColumnCount = 0
     }
 
     private class ItemBuilder(
@@ -81,6 +86,7 @@ internal object FormsXmlParser {
         val required: Boolean?,
         val lovName: String?,
         val inherited: InheritanceRef?,
+        val dml: ItemDml?,
     ) {
         val triggerNames = mutableListOf<String>()
     }
@@ -105,6 +111,7 @@ internal object FormsXmlParser {
         val parameters = mutableListOf<ParameterInfo>()
         val visualAttributes = mutableListOf<String>()
         val propertyClasses = mutableListOf<String>()
+        val propertyClassDetails = mutableListOf<PropertyClassInfo>()
         val editors = mutableListOf<String>()
         val menus = mutableListOf<MenuInfo>()
         val objectLibraryTabs = mutableListOf<ObjectLibraryTabInfo>()
@@ -143,12 +150,19 @@ internal object FormsXmlParser {
                                 moduleName = name ?: moduleName
 
                             "Block" -> if (parent?.element == "FormModule") {
+                                val source = reader.attr("QueryDataSourceName")?.let(::decodeDoubleEscaped)
                                 block = BlockBuilder(
                                     name = name ?: "",
-                                    queryDataSourceName = reader.attr("QueryDataSourceName"),
+                                    queryDataSourceName = source?.text,
                                     propertyClass = reader.localParentName(moduleName),
                                     inherited = inherited,
+                                    dml = reader.blockDml(alsoRecovered = source?.encoding == TextEncoding.RECOVERED),
                                 )
+                            }
+
+                            // Counted, not indexed: see BlockInfo.dataSourceColumnCount.
+                            "DataSourceColumn" -> if (parent?.element == "Block") {
+                                block?.let { it.dataSourceColumnCount++ }
                             }
 
                             "Item" -> if (block != null && parent?.element == "Block") {
@@ -165,6 +179,7 @@ internal object FormsXmlParser {
                                     // Forms2XML has been inconsistent about this one's casing.
                                     lovName = reader.attr("LOVName") ?: reader.attr("LovName"),
                                     inherited = inherited,
+                                    dml = reader.itemDml(),
                                 )
                             }
 
@@ -264,7 +279,16 @@ internal object FormsXmlParser {
                             )
 
                             "VisualAttribute" -> if (tab == null) visualAttributes += name ?: ""
-                            "PropertyClass" -> propertyClasses += name ?: ""
+                            "PropertyClass" -> {
+                                propertyClasses += name ?: ""
+                                propertyClassDetails += PropertyClassInfo(
+                                    name = name ?: "",
+                                    item = reader.itemDml(),
+                                    block = reader.blockDml(alsoRecovered = false),
+                                    propertyClass = reader.localParentName(moduleName),
+                                    inherited = inherited,
+                                )
+                            }
                             "Editor" -> editors += name ?: ""
 
                             "Menu" -> menu = MenuInfo(name ?: "")
@@ -326,6 +350,8 @@ internal object FormsXmlParser {
                                     triggerNames = it.triggerNames.toList(),
                                     inherited = it.inherited,
                                     sourceRef = SourceRef(xmlPath, frame.startLine, endLine),
+                                    dml = it.dml,
+                                    dataSourceColumnCount = it.dataSourceColumnCount,
                                 )
                                 block = null
                             }
@@ -346,6 +372,7 @@ internal object FormsXmlParser {
                                             lovName = built.lovName,
                                             triggerNames = built.triggerNames.toList(),
                                             inherited = built.inherited,
+                                            dml = built.dml,
                                         ),
                                     )
                                     item = null
@@ -374,6 +401,9 @@ internal object FormsXmlParser {
             )
         }
         val classedCanvases = canvases.map { it.copy(propertyClass = it.propertyClass.asPropertyClass(declaredClasses)) }
+        val classedClasses = propertyClassDetails.map {
+            it.copy(propertyClass = it.propertyClass.asPropertyClass(declaredClasses))
+        }
 
         return ModuleIndex(
             key = key,
@@ -394,6 +424,7 @@ internal object FormsXmlParser {
             parameters = parameters,
             visualAttributes = visualAttributes,
             propertyClasses = propertyClasses,
+            propertyClassDetails = classedClasses,
             editors = editors,
             menus = menus,
             objectLibraryTabs = objectLibraryTabs,
@@ -518,6 +549,55 @@ internal object FormsXmlParser {
 
     /** An integer property, or `null` when absent or not a number (never a parse failure). */
     private fun XMLStreamReader.intAttr(name: String): Int? = attr(name)?.trim()?.toIntOrNull()
+
+    /** A text property, or `null` when absent or blank — Forms2XML writes `CopyValueFromItem=""`. */
+    private fun XMLStreamReader.textAttr(name: String): String? = attr(name)?.takeIf { it.isNotBlank() }
+
+    /**
+     * The insert/update-deciding properties the element being read writes itself, or `null` when
+     * it writes none. Read off items and property classes alike, so the two resolve field by field.
+     */
+    private fun XMLStreamReader.itemDml(): ItemDml? = ItemDml(
+        databaseItem = boolAttr("DatabaseItem"),
+        insertAllowed = boolAttr("InsertAllowed"),
+        updateAllowed = boolAttr("UpdateAllowed"),
+        updateIfNull = boolAttr("UpdateIfNull"),
+        queryAllowed = boolAttr("QueryAllowed"),
+        enabled = boolAttr("Enabled"),
+        keyboardNavigable = boolAttr("KeyboardNavigable"),
+        primaryKey = boolAttr("PrimaryKey"),
+        required = boolAttr("Required"),
+        maximumLength = intAttr("MaximumLength"),
+        initialValue = textAttr("InitializeValue"),
+        copyValueFromItem = textAttr("CopyValueFromItem"),
+    ).takeUnless { it == EMPTY_ITEM_DML }
+
+    /**
+     * The block DML properties written on the element being read, or `null` when there are none.
+     * The clauses are SQL and are recovered from double escaping like bodies; [alsoRecovered] carries
+     * the same verdict for the block's query source, which is read separately.
+     */
+    private fun XMLStreamReader.blockDml(alsoRecovered: Boolean): BlockDml? {
+        val where = textAttr("WhereClause")?.let(::decodeDoubleEscaped)
+        val orderBy = textAttr("OrderByClause")?.let(::decodeDoubleEscaped)
+        val recovered = alsoRecovered || listOfNotNull(where, orderBy).any { it.encoding == TextEncoding.RECOVERED }
+        return BlockDml(
+            databaseBlock = boolAttr("DatabaseBlock"),
+            insertAllowed = boolAttr("InsertAllowed"),
+            updateAllowed = boolAttr("UpdateAllowed"),
+            deleteAllowed = boolAttr("DeleteAllowed"),
+            queryAllowed = boolAttr("QueryAllowed"),
+            keyMode = textAttr("KeyMode"),
+            lockMode = textAttr("LockMode"),
+            dmlDataTargetName = textAttr("DMLDataTargetName"),
+            whereClause = where?.text,
+            orderByClause = orderBy?.text,
+            sqlEncoding = if (recovered) TextEncoding.RECOVERED else TextEncoding.ORIGINAL,
+        ).takeUnless { it == EMPTY_BLOCK_DML }
+    }
+
+    private val EMPTY_ITEM_DML = ItemDml()
+    private val EMPTY_BLOCK_DML = BlockDml()
 
     /**
      * `ParentName` when the parent is in *this* module — the candidate property class.

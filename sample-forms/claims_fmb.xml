@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+  <FormModule Name="CLAIMS" Title="Insert-scope properties: DML, property classes, base-table columns">
+    <Block Name="CLAIM" QueryDataSourceName="CLAIMS" DeleteAllowed="false" WhereClause="status = 'OPEN'&amp;#10;AND owner = USER" OrderByClause="claim_id">
+      <Item Name="CLAIM_ID" ItemType="Text Item" DataType="Number" CanvasName="CV_CLAIM" Prompt="Claim" ParentModule="CLAIMS" ParentModuleType="12" ParentName="BASE_TEXT" ParentType="29" PrimaryKey="true"/>
+      <Item Name="STATUS" ItemType="Text Item" DataType="Char" CanvasName="CV_CLAIM" Prompt="Status" ParentModule="CLAIMS" ParentModuleType="12" ParentName="BASE_TEXT" ParentType="29" InitializeValue="OPEN"/>
+      <Item Name="REFERENCE" ItemType="Text Item" DataType="Char" CanvasName="CV_CLAIM" Prompt="Reference" ParentModule="CLAIMS" ParentModuleType="12" ParentName="BASE_TEXT" ParentType="29" InsertAllowed="false" UpdateAllowed="false">
+        <Trigger Name="WHEN-VALIDATE-ITEM" TriggerText="check_reference(:CLAIM.REFERENCE);"/>
+      </Item>
+      <Item Name="AMOUNT_LOCKED" ItemType="Text Item" DataType="Number" CanvasName="CV_CLAIM" Prompt="Locked amount" ParentModule="CLAIMS" ParentModuleType="12" ParentName="LOCKED_TEXT" ParentType="29"/>
+      <Item Name="TOTAL_DISPLAY" ItemType="Display Item" DataType="Number" CanvasName="CV_CLAIM" Prompt="Total" ParentModule="CLAIMS" ParentModuleType="12" ParentName="CONTROL_TEXT" ParentType="29"/>
+      <Item Name="OWNER_NAME" ItemType="Text Item" DataType="Char" ColumnName="C.OWNER" CanvasName="CV_CLAIM" Prompt="Owner" ParentModule="CLAIMS" ParentModuleType="12" ParentName="LOCAL_TEXT" ParentType="29" CopyValueFromItem=""/>
+      <Item Name="COMMENTS" ItemType="Text Item" DataType="Char" CanvasName="CV_CLAIM" Prompt="Comments" ParentModule="CLAIMS" ParentModuleType="12" ParentName="MISSING_TEXT" ParentType="29"/>
+      <Item Name="NOTES" ItemType="Text Item" DataType="Char" CanvasName="CV_CLAIM" Prompt="Notes" Enabled="false"/>
+      <DataSourceColumn DSCLength="0" DSCMandatory="true" DSCPrecision="10" DSCName="CLAIM_ID" DSCScale="0" DSCType="NUMBER" DSCNochildren="false" Type="Query"/>
+      <DataSourceColumn DSCLength="10" DSCMandatory="false" DSCPrecision="0" DSCName="STATUS" DSCScale="0" DSCType="VARCHAR2" DSCNochildren="false" Type="Query"/>
+      <DataSourceColumn DSCLength="20" DSCMandatory="false" DSCPrecision="0" DSCName="REFERENCE" DSCScale="0" DSCType="VARCHAR2" DSCNochildren="false" Type="Query"/>
+      <DataSourceColumn DSCLength="30" DSCMandatory="false" DSCPrecision="0" DSCName="OWNER" DSCScale="0" DSCType="VARCHAR2" DSCNochildren="false" Type="Query"/>
+      <DataSourceColumn DSCLength="0" DSCMandatory="false" DSCPrecision="12" DSCName="AMOUNT" DSCScale="2" DSCType="NUMBER" DSCNochildren="false" Type="Query"/>
+      <DataSourceColumn DSCLength="30" DSCMandatory="true" DSCPrecision="0" DSCName="CREATED_BY" DSCScale="0" DSCType="VARCHAR2" DSCNochildren="false" Type="Query"/>
+      <DataSourceColumn DSCLength="0" DSCMandatory="false" DSCPrecision="0" DSCName="CREATED_ON" DSCScale="0" DSCType="DATE" DSCNochildren="false" Type="Query"/>
+    </Block>
+    <Block Name="SUMMARY" QueryDataSourceName="(SELECT owner, COUNT(*) n&amp;#10;   FROM claims&amp;#10;  GROUP BY owner) S" InsertAllowed="false" UpdateAllowed="false" DatabaseBlock="true">
+      <Item Name="OWNER" ItemType="Display Item" DataType="Char" ColumnName="S.OWNER" CanvasName="CV_CLAIM"/>
+    </Block>
+    <Canvas Name="CV_CLAIM" CanvasType="Content" WindowName="WIN_CLAIM"/>
+    <PropertyClass Name="BASE_TEXT" ParentModule="STYLES" ParentModuleType="12" ParentName="BASE_TEXT" ParentFilename="styles.fmb" ParentType="29"/>
+    <PropertyClass Name="CONTROL_TEXT" ParentModule="STYLES" ParentModuleType="12" ParentName="CONTROL_TEXT" ParentFilename="styles.fmb" ParentType="29"/>
+    <PropertyClass Name="LOCKED_TEXT" ParentModule="STYLES" ParentModuleType="12" ParentName="LOCKED_TEXT" ParentFilename="styles.fmb" ParentType="29"/>
+    <PropertyClass Name="LOCAL_TEXT" DatabaseItem="true" MaximumLength="40" Required="true"/>
+    <PropertyClass Name="MISSING_TEXT" ParentModule="ABSENT" ParentModuleType="12" ParentName="MISSING_TEXT" ParentFilename="absent.fmb" ParentType="29"/>
+    <Window Name="WIN_CLAIM" Title="Claims"/>
+  </FormModule>
+</Module>

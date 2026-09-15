@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+  <FormModule Name="STYLES" Title="Shared property classes">
+    <PropertyClass Name="BASE_TEXT" DatabaseItem="true" InsertAllowed="true" UpdateAllowed="true" MaximumLength="30"/>
+    <PropertyClass Name="CONTROL_TEXT" DatabaseItem="false" KeyboardNavigable="false"/>
+    <PropertyClass Name="LOCKED_TEXT" ParentModule="STYLES" ParentModuleType="12" ParentName="BASE_TEXT" ParentType="29" UpdateAllowed="false"/>
+  </FormModule>
+</Module>
