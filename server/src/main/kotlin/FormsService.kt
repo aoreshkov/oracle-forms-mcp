@@ -50,6 +50,7 @@ import app.oreshkov.oracleformsmcp.model.CURRENT_INDEX_VERSION
 import app.oreshkov.oracleformsmcp.model.ElementId
 import app.oreshkov.oracleformsmcp.model.ElementKind
 import app.oreshkov.oracleformsmcp.model.BlockInfo
+import app.oreshkov.oracleformsmcp.model.DataSourceColumnInfo
 import app.oreshkov.oracleformsmcp.model.InheritanceRef
 import app.oreshkov.oracleformsmcp.model.ItemDml
 import app.oreshkov.oracleformsmcp.model.ItemInfo
@@ -93,6 +94,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.builtins.PairSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.coroutines.withContext
 
 /** A coarse [FormsService.fetchModule] phase: [step] of [totalSteps], human-readable [message]. */
@@ -462,10 +465,27 @@ class FormsService(
             ?: throw IllegalArgumentException(
                 "No block '$blockName' in $key. Blocks: ${index.blocks.joinToString(", ") { it.name }}",
             )
-        val block = if (detailed) full else full.copy(items = full.items.map(::conciseItem))
-        val effective = if (detailed) effectiveItemDml(index, full) else null
-        val blockColumns = if (columns) blockColumns(index.key, full) else null
+        val rows = if (detailed) full.items else full.items.map(::conciseItem)
+        // One budget across the three lists this result can carry, spent in the order they answer
+        // the question: the items, their resolved properties, then the base table behind them.
+        val budget = RowBudget(MAX_RESULT_CHARS - RESULT_OVERHEAD_CHARS)
+        val (served, itemsCut) = budget.take(
+            rows,
+            ItemInfo.serializer(),
+            share = if (columns) budget.share(ITEM_BUDGET_WITH_COLUMNS) else budget.share(ITEM_BUDGET_SHARE),
+        )
+        val block = full.copy(items = served)
+        val effective = if (detailed) effectiveItemDml(index, full.copy(items = served), budget) else null
+        val blockColumns = if (columns) blockColumns(index.key, full, budget) else null
         val hints = buildList {
+            if (itemsCut) {
+                add(
+                    "Returned ${served.size} of ${full.items.size} items: the rest would not fit one " +
+                        "response. Ask again with verbosity=\"concise\" (smaller rows, every item), or " +
+                        "answer a single-property question over all of them with " +
+                        "search_source(module=\"$key\", scope=\"xml\", query=...).",
+                )
+            }
             block.inherited?.let { ref ->
                 add(
                     inheritedHint(
@@ -488,6 +508,8 @@ class FormsService(
             block = block,
             source = locationOf(index.key, block.sourceRef),
             hint = hints.joinToString(" ").ifEmpty { null },
+            itemTotal = full.items.size,
+            truncated = itemsCut,
             effectiveDml = effective?.items.orEmpty(),
             propertyClasses = effective?.classes.orEmpty(),
             columns = blockColumns,
@@ -1684,7 +1706,7 @@ class FormsService(
      * field the Forms default rather than "not known". An item subclassed from another module is
      * never included: its properties live with its parent object, which this does not walk.
      */
-    private suspend fun effectiveItemDml(index: ModuleIndex, block: BlockInfo): EffectiveDml {
+    private suspend fun effectiveItemDml(index: ModuleIndex, block: BlockInfo, budget: RowBudget): EffectiveDml {
         val chains = mutableMapOf<String, ClassChain>()
         val usage = mutableMapOf<String, Int>()
         val items = linkedMapOf<String, ItemDml>()
@@ -1707,6 +1729,13 @@ class FormsService(
             }
             if (chain.resolved) items[item.name] = own.over(chain.dml)
         }
+        // Resolved rows are the largest section after the items themselves; a screen too wide for
+        // both keeps the items it served and says the map covers fewer of them.
+        val (fitted, _) = budget.take(
+            items.entries.map { it.key to it.value },
+            PairSerializer(String.serializer(), ItemDml.serializer()),
+            share = budget.share(EFFECTIVE_DML_BUDGET_SHARE),
+        )
         val classes = chains.map { (canonical, chain) ->
             PropertyClassResolution(
                 name = index.propertyClassDetails.firstOrNull { it.name.uppercase() == canonical }?.name ?: canonical,
@@ -1716,7 +1745,7 @@ class FormsService(
                 itemCount = usage[canonical] ?: 0,
             )
         }
-        return EffectiveDml(items, classes, subclassed)
+        return EffectiveDml(fitted.toMap(), classes, subclassed)
     }
 
     /**
@@ -1813,7 +1842,7 @@ class FormsService(
      * since a block over an inline subquery writes `S.OWNER` against a column recorded as `OWNER` —
      * or by their own name when they have none.
      */
-    private suspend fun blockColumns(key: ModuleKey, block: BlockInfo): BlockColumns {
+    private suspend fun blockColumns(key: ModuleKey, block: BlockInfo, budget: RowBudget): BlockColumns {
         val ref = block.sourceRef
         val all = if (ref == null || block.dataSourceColumnCount == 0) {
             emptyList()
@@ -1822,10 +1851,13 @@ class FormsService(
         }
         val named = block.items.mapTo(HashSet()) { (it.columnName?.substringAfterLast('.') ?: it.name).uppercase() }
         val withoutItem = all.filter { it.name.uppercase() !in named }
-        val (rows, truncated) = capRows(all)
+        // The two name lists are the answer; the column rows are the evidence, so they are what
+        // gives way first when a 350-column table meets a wide block.
+        val (capped, overLimit) = capRows(all)
+        val (rows, cut) = budget.take(capped, DataSourceColumnInfo.serializer())
         return BlockColumns(
             total = all.size,
-            truncated = truncated,
+            truncated = cut || overLimit,
             columns = rows,
             columnsWithoutItem = withoutItem.map { it.name },
             mandatoryColumnsWithoutItem = withoutItem.filter { it.mandatory }.map { it.name },
@@ -2316,6 +2348,16 @@ class FormsService(
          * the speed of a page and never its contents.
          */
         const val SEARCH_MODULE_CHUNK = 8
+
+        /**
+         * How `get_block` divides one response between its three lists. The items are the block, so
+         * they take most of it — less when the caller also asked for columns, since a base table's
+         * columns are then part of the question. The resolved properties cover the items served;
+         * what is left goes to the column rows, whose two summary name lists are never cut.
+         */
+        const val ITEM_BUDGET_SHARE = 80
+        const val ITEM_BUDGET_WITH_COLUMNS = 55
+        const val EFFECTIVE_DML_BUDGET_SHARE = 60
 
         /** How many un-fetched attached libraries a `search_modules` hint names before counting. */
         const val MAX_NAMED_LIBRARIES = 5

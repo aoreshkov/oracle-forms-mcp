@@ -2,6 +2,7 @@ package app.oreshkov.oracleformsmcp.server.tools
 
 import app.oreshkov.oracleformsmcp.dto.SourceLocation
 import app.oreshkov.oracleformsmcp.server.MAX_RESULT_CHARS
+import app.oreshkov.oracleformsmcp.server.resultJson
 import app.oreshkov.oracleformsmcp.server.resources.sourceMimeType
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -30,7 +31,7 @@ import kotlinx.serialization.json.put
  * model and indentation is paid for in tokens on every call, most of all on the nested item rows of
  * a wide block.
  */
-internal val toolJson = Json { prettyPrint = false }
+internal val toolJson: Json = resultJson
 
 /**
  * Serializes a DTO once and returns it both ways the spec recommends: human-readable JSON text

@@ -259,6 +259,10 @@ public data class BlockList(
  *
  * [propertyClasses] says, once per class the block's items use, whether it resolved and from which
  * modules. [columns] is present only when asked for.
+ *
+ * [itemTotal] counts the block's items and [truncated] says `block.items` was cut to fit one
+ * response — a data-entry screen of a hundred-odd detailed items with its base table behind it is
+ * larger than a client accepts. The [hint] then names what to ask instead.
  */
 @Serializable
 @SerialName("BlockDetail")
@@ -267,6 +271,8 @@ public data class BlockDetail(
     val block: BlockInfo,
     val source: SourceLocation? = null,
     val hint: String? = null,
+    val itemTotal: Int = 0,
+    val truncated: Boolean = false,
     val effectiveDml: Map<String, ItemDml> = emptyMap(),
     val propertyClasses: List<PropertyClassResolution> = emptyList(),
     val columns: BlockColumns? = null,

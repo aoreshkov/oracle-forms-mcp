@@ -71,6 +71,39 @@ class ResultBudgetTest {
         )
     }
 
+    /**
+     * A block the size of a real data-entry screen: every item with the properties `get_block`
+     * reports at `detailed`, a property class, a trigger, and the base table behind it.
+     */
+    private fun writeCrowdedBlock(items: Int = 150, columns: Int = 350) {
+        val rows = (1..items).joinToString("\n") { n ->
+            """
+            |      <Item Name="FIELD_$n" ItemType="Text Item" DataType="Char" ColumnName="FIELD_$n" CanvasName="CV_MAIN" Prompt="Field number $n" MaximumLength="40" ParentModule="WIDE" ParentModuleType="12" ParentName="PC_FIELD" ParentType="29" InsertAllowed="true">
+            |        <Trigger Name="WHEN-VALIDATE-ITEM" TriggerText="NULL;"/>
+            |      </Item>
+            """.trimMargin()
+        }
+        val cols = (1..columns).joinToString("\n") { n ->
+            "      <DataSourceColumn DSCLength=\"40\" DSCMandatory=\"false\" DSCPrecision=\"0\" " +
+                "DSCName=\"COLUMN_$n\" DSCScale=\"0\" DSCType=\"VARCHAR2\" DSCNochildren=\"false\" Type=\"Query\"/>"
+        }
+        formsDir.resolve("wide_fmb.xml").writeText(
+            """
+            |<?xml version="1.0" encoding="UTF-8"?>
+            |<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+            |  <FormModule Name="WIDE">
+            |    <Block Name="WIDE_BLOCK" QueryDataSourceName="WIDE">
+            |$rows
+            |$cols
+            |    </Block>
+            |    <PropertyClass Name="PC_FIELD" DatabaseItem="true" UpdateAllowed="true" Required="false"/>
+            |  </FormModule>
+            |</Module>
+            |
+            """.trimMargin(),
+        )
+    }
+
     private fun textLength(result: io.modelcontextprotocol.kotlin.sdk.types.CallToolResult): Int =
         result.content.filterIsInstance<TextContent>().sumOf { it.text.length }
 
@@ -158,6 +191,50 @@ class ResultBudgetTest {
         val small = service.getObjectXml(wideKey, "Item", "ITEM_1", owner = "WIDE_BLOCK")
         assertFalse(small.truncated)
         assertNull(small.hint)
+    }
+
+    /**
+     * The detailed block of a real data-entry screen — items, their resolved properties, and the
+     * base table's columns — is the largest thing this server returns that is not a file slice, and
+     * all three together do not fit. What must hold is that the result fits, says what it left out,
+     * and keeps the parts that answer the question: the counts and the column name lists.
+     */
+    @Test
+    fun theDetailedBlockOfACrowdedScreenIsCutToFitAndSaysWhatItLeftOut() = runTest {
+        writeCrowdedBlock()
+        service.fetchModule(wideKey)
+
+        val detail = service.getBlock(wideKey, "WIDE_BLOCK", detailed = true, columns = true)
+        val size = textLength(toolResult(detail, detail.source))
+
+        assertTrue(size <= MAX_RESULT_CHARS, "a detailed block serialized to $size chars")
+        assertTrue(detail.truncated)
+        assertEquals(150, detail.itemTotal, "the count is of the block, not of the page")
+        assertTrue(detail.block.items.size < 150)
+        assertTrue(detail.effectiveDml.keys.all { name -> detail.block.items.any { it.name == name } })
+        val columns = assertNotNull(detail.columns)
+        assertEquals(350, columns.total, "the totals describe the table, not the rows that fit")
+        // The name lists are the answer, so they are never cut, and they are computed against the
+        // whole block rather than the items that fit.
+        assertEquals(350, columns.columnsWithoutItem.size)
+        val hint = assertNotNull(detail.hint)
+        assertTrue(hint.contains("of 150 items"), hint)
+        assertTrue(hint.contains("verbosity=\"concise\""), hint)
+    }
+
+    /** A screen that does fit is not cut, and nothing says it was. */
+    @Test
+    fun anOrdinaryBlockIsServedWhole() = runTest {
+        writeCrowdedBlock(items = 30, columns = 40)
+        service.fetchModule(wideKey)
+
+        val detail = service.getBlock(wideKey, "WIDE_BLOCK", detailed = true, columns = true)
+
+        assertFalse(detail.truncated)
+        assertEquals(30, detail.block.items.size)
+        assertEquals(30, detail.effectiveDml.size)
+        assertFalse(assertNotNull(detail.columns).truncated)
+        assertTrue(textLength(toolResult(detail, detail.source)) <= MAX_RESULT_CHARS)
     }
 
     @Test

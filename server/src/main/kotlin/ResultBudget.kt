@@ -1,5 +1,8 @@
 package app.oreshkov.oracleformsmcp.server
 
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.Json
+
 /**
  * The most characters one tool result may carry as JSON text, declared to the client per tool
  * through `_meta["anthropic/maxResultSizeChars"]` (see `LARGE_RESULT_META`).
@@ -12,6 +15,43 @@ package app.oreshkov.oracleformsmcp.server
  * *lower* that tool's limit, not raise it.
  */
 internal const val MAX_RESULT_CHARS: Int = 60_000
+
+/**
+ * What a row-shaped result leaves for everything that is not rows: the module key, the hints, the
+ * annotations, the resource link, and the JSON around it all.
+ */
+internal const val RESULT_OVERHEAD_CHARS: Int = 6_000
+
+/** One JSON encoder for every tool response, and for measuring what one costs. */
+internal val resultJson: Json = Json { prettyPrint = false }
+
+/**
+ * Spends a result's character budget across the lists it carries, in the order they matter.
+ *
+ * A wide block is the case that needs it: 150 detailed items, their resolved properties and a
+ * 350-column base table serialize to more than any client accepts, and each of the three is capped
+ * on its own row count only. Rows are measured as they will be serialized, so the budget is spent
+ * in the same units the client counts.
+ */
+internal class RowBudget(private var remaining: Int) {
+
+    /** The rows of [rows] that fit in [share] of the budget, and whether any were left behind. */
+    fun <T> take(rows: List<T>, serializer: KSerializer<T>, share: Int = remaining): Pair<List<T>, Boolean> {
+        var allowance = minOf(share, remaining)
+        val kept = mutableListOf<T>()
+        for (row in rows) {
+            val cost = resultJson.encodeToString(serializer, row).length + 1 // plus the separating comma
+            if (cost > allowance) return kept to true
+            allowance -= cost
+            remaining -= cost
+            kept += row
+        }
+        return kept to false
+    }
+
+    /** [share] as a percentage of what is left, for a section that must not crowd out the rest. */
+    fun share(percent: Int): Int = remaining * percent / 100
+}
 
 /**
  * How many characters [text] occupies once written as a JSON string: quotes, backslashes and the
