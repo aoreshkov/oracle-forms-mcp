@@ -1,6 +1,8 @@
 package app.oreshkov.oracleformsmcp.server.tools
 
 import app.oreshkov.oracleformsmcp.dto.SourceLocation
+import app.oreshkov.oracleformsmcp.server.MAX_RESULT_CHARS
+import app.oreshkov.oracleformsmcp.server.resultJson
 import app.oreshkov.oracleformsmcp.server.resources.sourceMimeType
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
@@ -24,8 +26,12 @@ import kotlinx.serialization.json.put
  * parse args → call FormsService → serialize a core DTO. No business logic here or in tools.
  */
 
-/** One JSON encoder for every tool response; pretty output reads well in MCP clients. */
-internal val toolJson = Json { prettyPrint = true }
+/**
+ * One JSON encoder for every tool response. Compact, because the reader of the text block is a
+ * model and indentation is paid for in tokens on every call, most of all on the nested item rows of
+ * a wide block.
+ */
+internal val toolJson: Json = resultJson
 
 /**
  * Serializes a DTO once and returns it both ways the spec recommends: human-readable JSON text
@@ -54,6 +60,19 @@ internal fun SourceLocation.asResourceLink(): ResourceLink? = uri.takeIf { it.is
         description = "Lines $startLine-$endLine of $file. Read a range with read_source.",
         mimeType = sourceMimeType(file),
     )
+}
+
+/**
+ * `_meta` for a tool whose result is capped below [MAX_RESULT_CHARS]: Claude Code reads
+ * `anthropic/maxResultSizeChars` as that tool's result limit, in characters, instead of its token
+ * estimate. Other clients ignore a vendor-prefixed key.
+ *
+ * Declared only where the server's own ceiling guarantees the result fits — on an uncapped tool the
+ * same key would *lower* the client's limit and spill a result that would otherwise have been
+ * accepted.
+ */
+internal val CAPPED_RESULT_META: JsonObject = buildJsonObject {
+    put("anthropic/maxResultSizeChars", MAX_RESULT_CHARS)
 }
 
 // --- behavior annotations (hints surfaced in tools/list) ---

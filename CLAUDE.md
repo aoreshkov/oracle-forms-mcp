@@ -102,6 +102,21 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   declared `PropertyClass` elements in a pass at the end of parsing — `ParentType` would say so
   directly, but its numbering is version-dependent and the XML defines it nowhere, and the
   property classes are written *after* the objects that use them.
+- **…and on a classed object, absence is not the default either — the class decides it.** In a real
+  form most items write almost no DML properties of their own, and the class they name is usually a
+  *stub* pointing at a shared module. So the two are served separately and never merged in the
+  index: `ItemInfo.dml`/`BlockInfo.dml` are what the object wrote, and `get_block`'s `effectiveDml`
+  is item → class → the class that one is based on, resolved at serve time. Resolution follows a
+  pointer only into an **already-cached, current** module (`readOnlyHint`), and an item appears in
+  `effectiveDml` only when its whole chain resolved — that is what makes a `null` there mean the
+  Forms default. Everything unresolved is counted and named (`propertyClasses`, `hint`), never
+  approximated.
+- **Data-source columns are read, not indexed.** One form repeats the same wide base table across
+  several blocks — thousands of `DataSourceColumn` elements, hundreds of KB — so `ModuleIndex` keeps
+  only `BlockInfo.dataSourceColumnCount` and `get_block(columns=true)` reads them from the block's
+  own XML slice through `DataSourceColumnReader`. An item supplies a column by `ColumnName` with any
+  table alias dropped (a block over an inline subquery writes `S.OWNER` for the column `OWNER`), or
+  by its own name; `mandatoryColumnsWithoutItem` is the part an insert fails on.
 - **Doubly-escaped bodies are recovered at parse time, and say so.** A converter that writes
   `&amp;#10;` leaves the whole body on one physical line, which makes `lineCount` 1 for a whole
   procedure and collapses every `SourceRef` onto that line. `decodeDoubleEscaped` undoes it only
@@ -118,6 +133,15 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   flag beside an honest `total` (see `MAX_LIST_ROWS`/`MAX_OVERVIEW_NAMES` next to
   `MAX_OBJECT_XML_CHARS`). Paging vocabulary is fixed: `offset`/`nextOffset` where page N is cheap
   to recompute (`search_source`), an opaque `cursor` where it is not.
+- **A size ceiling is counted the way the result travels.** `read_source` and `get_object_xml` cap
+  on **JSON-escaped** characters (`ResultBudget.kt`), because converted XML is mostly quotes and a
+  budget counted on raw text overshoots exactly where responses are largest; both sit inside
+  `MAX_RESULT_CHARS`, which they declare to the client as
+  `_meta["anthropic/maxResultSizeChars"]` so its limit for them is the server's own number rather
+  than a token estimate. Declare that key **only** on a tool the server caps below it — on an
+  uncapped tool it lowers the client's limit instead of raising it. A cut result says where to
+  continue (`nextStartLine` plus a `hint` naming the call), because `truncated` alone gets read
+  past and the next call then starts past a hole.
 - **A cross-module scan is bounded by modules too, not only by rows.** `search_modules` reads at
   most `MAX_MODULES_PER_SEARCH` cache entries per call, because a query that matches nothing has no
   row cap to stop it and would read every converted file in the cache. Whichever bound stops the

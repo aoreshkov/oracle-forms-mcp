@@ -32,6 +32,8 @@ internal class ByModuleTypeConverter(
 
     override fun convertsBinary(type: ModuleType): Boolean = delegateFor(type).convertsBinary(type)
 
+    override fun conversionCaveat(type: ModuleType): String? = delegateFor(type).conversionCaveat(type)
+
     override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String =
         delegateFor(key.type).convert(key, sourcePath, targetDir)
 }

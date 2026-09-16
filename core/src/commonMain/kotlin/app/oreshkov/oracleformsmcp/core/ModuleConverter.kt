@@ -35,4 +35,16 @@ public interface ModuleConverter {
      * configuration can convert `.pll` libraries while serving forms from pre-converted XML.
      */
     public fun convertsBinary(type: ModuleType): Boolean = false
+
+    /**
+     * What a caller should know *before* trying to fetch a module of [type], or `null` when there
+     * is nothing to say.
+     *
+     * One case needs it: a site command configured for forms is usually built on `frmf2xml`, which
+     * refuses `.pll` libraries outright, so every library in the directory is listed as fetchable
+     * and fails at the first attempt with a message only the operator can act on. Saying it on the
+     * listing costs one sentence and no conversion — and it stays a question for the converter,
+     * since nothing else knows what a site's command accepts.
+     */
+    public fun conversionCaveat(type: ModuleType): String? = null
 }

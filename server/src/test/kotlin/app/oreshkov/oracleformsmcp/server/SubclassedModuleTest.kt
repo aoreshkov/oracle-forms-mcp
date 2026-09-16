@@ -127,6 +127,15 @@ class SubclassedModuleTest {
             mapOf<String?, BodySource>("SELECT" to BodySource.INHERITED, "CANCEL" to BodySource.OWN),
             listed.associate { it.item to it.bodySource },
         )
+        // A body with no code is zero lines long, not "one line": the listing is where a reader
+        // decides which triggers are worth opening.
+        assertEquals(0, listed.single { it.item == "SELECT" }.lineCount)
+        assertEquals(2, listed.single { it.item == "CANCEL" }.lineCount)
+        assertEquals(
+            0,
+            service.listTriggers(pickerKey, block = "ORPHAN", item = null, level = null)
+                .triggers.single { it.name == "WHEN-NEW-BLOCK-INSTANCE" }.lineCount,
+        )
         assertEquals(
             BodySource.OWN,
             service.listTriggers(pickerKey, block = "CUSTOMERS", item = null, level = null)

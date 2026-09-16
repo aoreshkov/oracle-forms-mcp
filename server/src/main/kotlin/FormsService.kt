@@ -12,6 +12,7 @@ import app.oreshkov.oracleformsmcp.dto.AnnotationCreated
 import app.oreshkov.oracleformsmcp.dto.AnnotationRemoved
 import app.oreshkov.oracleformsmcp.dto.AnnotationSearchResults
 import app.oreshkov.oracleformsmcp.dto.AnnotationView
+import app.oreshkov.oracleformsmcp.dto.BlockColumns
 import app.oreshkov.oracleformsmcp.dto.BlockDetail
 import app.oreshkov.oracleformsmcp.dto.BlockList
 import app.oreshkov.oracleformsmcp.dto.BlockSummary
@@ -30,6 +31,7 @@ import app.oreshkov.oracleformsmcp.dto.ObjectXml
 import app.oreshkov.oracleformsmcp.dto.ProgramUnitList
 import app.oreshkov.oracleformsmcp.dto.ProgramUnitSource
 import app.oreshkov.oracleformsmcp.dto.ProgramUnitSummary
+import app.oreshkov.oracleformsmcp.dto.PropertyClassResolution
 import app.oreshkov.oracleformsmcp.dto.RelationCreated
 import app.oreshkov.oracleformsmcp.dto.RelationView
 import app.oreshkov.oracleformsmcp.dto.SearchHit
@@ -47,7 +49,10 @@ import app.oreshkov.oracleformsmcp.model.Author
 import app.oreshkov.oracleformsmcp.model.CURRENT_INDEX_VERSION
 import app.oreshkov.oracleformsmcp.model.ElementId
 import app.oreshkov.oracleformsmcp.model.ElementKind
+import app.oreshkov.oracleformsmcp.model.BlockInfo
+import app.oreshkov.oracleformsmcp.model.DataSourceColumnInfo
 import app.oreshkov.oracleformsmcp.model.InheritanceRef
+import app.oreshkov.oracleformsmcp.model.ItemDml
 import app.oreshkov.oracleformsmcp.model.ItemInfo
 import app.oreshkov.oracleformsmcp.model.ModuleFingerprint
 import app.oreshkov.oracleformsmcp.model.ModuleIndex
@@ -61,6 +66,7 @@ import app.oreshkov.oracleformsmcp.model.ScannedModule
 import app.oreshkov.oracleformsmcp.model.SourceRef
 import app.oreshkov.oracleformsmcp.model.TriggerInfo
 import app.oreshkov.oracleformsmcp.model.TriggerLevel
+import app.oreshkov.oracleformsmcp.parse.DataSourceColumnReader
 import app.oreshkov.oracleformsmcp.server.resources.moduleConvertedUri
 import app.oreshkov.oracleformsmcp.server.resources.sourceMimeType
 import app.oreshkov.oracleformsmcp.server.resources.sourceRefPath
@@ -88,6 +94,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.builtins.PairSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.coroutines.withContext
 
 /** A coarse [FormsService.fetchModule] phase: [step] of [totalSteps], human-readable [message]. */
@@ -242,6 +250,15 @@ class FormsService(
             truncated = truncated,
             nextCursor = if (truncated) encodeModuleCursor(page.last().module) else null,
             countsByStatus = countsByStatus,
+            // Asked of the converter, per type, and only about types actually on this page: what a
+            // site's command accepts is not derivable from the configuration here.
+            hint = page.asSequence()
+                .filter { it.status == ModuleStatus.NOT_CACHED }
+                .map { it.type }
+                .distinct()
+                .mapNotNull(converter::conversionCaveat)
+                .joinToString(" ")
+                .ifEmpty { null },
             modules = page,
         )
     }
@@ -428,27 +445,74 @@ class FormsService(
      * semantics live), its prompt, its trigger names, and its subclassing pointer. Dropping that
      * last one to save bytes would re-create the absence bug `bodySource` exists to prevent.
      */
-    suspend fun getBlock(key: ModuleKey, blockName: String, detailed: Boolean = false): BlockDetail {
+    /**
+     * One block. [detailed] adds the descriptive item properties and resolves each item's DML
+     * properties through its property class ([BlockDetail.effectiveDml]); [columns] reads the
+     * block's data-source columns out of its XML and sets them against the items.
+     *
+     * Resolution follows a class into another module only when that module is already cached and
+     * current — the same read-only rule as `resolve` on bodies — and says which module to fetch
+     * when it could not.
+     */
+    suspend fun getBlock(
+        key: ModuleKey,
+        blockName: String,
+        detailed: Boolean = false,
+        columns: Boolean = false,
+    ): BlockDetail {
         val index = index(key)
         val full = index.blocks.firstOrNull { it.name.equals(blockName, ignoreCase = true) }
             ?: throw IllegalArgumentException(
                 "No block '$blockName' in $key. Blocks: ${index.blocks.joinToString(", ") { it.name }}",
             )
-        val block = if (detailed) full else full.copy(items = full.items.map(::conciseItem))
+        val rows = if (detailed) full.items else full.items.map(::conciseItem)
+        // One budget across the three lists this result can carry, spent in the order they answer
+        // the question: the items, their resolved properties, then the base table behind them.
+        val budget = RowBudget(MAX_RESULT_CHARS - RESULT_OVERHEAD_CHARS)
+        val (served, itemsCut) = budget.take(
+            rows,
+            ItemInfo.serializer(),
+            share = if (columns) budget.share(ITEM_BUDGET_WITH_COLUMNS) else budget.share(ITEM_BUDGET_SHARE),
+        )
+        val block = full.copy(items = served)
+        val effective = if (detailed) effectiveItemDml(index, full.copy(items = served), budget) else null
+        val blockColumns = if (columns) blockColumns(index.key, full, budget) else null
+        val hints = buildList {
+            if (itemsCut) {
+                add(
+                    "Returned ${served.size} of ${full.items.size} items: the rest would not fit one " +
+                        "response. Ask again with verbosity=\"concise\" (smaller rows, every item), or " +
+                        "answer a single-property question over all of them with " +
+                        "search_source(module=\"$key\", scope=\"xml\", query=...).",
+                )
+            }
+            block.inherited?.let { ref ->
+                add(
+                    inheritedHint(
+                        subject = "Block '${block.name}'",
+                        ref = ref,
+                        parentKey = inheritedModuleKey(ref),
+                        nextCall = { "get_block(module=\"$it\", block=\"${ref.name ?: block.name}\")" },
+                        resolveAttempted = false,
+                        resolvable = false,
+                    ),
+                )
+            }
+            effective?.let { addAll(effectiveDmlHints(key, block.name, it, columns)) }
+            if (blockColumns != null && blockColumns.total == 0 && block.inherited != null) {
+                add("This module records no data-source columns for the subclassed block; they are defined with it.")
+            }
+        }
         return BlockDetail(
             module = index.key,
             block = block,
             source = locationOf(index.key, block.sourceRef),
-            hint = block.inherited?.let { ref ->
-                inheritedHint(
-                    subject = "Block '${block.name}'",
-                    ref = ref,
-                    parentKey = inheritedModuleKey(ref),
-                    nextCall = { "get_block(module=\"$it\", block=\"${ref.name ?: block.name}\")" },
-                    resolveAttempted = false,
-                    resolvable = false,
-                )
-            },
+            hint = hints.joinToString(" ").ifEmpty { null },
+            itemTotal = full.items.size,
+            truncated = itemsCut,
+            effectiveDml = effective?.items.orEmpty(),
+            propertyClasses = effective?.classes.orEmpty(),
+            columns = blockColumns,
             annotations = elementAnnotations(index, ElementId(index.key, ElementKind.BLOCK, block.name)),
         )
     }
@@ -480,9 +544,11 @@ class FormsService(
                     item = it.itemName,
                     // The PL/SQL preview is the bulky per-row field; omit it unless asked.
                     firstLine = if (detailed) it.firstLine else "",
-                    lineCount = it.lineCount,
                     // firstLine is the parsed body's first non-blank line, so an empty one means
                     // the body holds no code — the same test getTrigger makes against the text.
+                    // Such a body counts zero lines: the stored count never goes below one, and
+                    // "1 line" beside an inherited body reads as a one-line trigger.
+                    lineCount = if (it.firstLine.isBlank()) 0 else it.lineCount,
                     bodySource = bodySourceOf(it.firstLine, it.inherited),
                 )
             }
@@ -739,7 +805,8 @@ class FormsService(
         // Sorted by canonical key: the scan order *is* the cursor's coordinate system.
         val cached = cache.list().filter { wanted(it) }.sortedBy { it.toString() }
         val cachedSet = cached.toSet()
-        val notCached = scanner.scan().count { wanted(it.key) && it.key !in cachedSet }
+        val scannedKeys = scanner.scan().mapTo(HashSet()) { it.key }
+        val notCached = scannedKeys.count { wanted(it) && it !in cachedSet }
 
         val fingerprint = searchFingerprint(query, regex, ignoreCase, searchScope, namePattern)
         val resume = cursor?.let { decodeModuleSearchCursor(it, fingerprint) }
@@ -762,6 +829,7 @@ class FormsService(
         var scanned = 0 // ...of which these were actually searched
         var staleSkipped = 0
         var vanished = 0
+        val attached = sortedSetOf<String>()
         var next: ModuleSearchPosition? = null
 
         scan@ while (position < cached.size && hits.size < cap && visited < MAX_MODULES_PER_SEARCH) {
@@ -783,6 +851,7 @@ class FormsService(
                 if (outcome == null) { vanished++; continue } // evicted between list() and this read
                 if (outcome.stale) { staleSkipped++; continue }
                 scanned++
+                outcome.attachedLibraries.mapTo(attached) { it.trim().uppercase() }
                 val skipUsed = if (position + n == firstPosition) resumeSkip else 0
                 val taken = minOf(cap - hits.size, outcome.hits.size)
                 hits += outcome.hits.take(taken)
@@ -813,6 +882,11 @@ class FormsService(
                 stale = staleSkipped,
                 truncated = next != null,
                 namePattern = namePattern,
+                // Libraries the searched modules attach that are in the forms directory but not
+                // fetched: when a called procedure is not found, these are where it most likely is.
+                unfetchedLibraries = attached
+                    .map { ModuleKey.of(it, ModuleType.LIBRARY) }
+                    .filter { it in scannedKeys && it !in cachedSet },
             ),
             hits = hits,
         )
@@ -838,24 +912,45 @@ class FormsService(
             )
         }
         val xml = readRef(key, ref.ref)
-        val capped = xml.length > MAX_OBJECT_XML_CHARS
+        val kept = jsonEscapedPrefixLength(xml, MAX_OBJECT_XML_CHARS)
+        val capped = kept < xml.length
+        val served = xml.take(kept)
+        val location = locationOf(index.key, ref.ref)
         return ObjectXml(
             module = index.key,
             objectType = ref.objectType,
             name = ref.name,
             ownerPath = ref.ownerPath,
-            xml = if (capped) xml.take(MAX_OBJECT_XML_CHARS) else xml,
+            xml = served,
             startLine = ref.ref.startLine,
             truncated = capped,
-            source = locationOf(index.key, ref.ref),
+            source = location,
             // The fragment itself only shows SubclassSubObject="true"; the parent pointer lives on
             // the enclosing element, so it is served here rather than left one call away.
             inherited = ref.inherited,
+            hint = if (capped) objectXmlHint(index.key, ref.ref, served, location) else null,
             annotations = elementAnnotations(
                 index,
                 ElementId(index.key, ElementKind.OBJECT, ref.name, ref.ownerPath),
             ),
         )
+    }
+
+    /**
+     * Where a cut `get_object_xml` fragment continues. The cut can fall inside a line, so the
+     * continuation starts *at* that line rather than after it — re-reading part of a line is cheap,
+     * skipping the rest of one is a silent hole. A cut inside the fragment's first line has no
+     * useful continuation (the same line would be cut again), so it points at a search instead.
+     */
+    private fun objectXmlHint(key: ModuleKey, ref: SourceRef, served: String, location: SourceLocation?): String {
+        val cutLine = ref.startLine + served.count { it == '\n' }
+        if (cutLine == ref.startLine || location == null || location.uri.isEmpty()) {
+            return "The fragment was cut at the response size cap inside its first line. Find the " +
+                "attributes you need with search_source(module=\"$key\", scope=\"xml\", query=...)."
+        }
+        return "The fragment was cut at the response size cap, inside line $cutLine. Continue with " +
+            "read_source(module=\"$key\", uri=\"${location.uri}\", startLine=$cutLine, " +
+            "endLine=${ref.endLine}), a few dozen lines at a time."
     }
 
     /**
@@ -893,19 +988,69 @@ class FormsService(
             "startLine $from is past the end of $refPath, which has ${lines.size} lines."
         }
         val requestedTo = (endLine ?: lines.size).coerceAtMost(lines.size)
-        val (text, lastLine, cut) = slice(lines, from, requestedTo, maxLines)
+        val slice = slice(lines, from, requestedTo, maxLines)
+        val uri = sourceUri(key, refPath).orEmpty()
+        val nextStartLine = (slice.lastLine + 1).takeIf { slice.truncated && it <= requestedTo }
         return SourceText(
             module = key,
-            source = SourceLocation(
-                uri = sourceUri(key, refPath).orEmpty(),
-                file = refPath,
-                startLine = from,
-                endLine = lastLine,
-            ),
+            source = SourceLocation(uri = uri, file = refPath, startLine = from, endLine = slice.lastLine),
             totalLines = lines.size,
-            truncated = cut,
-            text = text,
+            truncated = slice.truncated,
+            requestedEndLine = requestedTo,
+            nextStartLine = nextStartLine,
+            lineCut = slice.lineCut,
+            hint = if (!slice.truncated) {
+                null
+            } else {
+                // Continue in the form the caller used, so the next call is this one with new lines.
+                val byUri = uri.isNotEmpty() && target.contains("://")
+                readSourceHint(
+                    key = key,
+                    target = if (byUri) uri else refPath,
+                    byUri = byUri,
+                    from = from,
+                    slice = slice,
+                    requestedTo = requestedTo.takeIf { endLine != null },
+                    nextStartLine = nextStartLine,
+                )
+            },
+            text = slice.text,
         )
+    }
+
+    /**
+     * What a cut `read_source` page says, in the order a caller acts on it: what came back against
+     * what was asked, why it stopped, and the exact call that continues. A line cut part-way gets
+     * its own sentence, because continuing at the next line silently drops the rest of it.
+     */
+    private fun readSourceHint(
+        key: ModuleKey,
+        target: String,
+        byUri: Boolean,
+        from: Int,
+        slice: SourceSlice,
+        requestedTo: Int?,
+        nextStartLine: Int?,
+    ): String = buildString {
+        if (slice.lineCut) {
+            append(
+                "Line ${slice.lastLine} alone is longer than one response, so only its start was " +
+                    "returned. A line of converted XML is one whole object: read it with " +
+                    "get_object_xml, or find the attribute you need with search_source(scope=\"xml\").",
+            )
+        } else {
+            append("Returned lines $from-${slice.lastLine}")
+            if (requestedTo != null) append(" of the requested $from-$requestedTo")
+            append(if (slice.stoppedAtLineCap) " (the line cap was reached)." else " (the size cap was reached).")
+        }
+        if (nextStartLine != null) {
+            val arg = if (byUri) "uri" else "file"
+            val end = if (requestedTo != null) ", endLine=$requestedTo" else ""
+            append(" Continue with read_source(module=\"$key\", $arg=\"$target\", startLine=$nextStartLine$end).")
+            if (!slice.stoppedAtLineCap && !slice.lineCut) {
+                append(" Lines of converted XML can run to thousands of characters, so ask for fewer at a time.")
+            }
+        }
     }
 
     /**
@@ -916,7 +1061,7 @@ class FormsService(
     suspend fun readSourceResource(key: ModuleKey, target: String): String {
         val slice = readSource(key, target, maxLines = MAX_SOURCE_LINES)
         if (!slice.truncated) return slice.text
-        val next = slice.source.endLine + 1
+        val next = slice.nextStartLine ?: (slice.source.endLine + 1)
         val note = "truncated at line ${slice.source.endLine} of ${slice.totalLines}; " +
             "call read_source(module=\"$key\", uri=\"${slice.source.uri}\", startLine=$next) for the rest"
         return slice.text + if (sourceMimeType(slice.source.file) == "application/xml") {
@@ -1323,6 +1468,8 @@ class FormsService(
         val more: Boolean = false,
         /** The module's source changed since it was indexed, so nothing here was searched. */
         val stale: Boolean = false,
+        /** The PL/SQL libraries the module attaches, by name — where its called code usually lives. */
+        val attachedLibraries: List<String> = emptyList(),
     )
 
     /**
@@ -1386,7 +1533,7 @@ class FormsService(
                     break
                 }
             }
-            ModuleScan(hits, more = more)
+            ModuleScan(hits, more = more, attachedLibraries = cached.attachedLibraries.map { it.name })
         }
     }
 
@@ -1448,7 +1595,13 @@ class FormsService(
      * gaps first (a module that was not searched is the one thing a hit list cannot show), then the
      * continuation. `null` when the scan was complete and exhaustive.
      */
-    private fun moduleSearchHint(notCached: Int, stale: Int, truncated: Boolean, namePattern: String?): String? {
+    private fun moduleSearchHint(
+        notCached: Int,
+        stale: Int,
+        truncated: Boolean,
+        namePattern: String?,
+        unfetchedLibraries: List<ModuleKey> = emptyList(),
+    ): String? {
         val patternArg = namePattern?.let { ", pattern=\"$it\"" } ?: ""
         val sentences = buildList {
             if (notCached > 0) {
@@ -1456,6 +1609,16 @@ class FormsService(
                     "$notCached matching module(s) are not cached and were not searched — " +
                         "list_modules(status=\"not_cached\"$patternArg) names them, and " +
                         "fetch_module adds one to the search.",
+                )
+            }
+            if (unfetchedLibraries.isNotEmpty()) {
+                val shown = unfetchedLibraries.take(MAX_NAMED_LIBRARIES).joinToString(", ")
+                val more = unfetchedLibraries.size - MAX_NAMED_LIBRARIES
+                add(
+                    "The searched modules attach libraries that are not fetched: $shown" +
+                        (if (more > 0) " and $more more" else "") +
+                        ". Code they call that is not found here is most likely there — " +
+                        "fetch_module each, then search again.",
                 )
             }
             if (stale > 0) {
@@ -1518,6 +1681,189 @@ class FormsService(
         inherited = item.inherited,
     )
 
+    // --- get_block: effective DML properties and data-source columns ---
+
+    /** A property class followed to the end of its chain, or as far as the cache allowed. */
+    private class ClassChain(
+        val dml: ItemDml,
+        val resolved: Boolean,
+        val through: List<ModuleKey>,
+        val missingModule: ModuleKey?,
+    )
+
+    /** [effectiveItemDml]'s result: the resolved items, and one account per class used. */
+    private class EffectiveDml(
+        val items: Map<String, ItemDml>,
+        val classes: List<PropertyClassResolution>,
+        val subclassedItems: Int,
+    )
+
+    /**
+     * Each item's DML properties with its property class applied, field by field: what the item
+     * writes, else what its class writes, else what that class is based on.
+     *
+     * An item is included only when its chain resolved to the end, because only then is a `null`
+     * field the Forms default rather than "not known". An item subclassed from another module is
+     * never included: its properties live with its parent object, which this does not walk.
+     */
+    private suspend fun effectiveItemDml(index: ModuleIndex, block: BlockInfo, budget: RowBudget): EffectiveDml {
+        val chains = mutableMapOf<String, ClassChain>()
+        val usage = mutableMapOf<String, Int>()
+        val items = linkedMapOf<String, ItemDml>()
+        var subclassed = 0
+        for (item in block.items) {
+            if (item.inherited != null) {
+                subclassed++
+                continue
+            }
+            val own = item.dml ?: ItemDml()
+            val className = item.propertyClass
+            if (className == null) {
+                items[item.name] = own
+                continue
+            }
+            val canonical = className.uppercase()
+            usage.merge(canonical, 1, Int::plus)
+            val chain = chains.getOrPut(canonical) {
+                resolveClassChain(index, className, visited = mutableSetOf(), hops = 0)
+            }
+            if (chain.resolved) items[item.name] = own.over(chain.dml)
+        }
+        // Resolved rows are the largest section after the items themselves; a screen too wide for
+        // both keeps the items it served and says the map covers fewer of them.
+        val (fitted, _) = budget.take(
+            items.entries.map { it.key to it.value },
+            PairSerializer(String.serializer(), ItemDml.serializer()),
+            share = budget.share(EFFECTIVE_DML_BUDGET_SHARE),
+        )
+        val classes = chains.map { (canonical, chain) ->
+            PropertyClassResolution(
+                name = index.propertyClassDetails.firstOrNull { it.name.uppercase() == canonical }?.name ?: canonical,
+                resolved = chain.resolved,
+                resolvedThrough = chain.through,
+                missingModule = chain.missingModule,
+                itemCount = usage[canonical] ?: 0,
+            )
+        }
+        return EffectiveDml(fitted.toMap(), classes, subclassed)
+    }
+
+    /**
+     * Follows one property class: its own values, then the class it is based on in the same module,
+     * or — for a stub — the class its pointer names in another module, read only if that module is
+     * cached and current. Bounded by [MAX_INHERITANCE_HOPS] and guarded against loops, since the
+     * chain is data read from converted files.
+     */
+    private suspend fun resolveClassChain(
+        index: ModuleIndex,
+        className: String,
+        visited: MutableSet<String>,
+        hops: Int,
+    ): ClassChain {
+        val here = listOf(index.key)
+        val info = index.propertyClassDetails.firstOrNull { it.name.equals(className, ignoreCase = true) }
+        if (info == null || hops >= MAX_INHERITANCE_HOPS || !visited.add("${index.key}:${className.uppercase()}")) {
+            return ClassChain(ItemDml(), resolved = false, through = here, missingModule = null)
+        }
+        val own = info.item ?: ItemDml()
+        val pointer = info.inherited
+        val parent: ClassChain = when {
+            pointer != null -> {
+                val parentKey = inheritedModuleKey(pointer)
+                    ?: return ClassChain(own, resolved = false, through = here, missingModule = null)
+                val parentIndex = runCatching { index(parentKey) }.getOrNull()
+                    ?: return ClassChain(own, resolved = false, through = here, missingModule = parentKey)
+                resolveClassChain(parentIndex, pointer.name ?: className, visited, hops + 1)
+            }
+            info.propertyClass != null -> resolveClassChain(index, info.propertyClass!!, visited, hops + 1)
+            else -> return ClassChain(own, resolved = true, through = here, missingModule = null)
+        }
+        return ClassChain(
+            dml = own.over(parent.dml),
+            resolved = parent.resolved,
+            through = (here + parent.through).distinct(),
+            missingModule = parent.missingModule,
+        )
+    }
+
+    /** This value where it is written, [fallback]'s where it is not. */
+    private fun ItemDml.over(fallback: ItemDml): ItemDml = ItemDml(
+        databaseItem = databaseItem ?: fallback.databaseItem,
+        insertAllowed = insertAllowed ?: fallback.insertAllowed,
+        updateAllowed = updateAllowed ?: fallback.updateAllowed,
+        updateIfNull = updateIfNull ?: fallback.updateIfNull,
+        queryAllowed = queryAllowed ?: fallback.queryAllowed,
+        enabled = enabled ?: fallback.enabled,
+        keyboardNavigable = keyboardNavigable ?: fallback.keyboardNavigable,
+        primaryKey = primaryKey ?: fallback.primaryKey,
+        required = required ?: fallback.required,
+        maximumLength = maximumLength ?: fallback.maximumLength,
+        initialValue = initialValue ?: fallback.initialValue,
+        copyValueFromItem = copyValueFromItem ?: fallback.copyValueFromItem,
+    )
+
+    /**
+     * What a detailed `get_block` says about the items it could not resolve: the module to fetch,
+     * named with the exact call, and the subclassed items it does not try to resolve.
+     */
+    private fun effectiveDmlHints(key: ModuleKey, block: String, effective: EffectiveDml, columns: Boolean): List<String> =
+        buildList {
+            effective.classes.filter { !it.resolved }.groupBy { it.missingModule }.forEach { (missing, classes) ->
+                val itemCount = classes.sumOf { it.itemCount }
+                val names = classes.joinToString(", ") { it.name }
+                if (missing != null) {
+                    val again = "get_block(module=\"$key\", block=\"$block\", verbosity=\"detailed\"" +
+                        (if (columns) ", columns=true" else "") + ")"
+                    add(
+                        "$itemCount item(s) take their properties from $names, defined in '$missing', " +
+                            "which is not fetched or is stale, so they are missing from 'effectiveDml'. " +
+                            "Call fetch_module(module=\"$missing\"), then $again.",
+                    )
+                } else {
+                    add(
+                        "$itemCount item(s) use $names, whose definition could not be followed; " +
+                            "they are missing from 'effectiveDml' — get_object_xml(objectType=\"PropertyClass\") " +
+                            "shows the raw attributes.",
+                    )
+                }
+            }
+            if (effective.subclassedItems > 0) {
+                add(
+                    "${effective.subclassedItems} item(s) are subclassed from another module and are " +
+                        "not in 'effectiveDml'; their properties are defined with the parent object " +
+                        "(see each item's 'inherited').",
+                )
+            }
+        }
+
+    /**
+     * The block's data-source columns, read from its own slice of the converted XML, and the columns
+     * no item names. Items name a column by `ColumnName` — whose table alias, if any, is dropped,
+     * since a block over an inline subquery writes `S.OWNER` against a column recorded as `OWNER` —
+     * or by their own name when they have none.
+     */
+    private suspend fun blockColumns(key: ModuleKey, block: BlockInfo, budget: RowBudget): BlockColumns {
+        val ref = block.sourceRef
+        val all = if (ref == null || block.dataSourceColumnCount == 0) {
+            emptyList()
+        } else {
+            DataSourceColumnReader.read(readRef(key, ref))
+        }
+        val named = block.items.mapTo(HashSet()) { (it.columnName?.substringAfterLast('.') ?: it.name).uppercase() }
+        val withoutItem = all.filter { it.name.uppercase() !in named }
+        // The two name lists are the answer; the column rows are the evidence, so they are what
+        // gives way first when a 350-column table meets a wide block.
+        val (capped, overLimit) = capRows(all)
+        val (rows, cut) = budget.take(capped, DataSourceColumnInfo.serializer())
+        return BlockColumns(
+            total = all.size,
+            truncated = cut || overLimit,
+            columns = rows,
+            columnsWithoutItem = withoutItem.map { it.name },
+            mandatoryColumnsWithoutItem = withoutItem.filter { it.mandatory }.map { it.name },
+        )
+    }
+
     // --- addressable source (SourceLocation, read_source) ---
 
     /** The addressable location of [ref] in [key]'s cache — a ref plus the URI that opens it. */
@@ -1546,39 +1892,62 @@ class FormsService(
         )
     }
 
+    /** One [slice]: the text, the last line it reaches, and why it stopped short of the request. */
+    private class SourceSlice(
+        val text: String,
+        val lastLine: Int,
+        val truncated: Boolean,
+        val lineCut: Boolean,
+        val stoppedAtLineCap: Boolean,
+    )
+
     /**
      * Lines [from]..[to] of [lines], stopping at whichever ceiling comes first, with the last line
      * actually taken and whether anything was left behind.
      *
-     * The character budget is checked per line rather than on the joined result so a file of very
-     * long lines costs one line of overshoot, not the whole slice — except for a first line that
-     * alone exceeds the budget, which is taken and then cut, because returning nothing would be
-     * worse than returning a prefix that says it is one.
+     * The character budget is measured in **JSON-escaped** characters ([jsonEscapedLength]), because
+     * that is what a client receives: converted XML is dense with quotes, each of which travels as
+     * two characters, so a budget counted on the raw text overshoots on exactly the files most
+     * likely to reach it. It is checked per line, so a slice never overshoots — except for a first
+     * line that alone exceeds the budget, which is taken and cut ([SourceSlice.lineCut]), because
+     * returning nothing would be worse than returning a prefix that says it is one.
      */
     private fun slice(
         lines: List<String>,
         from: Int,
         to: Int,
         maxLines: Int?,
-    ): Triple<String, Int, Boolean> {
+    ): SourceSlice {
         val cap = (maxLines ?: DEFAULT_SOURCE_LINES).coerceIn(1, MAX_SOURCE_LINES)
         val taken = mutableListOf<String>()
         var chars = 0
         var last = from - 1
+        var stoppedAtLineCap = false
         for (i in from..to) {
-            if (taken.size == cap) break
+            if (taken.size == cap) {
+                stoppedAtLineCap = true
+                break
+            }
             val line = lines[i - 1]
-            if (taken.isNotEmpty() && chars + line.length + 1 > MAX_SOURCE_CHARS) break
+            val cost = jsonEscapedLength(line) + 2 // plus the escaped newline that joins it
+            if (chars + cost > MAX_SOURCE_CHARS) {
+                if (taken.isEmpty()) {
+                    val prefix = line.take(jsonEscapedPrefixLength(line, MAX_SOURCE_CHARS))
+                    return SourceSlice(prefix, i, truncated = true, lineCut = true, stoppedAtLineCap = false)
+                }
+                break
+            }
             taken += line
-            chars += line.length + 1
+            chars += cost
             last = i
         }
-        val joined = taken.joinToString("\n")
-        return if (joined.length > MAX_SOURCE_CHARS) {
-            Triple(joined.take(MAX_SOURCE_CHARS), last, true)
-        } else {
-            Triple(joined, maxOf(last, from), last < to)
-        }
+        return SourceSlice(
+            text = taken.joinToString("\n"),
+            lastLine = maxOf(last, from),
+            truncated = last < to,
+            lineCut = false,
+            stoppedAtLineCap = stoppedAtLineCap,
+        )
     }
 
     // --- subclassing (inherited objects) ---
@@ -1960,7 +2329,6 @@ class FormsService(
 
     private companion object {
         const val MAX_SEARCH_RESULTS = 200
-        const val MAX_OBJECT_XML_CHARS = 500_000
         const val FETCH_STEPS = 3
 
         /** Phases of a re-index: the conversion phase of [FETCH_STEPS] is the one it skips. */
@@ -1981,6 +2349,19 @@ class FormsService(
          */
         const val SEARCH_MODULE_CHUNK = 8
 
+        /**
+         * How `get_block` divides one response between its three lists. The items are the block, so
+         * they take most of it — less when the caller also asked for columns, since a base table's
+         * columns are then part of the question. The resolved properties cover the items served;
+         * what is left goes to the column rows, whose two summary name lists are never cut.
+         */
+        const val ITEM_BUDGET_SHARE = 80
+        const val ITEM_BUDGET_WITH_COLUMNS = 55
+        const val EFFECTIVE_DML_BUDGET_SHARE = 60
+
+        /** How many un-fetched attached libraries a `search_modules` hint names before counting. */
+        const val MAX_NAMED_LIBRARIES = 5
+
         /** Marks a `search_modules` cursor as ours, so a token from elsewhere fails cleanly. */
         const val SEARCH_CURSOR_PREFIX = "module-search:v1:"
 
@@ -1998,10 +2379,16 @@ class FormsService(
          * form is hundreds of thousands of lines, while a doubly-escaped PL/SQL body can be one
          * line holding a whole procedure. [DEFAULT_SOURCE_LINES] is what a caller gets without
          * asking — enough for a trigger body or an XML fragment, small enough to read twice.
+         *
+         * [MAX_SOURCE_CHARS] (and `get_object_xml`'s [MAX_OBJECT_XML_CHARS]) count JSON-escaped
+         * characters and sit well inside [MAX_RESULT_CHARS]. They were 100,000 and 500,000 raw
+         * characters: a slice of attribute-dense XML that obeyed them was still over Claude Code's
+         * 25,000-token default, so a call that respected every ceiling here was spilled to a file.
          */
         const val DEFAULT_SOURCE_LINES = 200
         const val MAX_SOURCE_LINES = 2_000
-        const val MAX_SOURCE_CHARS = 100_000
+        const val MAX_SOURCE_CHARS = 40_000
+        const val MAX_OBJECT_XML_CHARS = 40_000
 
         /**
          * How far `resolve` walks a subclassing chain. Forms allows a parent to be subclassed in

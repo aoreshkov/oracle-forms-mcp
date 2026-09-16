@@ -98,6 +98,28 @@ class CrossModuleSearchTest {
         assertNull(result.nextCursor)
     }
 
+    /**
+     * A library is where a form's called code usually lives, and it is invisible to a search until
+     * it is fetched — the case a thin result reads exactly like an answer. The modules that *were*
+     * searched name their libraries, so the coverage hint can too.
+     */
+    @Test
+    fun theHintNamesTheAttachedLibrariesThatWereNotSearched() = runTest {
+        copyFixture("utils.pld")
+        service.fetchModule(ModuleKey.of("orders", ModuleType.FORM))
+
+        val hint = assertNotNull(service.searchModules(query = "no_such_procedure").hint)
+
+        assertTrue(hint.contains("UTILS.pll"), hint)
+        assertTrue(hint.contains("fetch_module"), hint)
+
+        // Once it is fetched there is nothing left to say about it.
+        service.fetchModule(ModuleKey.of("utils", ModuleType.LIBRARY))
+        assertFalse(
+            service.searchModules(query = "no_such_procedure").hint.orEmpty().contains("UTILS.pll"),
+        )
+    }
+
     /** *What else touches this global?* — the value a modal hands back travels through one. */
     @Test
     fun aGlobalVariableIsTracedToEveryModuleThatTouchesIt() = runTest {

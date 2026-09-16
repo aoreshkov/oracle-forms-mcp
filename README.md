@@ -92,7 +92,7 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 | `fetch_module` | Converts + indexes one module (idempotent; progress notifications) |
 | `get_module_overview` | Names of every section + counts — the first call after a fetch (`verbosity=detailed` adds window and canvas objects) |
 | `list_blocks` | Blocks with base table, item count, trigger count |
-| `get_block` | One block: items with type, property class, prompt and trigger names (`verbosity=detailed` adds data type, column, canvas, visible/required/LOV); flags subclassed blocks/items |
+| `get_block` | One block: items with type, property class, prompt and trigger names (`verbosity=detailed` adds data type, column, canvas, visible/required/LOV and the DML properties resolved through each item's property class; `columns=true` adds the base table's columns and the ones no item supplies); flags subclassed blocks/items |
 | `list_triggers` | Triggers with level/scope; filter by block, item, or level (`verbosity=detailed` adds a PL/SQL preview) |
 | `get_trigger` | One trigger's decoded PL/SQL body; `resolve` follows a subclassing pointer into a cached parent module |
 | `list_program_units` | Procedures, functions, package specs/bodies with line counts |
@@ -118,7 +118,18 @@ fills it and the code that consumes the result sit on opposite sides of one inte
 its name lists: modality, size, toolbar canvases, and the window each canvas sits on.
 
 A property Forms did not write comes back as `null`, meaning the object keeps the Forms default —
-never `false`.
+never `false`. On an item that has a property class it does not even mean the default: the class
+supplies the value, and in a real form that is where most of an item's behaviour lives. So
+`get_block(verbosity: "detailed")` returns both — `items[].dml`, what the item itself wrote, and
+`effectiveDml`, the same properties with the class applied (item, then class, then whatever that
+class is based on, followed into other modules that are already fetched). An item is listed in
+`effectiveDml` only when that chain resolved to the end, so a `null` there really is the Forms
+default; `propertyClasses` and the result's `hint` say which classes could not be followed and name
+the `fetch_module` call that fixes it.
+
+`get_block(columns: true)` adds the block's data-source columns, the columns no item supplies, and
+which of those are mandatory in the database — the ones an insert fails on unless a trigger assigns
+them.
 
 ### Reading around a result
 

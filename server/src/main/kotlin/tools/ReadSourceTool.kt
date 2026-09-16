@@ -11,8 +11,11 @@ fun Server.registerReadSourceTool(service: FormsService) {
             "extracted PL/SQL sidecar. Every result that points at a file carries a 'source' with " +
             "the 'uri' and 'file' to pass here, so a line range can be read instead of guessed at. " +
             "Use it to see what surrounds a search hit, or the rest of a fragment that came back " +
-            "truncated. Pass either 'uri' or 'file'; the response is capped and says so, and " +
-            "'totalLines' tells you where the file ends.",
+            "truncated. Pass either 'uri' or 'file'. The response is capped by lines and by size; " +
+            "a cut page sets 'truncated', gives 'nextStartLine', and its 'hint' names the call " +
+            "that continues — 'totalLines' tells you where the file ends. Lines of converted XML " +
+            "hold one whole object each and can run to thousands of characters, so read XML a few " +
+            "dozen lines at a time, and prefer search_source(scope=\"xml\") to find an attribute.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "uri" to stringProp(
@@ -31,6 +34,7 @@ fun Server.registerReadSourceTool(service: FormsService) {
         title = "Read cached source",
         outputSchema = outputSchemaOf<SourceText>(),
         toolAnnotations = LOCAL_READ_ONLY,
+        meta = CAPPED_RESULT_META,
     ) { request ->
         guarded {
             val args = request.args()

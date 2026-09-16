@@ -20,8 +20,12 @@ import kotlinx.serialization.Serializable
  *
  * `0` is the implicit version of every entry written before the stamp existed, which is exactly
  * what the default on [ModuleIndex.indexVersion] gives them.
+ *
+ * History: `1` stamped the index; `2` added item and block DML properties, the properties of
+ * declared property classes, data-source column counts, and double-escaping recovery of a block's
+ * query source and clauses.
  */
-public const val CURRENT_INDEX_VERSION: Int = 1
+public const val CURRENT_INDEX_VERSION: Int = 2
 
 /**
  * The parsed, cacheable index of one Forms module that MCP tools read.
@@ -64,6 +68,7 @@ public data class ModuleIndex(
     val parameters: List<ParameterInfo> = emptyList(),
     val visualAttributes: List<String> = emptyList(),
     val propertyClasses: List<String> = emptyList(),
+    val propertyClassDetails: List<PropertyClassInfo> = emptyList(),
     val editors: List<String> = emptyList(),
     val menus: List<MenuInfo> = emptyList(),
     val objectLibraryTabs: List<ObjectLibraryTabInfo> = emptyList(),
