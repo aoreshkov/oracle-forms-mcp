@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-16
+
 ### Added
 - **`get_block` answers what an insert or update actually writes.** Item and block DML properties
   (`DatabaseItem`, `InsertAllowed`, `UpdateAllowed`, `Enabled`, `InitializeValue`, the block's
@@ -415,7 +417,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.7.0...v0.8.0
