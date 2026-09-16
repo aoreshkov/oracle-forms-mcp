@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`get_block` answers what an insert or update actually writes.** Item and block DML properties
+  (`DatabaseItem`, `InsertAllowed`, `UpdateAllowed`, `Enabled`, `InitializeValue`, the block's
+  `WhereClause`/`OrderByClause`/key and lock modes, …) are indexed, and `verbosity="detailed"`
+  serves both what the item itself wrote (`items[].dml`) and `effectiveDml` — the same properties
+  with the item's **property class** applied, followed through a stub class into the module that
+  defines it. In a real form that is where most of an item's behaviour lives, so an absent property
+  on a classed item never meant the Forms default; now it is resolved instead of guessed, and an
+  item appears in `effectiveDml` only when its whole chain could be read. Unresolved classes are
+  accounted for in `propertyClasses`, with a hint naming the `fetch_module` call.
+- **`get_block(columns=true)`** returns the block's data-source columns, the columns no item
+  supplies, and which of those are **mandatory** — the columns an insert fails on unless a trigger
+  assigns them. Read from the block's own XML on demand, not indexed: one form repeats the same
+  wide base table across several blocks.
+- **`search_modules` names the attached libraries it could not search.** A procedure a form calls
+  but does not define is usually in a `.pll`, and an unfetched library is invisible to a search that
+  otherwise reads as an answer.
+- **`list_modules` says up front when a module type cannot be converted** — libraries under a
+  Forms2XML-based `--convert-command`, where every `fetch_module` would fail — and names
+  `--compile-command` instead of leaving it to be discovered one failure at a time.
 - **PL/SQL libraries can have a converter command of their own: `--compile-command`** (also
   `OFMCP_COMPILE_COMMAND`, and a `compile_command` field in the `.mcpb` bundle). No Oracle tool
   converts a `.pll` to XML — `frmf2xml` rejects libraries — so a site that set `--convert-command`
@@ -19,6 +38,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the `.pld` next to the module, in the forms directory. `{out}` is never appended, so existing
   commands run exactly as before. When a run leaves nothing in the converted directory but a fresh
   file next to the module, the error now names that file and says to add `{out}`.
+
+### Fixed
+- **Results now stay inside what a client accepts.** `read_source` capped a page at 100,000 raw
+  characters and `get_object_xml` at 500,000, both far above Claude Code's 25,000-token default —
+  and converted XML, which is mostly quoted attributes, is the worst case for that gap. The ceilings
+  are 40,000 characters counted as they travel (JSON-escaped), both tools declare that limit to the
+  client, and a wide `get_block` is cut to fit rather than overflowing. Tool JSON is compact.
+- **A cut result says where to continue.** `read_source` returns `nextStartLine`, the range it was
+  clamped to, and a hint naming the next call — `truncated` alone was read past, and the following
+  request then started past a hole. A line longer than one response is flagged (`lineCut`) instead
+  of continuing as if it had been served whole; a cut `get_object_xml` fragment names the
+  `read_source` range that continues it.
+- **`list_triggers` reports a trigger with no code as zero lines**, not one, so an inherited body no
+  longer reads as a one-line trigger.
+
+### Changed
+- The index version is now **2**: warm cache entries report `STALE` with `INDEX_OUTDATED` and
+  `fetch_module` re-parses them without re-converting.
 
 ## [0.10.0] - 2026-09-12
 
