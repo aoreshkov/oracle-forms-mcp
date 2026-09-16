@@ -44,6 +44,22 @@ class ServerInstructionsTest {
         )
     }
 
+    /**
+     * The other half of "never report a default as a value": on a classed item, an absent property
+     * is not the Forms default either, and reading it as one is a wrong answer about what an insert
+     * writes. The instructions must name the field that resolves it.
+     */
+    @Test
+    fun theySayWhereAnItemsPropertiesActuallyComeFrom() {
+        assertMentions("null, not false", "propertyClass", "effectiveDml", "columns=true")
+    }
+
+    /** A wide block's XML is not something to read line by line; both cheaper calls are named. */
+    @Test
+    fun theySayHowToAskAboutPropertiesWithoutReadingTheXml() {
+        assertMentions("search_source(scope=\"xml\")", "nextStartLine")
+    }
+
     @Test
     fun theySayThatAnEmptyBodyIsNotAFact() {
         assertMentions("An empty PL/SQL body is never a fact on its own", "bodySource", "inherited")

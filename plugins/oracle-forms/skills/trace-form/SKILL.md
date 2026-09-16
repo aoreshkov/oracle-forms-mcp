@@ -6,7 +6,7 @@ description: Trace how an Oracle Forms screen actually works — which form open
 # Trace a Forms interaction
 
 Tracing a Forms application is following one value across objects that hide where they are defined.
-The `oracle-forms` MCP server answers every step of that; this is the order to ask in, and the four
+The `oracle-forms` MCP server answers every step of that; this is the order to ask in, and the five
 places where a naive reading is not merely incomplete but **wrong**.
 
 Tool names below are the plain ones. Through this plugin they are namespaced —
@@ -32,8 +32,9 @@ Every reflex has a call:
 | Reflex | Call instead |
 |---|---|
 | `ls`/`find` the forms directory | `list_modules` with `pattern`, `type`, `status` (filtered and paged) |
-| `grep` a module for an item, prompt or property | `get_block` (`verbosity: "detailed"` for data type, column, canvas, LOV) |
+| `grep` a module for an item, prompt or property | `get_block` (`verbosity: "detailed"` for data type, column, canvas, LOV and the DML properties) |
 | `grep` across the whole directory | `search_modules` (every fetched module at once) |
+| `grep` one attribute across a block | `search_source` with `scope: "xml"` — one call, with line numbers |
 | `sed -n '320,340p'` on the XML | `get_object_xml` for one named object, `read_source` for a line range |
 | open the sidecar a hit named | `read_source` with the hit's `uri` |
 
@@ -49,9 +50,12 @@ Every reflex has a call:
    PL/SQL. `list_triggers` filters by block, item or level, which is how same-named triggers at
    different levels are told apart.
 6. **`search_source`** inside one module; **`search_modules`** when the question leaves it.
-7. **`read_source`** — the lines around anything a result pointed at, by its `uri`.
+7. **`read_source`** — the lines around anything a result pointed at, by its `uri`. Over converted
+   XML ask for a few dozen lines at a time: one line is one whole object and can run to thousands
+   of characters. A cut page says so, gives `nextStartLine`, and its `hint` is the next call —
+   continue from *that*, not from where you assumed the page ended.
 
-## Four things that mislead if you skip them
+## Five things that mislead if you skip them
 
 **An empty PL/SQL body is not "this does nothing."** A subclassed object stores only its overrides,
 so its body is genuinely empty *here* while the code that runs lives in the parent module. Check
@@ -74,6 +78,17 @@ alike.
 differs from the default, so `visible`, `required`, `modal`, `raiseOnEnter` and friends are nullable:
 absence means "not overridden", never "off".
 
+**And on a classed item, `null` is not the default either — the class decides it.** In a real form
+most items write almost no properties of their own; `DatabaseItem`, `InsertAllowed`,
+`UpdateAllowed`, `Enabled` come from the property class, which is usually a stub pointing at a
+shared module. So *"which fields does this insert write?"* is
+`get_block(verbosity: "detailed")` → **`effectiveDml`**, the item's properties with its class
+applied, not `items[].dml`, which is only what the item itself wrote. An item appears in
+`effectiveDml` only when its class could be followed into a **fetched** module; `propertyClasses`
+says which ones could not and the `hint` names the `fetch_module` call. `columns: true` adds the
+base table's columns, the ones no item supplies, and which of *those* are mandatory — the columns
+an insert fails on unless a trigger assigns them.
+
 ## Questions that leave the module
 
 `search_modules` searches every **fetched** module in one call. Three shapes cover most of tracing:
@@ -88,8 +103,9 @@ Matching is case-insensitive by default, because the same module is written `PIC
 `Call_Form('picker')` in one code base. Read the coverage fields before trusting an empty answer:
 `cachedModules`, `scannedModules`, `skippedNotCached`, `skippedStale`. Only fetched modules are
 searched, so a thin result may mean "not fetched yet" — the `hint` names the `fetch_module` call
-that widens the search. When `truncated` is set, pass the returned `nextCursor` back with the same
-arguments.
+that widens the search, and names the **attached libraries** of the modules it did search: a
+procedure a form calls but does not define is most often in one of those `.pll` files. When
+`truncated` is set, pass the returned `nextCursor` back with the same arguments.
 
 ## When `get_object_xml` is the right call
 
@@ -133,7 +149,9 @@ reaching for the shell — that is a gap in the server, and it is the kind that 
 
 ## Record what you worked out
 
-A trace is expensive and the conclusions are not in the `.fmb`. `annotate_element` stores a note,
+A trace is expensive and the conclusions are not in the `.fmb` — what a naming convention means,
+which property class marks a base-table item, which field is validated but never written.
+`annotate_element` stores a note,
 tag, summary or classification on one element; `relate_elements` records a directed cross-reference
 (this trigger *calls* that program unit; this button *opens* that form). Both survive re-indexing
 and cache eviction, and the read tools surface them inline the next time anyone looks.

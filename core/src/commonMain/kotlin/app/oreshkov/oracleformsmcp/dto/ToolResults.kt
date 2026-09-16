@@ -136,6 +136,10 @@ public data class ModuleStatusEntry(
  * call stays small and still orients ("of 40 matches, 3 are CACHED").
  * [oracleHomeConversion] says the server converts binaries itself for at least one module type
  * (Oracle tools or a site command) rather than only copying pre-converted text forms.
+ *
+ * [hint] carries what this page's rows do not say on their own — a module type this server's
+ * conversion cannot produce, which a `NOT_CACHED` row would otherwise invite a caller to discover
+ * one failed `fetch_module` at a time.
  */
 @Serializable
 @SerialName("ModuleList")
@@ -147,6 +151,7 @@ public data class ModuleList(
     val truncated: Boolean = false,
     val nextCursor: String? = null,
     val countsByStatus: Map<ModuleStatus, Int> = emptyMap(),
+    val hint: String? = null,
     val modules: List<ModuleStatusEntry> = emptyList(),
 )
 

@@ -68,30 +68,36 @@ const val SERVER_NAME: String = "oracle-forms-mcp"
 internal val SERVER_INSTRUCTIONS: String =
     "Serves the content of Oracle Forms modules (.fmb forms, .mmb menus, .pll PL/SQL libraries, " +
         ".olb object libraries) from a configured directory. " +
-        "Start with list_modules (filtered and paged) to find a module, then fetch_module to " +
-        "convert and index it; the other tools then read the cached index — blocks, items, " +
-        "triggers, program units, PL/SQL bodies, search — with get_object_xml as the escape hatch " +
-        "for raw attributes. search_source searches one module; search_modules searches every " +
-        "fetched module at once, which is how a call between forms, a shared :GLOBAL variable or a " +
-        "subclassed block is traced, and it reports the modules it could not reach rather than " +
-        "leaving them silently out of the answer. " +
+        "Start with list_modules, filtered and paged, then fetch_module to convert and index it; " +
+        "the other tools read the cached index — blocks, items, triggers, program units, bodies, " +
+        "search — with get_object_xml as the escape hatch for raw attributes. " +
+        "search_source searches one module; search_modules searches every " +
+        "fetched module at once — how a call between forms, a shared :GLOBAL or a subclassed " +
+        "block is traced — and reports the modules it could not reach rather than leaving them " +
+        "silently absent. " +
         "Read through these tools rather than through the files. A module reported as STALE is one " +
         "to call fetch_module on again: its staleReason says whether it changed on disk " +
         "(SOURCE_CHANGED) or was indexed by an older build of this server (INDEX_OUTDATED), whose " +
-        "answers can be wrong in ways that read as plausible. That is exactly the hazard " +
-        "of opening the converted XML yourself: what is on disk may describe a form that is no " +
-        "longer the one being served, and the paths in a result are cache-relative, not host " +
+        "answers can be wrong in ways that read as plausible. Opening the converted XML yourself " +
+        "risks exactly that drift, and the paths in a result are cache-relative, not host " +
         "paths. Where a habit reaches for a shell there is a call: an item's properties and " +
         "prompts are get_block, not grep; one object's raw attributes are get_object_xml, not sed; " +
         "the lines around a hit are read_source; and a question that spans modules is " +
         "search_modules, not a directory walk. " +
+        "A property the file did not write is null, not false — and on an item with a " +
+        "propertyClass, not the Forms default either: the class decides it, usually " +
+        "elsewhere. get_block(verbosity=\"detailed\") resolves that into effectiveDml — what says " +
+        "whether an insert or update writes an item — listing one only when its class could be " +
+        "followed; the hint names the fetch_module call for the rest. columns=true adds the base " +
+        "table's columns and those no item supplies. A line of converted XML is one whole object, " +
+        "thousands of characters long: ask property questions with search_source(scope=\"xml\"), " +
+        "and read XML a few dozen lines at a time, continuing at nextStartLine. " +
         "An empty PL/SQL body is never a fact on its own: bodySource tells an own body from an " +
-        "inherited one (the code lives in the module the 'inherited' pointer names, and the hint " +
-        "names the call that reaches it), from a resolved one, and from a genuinely empty one. " +
+        "inherited one (the code lives in the module 'inherited' names, and the hint names the " +
+        "call that reaches it), a resolved one, and a genuinely empty one. " +
         "You can also record durable meta-information about elements with annotate_element " +
         "(notes/tags/summaries/classifications) and relate_elements (cross-references); it " +
-        "persists across sessions and re-indexing and is surfaced inline by the read tools " +
-        "and via get_element_annotations / search_annotations."
+        "persists across sessions and re-indexing, and the read tools surface it inline."
 
 /** Runtime configuration shared by both transports, populated from the CLI flags in `Main`. */
 data class ServerConfig(

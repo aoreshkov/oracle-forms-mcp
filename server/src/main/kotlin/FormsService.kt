@@ -247,6 +247,15 @@ class FormsService(
             truncated = truncated,
             nextCursor = if (truncated) encodeModuleCursor(page.last().module) else null,
             countsByStatus = countsByStatus,
+            // Asked of the converter, per type, and only about types actually on this page: what a
+            // site's command accepts is not derivable from the configuration here.
+            hint = page.asSequence()
+                .filter { it.status == ModuleStatus.NOT_CACHED }
+                .map { it.type }
+                .distinct()
+                .mapNotNull(converter::conversionCaveat)
+                .joinToString(" ")
+                .ifEmpty { null },
             modules = page,
         )
     }
@@ -774,7 +783,8 @@ class FormsService(
         // Sorted by canonical key: the scan order *is* the cursor's coordinate system.
         val cached = cache.list().filter { wanted(it) }.sortedBy { it.toString() }
         val cachedSet = cached.toSet()
-        val notCached = scanner.scan().count { wanted(it.key) && it.key !in cachedSet }
+        val scannedKeys = scanner.scan().mapTo(HashSet()) { it.key }
+        val notCached = scannedKeys.count { wanted(it) && it !in cachedSet }
 
         val fingerprint = searchFingerprint(query, regex, ignoreCase, searchScope, namePattern)
         val resume = cursor?.let { decodeModuleSearchCursor(it, fingerprint) }
@@ -797,6 +807,7 @@ class FormsService(
         var scanned = 0 // ...of which these were actually searched
         var staleSkipped = 0
         var vanished = 0
+        val attached = sortedSetOf<String>()
         var next: ModuleSearchPosition? = null
 
         scan@ while (position < cached.size && hits.size < cap && visited < MAX_MODULES_PER_SEARCH) {
@@ -818,6 +829,7 @@ class FormsService(
                 if (outcome == null) { vanished++; continue } // evicted between list() and this read
                 if (outcome.stale) { staleSkipped++; continue }
                 scanned++
+                outcome.attachedLibraries.mapTo(attached) { it.trim().uppercase() }
                 val skipUsed = if (position + n == firstPosition) resumeSkip else 0
                 val taken = minOf(cap - hits.size, outcome.hits.size)
                 hits += outcome.hits.take(taken)
@@ -848,6 +860,11 @@ class FormsService(
                 stale = staleSkipped,
                 truncated = next != null,
                 namePattern = namePattern,
+                // Libraries the searched modules attach that are in the forms directory but not
+                // fetched: when a called procedure is not found, these are where it most likely is.
+                unfetchedLibraries = attached
+                    .map { ModuleKey.of(it, ModuleType.LIBRARY) }
+                    .filter { it in scannedKeys && it !in cachedSet },
             ),
             hits = hits,
         )
@@ -1429,6 +1446,8 @@ class FormsService(
         val more: Boolean = false,
         /** The module's source changed since it was indexed, so nothing here was searched. */
         val stale: Boolean = false,
+        /** The PL/SQL libraries the module attaches, by name — where its called code usually lives. */
+        val attachedLibraries: List<String> = emptyList(),
     )
 
     /**
@@ -1492,7 +1511,7 @@ class FormsService(
                     break
                 }
             }
-            ModuleScan(hits, more = more)
+            ModuleScan(hits, more = more, attachedLibraries = cached.attachedLibraries.map { it.name })
         }
     }
 
@@ -1554,7 +1573,13 @@ class FormsService(
      * gaps first (a module that was not searched is the one thing a hit list cannot show), then the
      * continuation. `null` when the scan was complete and exhaustive.
      */
-    private fun moduleSearchHint(notCached: Int, stale: Int, truncated: Boolean, namePattern: String?): String? {
+    private fun moduleSearchHint(
+        notCached: Int,
+        stale: Int,
+        truncated: Boolean,
+        namePattern: String?,
+        unfetchedLibraries: List<ModuleKey> = emptyList(),
+    ): String? {
         val patternArg = namePattern?.let { ", pattern=\"$it\"" } ?: ""
         val sentences = buildList {
             if (notCached > 0) {
@@ -1562,6 +1587,16 @@ class FormsService(
                     "$notCached matching module(s) are not cached and were not searched — " +
                         "list_modules(status=\"not_cached\"$patternArg) names them, and " +
                         "fetch_module adds one to the search.",
+                )
+            }
+            if (unfetchedLibraries.isNotEmpty()) {
+                val shown = unfetchedLibraries.take(MAX_NAMED_LIBRARIES).joinToString(", ")
+                val more = unfetchedLibraries.size - MAX_NAMED_LIBRARIES
+                add(
+                    "The searched modules attach libraries that are not fetched: $shown" +
+                        (if (more > 0) " and $more more" else "") +
+                        ". Code they call that is not found here is most likely there — " +
+                        "fetch_module each, then search again.",
                 )
             }
             if (stale > 0) {
@@ -2281,6 +2316,9 @@ class FormsService(
          * the speed of a page and never its contents.
          */
         const val SEARCH_MODULE_CHUNK = 8
+
+        /** How many un-fetched attached libraries a `search_modules` hint names before counting. */
+        const val MAX_NAMED_LIBRARIES = 5
 
         /** Marks a `search_modules` cursor as ours, so a token from elsewhere fails cleanly. */
         const val SEARCH_CURSOR_PREFIX = "module-search:v1:"

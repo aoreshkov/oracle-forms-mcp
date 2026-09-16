@@ -1,5 +1,6 @@
 package app.oreshkov.oracleformsmcp.server
 
+import app.oreshkov.oracleformsmcp.convert.CustomCommandModuleConverter
 import app.oreshkov.oracleformsmcp.dto.ModuleList
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
@@ -17,6 +18,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -53,6 +55,39 @@ class ListModulesTest {
         val file = temp.resolve("${name.lowercase()}${type.convertedSuffix}")
         file.writeText("<Module/>")
         return ScannedModule(key = ModuleKey.of(name, type), preConvertedPath = file.toString())
+    }
+
+    /**
+     * A `NOT_CACHED` row invites a `fetch_module`, and for libraries under a Forms2XML-based site
+     * command that invitation always fails — no Oracle tool converts a `.pll` to XML. The converter
+     * is the only thing that knows, so the listing asks it, once per type on the page.
+     */
+    @Test
+    fun aTypeTheConverterCannotProduceIsSaidOnTheListingNotDiscoveredByFetching() = runTest {
+        val modules = listOf(realModule("ORD"), realModule("LIB", ModuleType.LIBRARY))
+        val command = CustomCommandModuleConverter("site-forms-tool --f2xml", timeout = 1.seconds)
+
+        val withCommand = fakeService(
+            scanner = FakeScanner(modules),
+            cacheRoot = temp.resolve("cache-command"),
+            converter = command,
+        ).listModules()
+
+        val hint = assertNotNull(withCommand.hint, "the trap must be stated before it is walked into")
+        assertTrue(hint.contains("--compile-command"), hint)
+        assertTrue(hint.contains("frmcmp"), hint)
+
+        // Only about types on the page, and only where the converter has something to say.
+        assertNull(
+            fakeService(
+                scanner = FakeScanner(modules),
+                cacheRoot = temp.resolve("cache-form-page"),
+                converter = command,
+            ).listModules(type = ModuleType.FORM).hint,
+        )
+        assertNull(
+            fakeService(scanner = FakeScanner(modules), cacheRoot = temp.resolve("cache-copy")).listModules().hint,
+        )
     }
 
     @Test

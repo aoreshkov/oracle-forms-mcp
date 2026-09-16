@@ -54,6 +54,22 @@ public class CustomCommandModuleConverter internal constructor(
 
     override fun convertsBinary(type: ModuleType): Boolean = true
 
+    /**
+     * A `.pll` reaching a command configured with [ConverterOption.CONVERT] is the known trap: no
+     * Oracle tool converts a library to XML (`frmcmp` dumps it to `.pld` instead), so a command
+     * wrapping `frmf2xml` rejects every one of them. A command configured *for* libraries
+     * ([ConverterOption.COMPILE]) is the answer to that, and says nothing.
+     */
+    override fun conversionCaveat(type: ModuleType): String? =
+        if (type == ModuleType.LIBRARY && option == ConverterOption.CONVERT) {
+            "PL/SQL libraries are converted with ${option.flag}, which a Forms2XML-based command " +
+                "cannot do — it accepts forms, menus and object libraries only. Set " +
+                "${ConverterOption.COMPILE.flag} (${ConverterOption.COMPILE.envVar}) to an frmcmp " +
+                "command line to fetch them."
+        } else {
+            null
+        }
+
     override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String {
         val source = Path.of(sourcePath)
         val target = Path.of(targetDir).createDirectories()
