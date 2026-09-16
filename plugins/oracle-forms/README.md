@@ -33,13 +33,14 @@ Set these in `/plugin` → **Oracle Forms** → configure; they are stored in yo
 |---|---|---|
 | `forms_dir` | — (required) | The directory of Forms modules to serve. Scanned non-recursively. |
 | `convert_command` | — (optional) | A site-supplied converter to run instead of Oracle's `frmf2xml` — a whole command line with its arguments (`/opt/forms/convert.sh --xml {}`), quoted where a part contains spaces, or a JSON array. It runs with the working directory set to the module's cache directory; the module's path replaces `{}`, or is appended when `{}` is absent. Never goes through a shell. Takes precedence over `ORACLE_HOME`. |
+| `compile_command` | — (optional) | A separate converter for `.pll` libraries only, with the same syntax as `convert_command`; the output `.pld` path replaces `{out}`. Needed when `convert_command` is built on `frmf2xml`, which rejects libraries: `frmcmp_batch Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}`. Needs server 0.11.0+. |
 | `converted_dir` | — (optional) | Where to keep the converted XML / `.pld` text forms: one flat directory for all modules, each file named after its module (`orders_fmb.xml`, `utils.pld`). Must not be the forms directory. Defaults to inside the cache. |
 | `server_version` | `latest` | Which released server build to run. Set a version such as `0.4.0` to pin. |
 
-The two optional ones are handed to the server as `OFMCP_CONVERT_COMMAND` and
-`OFMCP_CONVERTED_DIR` (see the [escape hatches](#escape-hatches) table) rather than as command-line
-arguments, so leaving them unset can never shift the argument list. Details on both in the
-[main README](https://github.com/aoreshkov/oracle-forms-mcp#using-your-own-converter).
+The three optional ones are handed to the server as `OFMCP_CONVERT_COMMAND`,
+`OFMCP_COMPILE_COMMAND` and `OFMCP_CONVERTED_DIR` (see the [escape hatches](#escape-hatches) table)
+rather than as command-line arguments, so leaving them unset can never shift the argument list.
+Details in the [main README](https://github.com/aoreshkov/oracle-forms-mcp#using-your-own-converter).
 
 ## How the server gets here
 
@@ -69,6 +70,7 @@ verifiable with `gh attestation verify <zip> --repo aoreshkov/oracle-forms-mcp`.
 | `OFMCP_SERVER_HOME` | Path to an existing server distribution (a `gradlew :server:installDist` tree or an unpacked release zip). Nothing is downloaded. |
 | `OFMCP_SERVER_VERSION` | Same as the `server_version` option; the plugin sets it from your configuration. |
 | `OFMCP_CONVERT_COMMAND` | Same as the `convert_command` option (the server's `--convert-command`). |
+| `OFMCP_COMPILE_COMMAND` | Same as the `compile_command` option (the server's `--compile-command`). |
 | `OFMCP_CONVERTED_DIR` | Same as the `converted_dir` option (the server's `--converted-dir`). |
 
 To wipe the downloaded distributions, delete the plugin's data directory

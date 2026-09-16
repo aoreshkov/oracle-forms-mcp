@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "oracle-forms",
   "displayName": "Oracle Forms",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Read Oracle Forms modules (.fmb/.mmb/.pll/.olb) from a directory — blocks, items, triggers, program units, PL/SQL, and durable annotations. Needs a JDK 21+ on PATH.",
   "author": {
     "name": "Atanas Oreshkov",
@@ -23,6 +23,13 @@
       "type": "string",
       "title": "Custom converter command",
       "description": "Optional. Command run instead of Oracle's frmf2xml, with its arguments — quote any part containing spaces (\"C:\\tools\\my conv.bat\" -xml), or give a JSON array ([\"wine\",\"f2x.exe\",\"-xml\"]). It is spawned directly, never through a shell. The module's path replaces {}, or is appended when {} is absent; the working directory is the converted XML directory below, or the module's cache directory when that is empty, and the command must write the text form there. Leave empty to use an ORACLE_HOME installation, or pre-converted files next to the modules.",
+      "default": "",
+      "required": false
+    },
+    "compile_command": {
+      "type": "string",
+      "title": "PL/SQL library converter command",
+      "description": "Optional. Command run for .pll libraries only, instead of whatever would convert them otherwise — same syntax as the converter command above. The library's path replaces {} and the output .pld path replaces {out}. frmcmp writes next to the module unless told otherwise, so give it Output_File={out}: frmcmp_batch Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}. Leave empty to convert libraries like every other module. Needs server 0.11.0 or later.",
       "default": "",
       "required": false
     },
