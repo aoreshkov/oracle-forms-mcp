@@ -11,6 +11,7 @@
         "OFMCP_PLUGIN_DATA": "${CLAUDE_PLUGIN_DATA}",
         "OFMCP_SERVER_VERSION": "${user_config.server_version}",
         "OFMCP_CONVERT_COMMAND": "${user_config.convert_command}",
+        "OFMCP_COMPILE_COMMAND": "${user_config.compile_command}",
         "OFMCP_CONVERTED_DIR": "${user_config.converted_dir}"
       }
     }

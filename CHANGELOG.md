@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Claude Code plugin can set the `.pll` converter command.** 0.11.0 added `--compile-command`
+  to the CLI, the environment, the `.mcpb` bundle and the registry listing, but not to the plugin,
+  so a plugin install whose `convert_command` is built on `frmf2xml` still failed on every library.
+  The plugin now has a `compile_command` option, passed as `OFMCP_COMPILE_COMMAND`; plugin version
+  1.1.0.
+
 ## [0.11.0] - 2026-09-16
 
 ### Added
