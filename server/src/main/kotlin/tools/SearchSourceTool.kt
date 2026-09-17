@@ -11,9 +11,11 @@ fun Server.registerSearchSourceTool(service: FormsService) {
             "extracted trigger/program-unit/menu-command PL/SQL (and .pld library source); 'xml' " +
             "searches the raw converted XML (properties, layout); 'all' searches both. Returns " +
             "file:line hits with a snippet. Matching ignores case by default, as in " +
-            "search_modules (which searches every cached module at once). When " +
-            "'truncated' is true, call again with 'offset' set to the returned 'nextOffset' to " +
-            "page through the rest.",
+            "search_modules (which searches every cached module at once). Every page also reports " +
+            "'total' (all hits in the module) and 'files' (hits per file across the whole result), " +
+            "so one call says whether and roughly where a name appears. When 'truncated' is true " +
+            "the 'hint' names the call for the next page ('offset' = 'nextOffset'); a claim that " +
+            "something is absent needs every page.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "query" to stringProp("Substring (default) or regex to search for"),

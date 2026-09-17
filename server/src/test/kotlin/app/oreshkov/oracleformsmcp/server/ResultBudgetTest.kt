@@ -222,6 +222,73 @@ class ResultBudgetTest {
         assertTrue(hint.contains("verbosity=\"concise\""), hint)
     }
 
+    /**
+     * Items small enough to all fit, whose class writes a long initial value: the resolved map is
+     * the part that overflows. An item missing from a cut map must not read like an item whose
+     * class did not resolve — that absence is how a property gets reported as the Forms default.
+     */
+    @Test
+    fun aCutEffectiveDmlIsReportedAndNotMistakenForAnUnresolvedClass() = runTest {
+        val items = (1..100).joinToString("\n") { n ->
+            "      <Item Name=\"FIELD_$n\" ItemType=\"Text Item\" ParentModule=\"WIDE\" " +
+                "ParentModuleType=\"12\" ParentName=\"PC_LONG\" ParentType=\"29\"/>"
+        }
+        formsDir.resolve("wide_fmb.xml").writeText(
+            """
+            |<?xml version="1.0" encoding="UTF-8"?>
+            |<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+            |  <FormModule Name="WIDE">
+            |    <Block Name="WIDE_BLOCK" QueryDataSourceName="WIDE">
+            |$items
+            |    </Block>
+            |    <PropertyClass Name="PC_LONG" DatabaseItem="true" InitializeValue="${"v".repeat(600)}"/>
+            |  </FormModule>
+            |</Module>
+            |
+            """.trimMargin(),
+        )
+        service.fetchModule(wideKey)
+
+        val detail = service.getBlock(wideKey, "WIDE_BLOCK", detailed = true)
+
+        assertEquals(100, detail.block.items.size, "the items themselves must fit for this test")
+        assertTrue(detail.propertyClasses.single().resolved)
+        val served = detail.effectiveDml.size
+        assertTrue(served in 1..<100, "effectiveDml was not cut: $served")
+        assertTrue(detail.truncated, "a cut effectiveDml is a cut result")
+        assertTrue(textLength(toolResult(detail, detail.source)) <= MAX_RESULT_CHARS)
+        val hint = assertNotNull(detail.hint)
+        assertTrue(hint.contains("'effectiveDml' covers $served of the 100 items"), hint)
+        assertTrue(hint.contains("from 'FIELD_${served + 1}' on"), hint)
+        assertTrue(hint.contains("not thereby unresolved"), hint)
+        assertFalse(hint.contains("of 100 items: the rest would not fit"), "items were not cut: $hint")
+    }
+
+    /**
+     * Two hundred hits of attribute-dense XML are larger than one response. The page is cut to fit
+     * and continues exactly where it stopped — while the counts still describe every hit.
+     */
+    @Test
+    fun aSearchPageTooLargeForOneResponseIsCutAndContinues() = runTest {
+        writeWideForm()
+        service.fetchModule(wideKey)
+
+        val page = service.searchSource(wideKey, "value-", regex = false, scope = "xml", maxResults = 200)
+
+        assertTrue(textLength(toolResult(page)) <= MAX_RESULT_CHARS, "spilled on the client")
+        assertTrue(page.hits.size < 200, "the fixture must overflow the character budget")
+        assertEquals(300, page.total)
+        assertEquals(listOf(300), page.files.map { it.hits })
+        assertTrue(page.truncated)
+        assertEquals(page.hits.size, page.nextOffset)
+        assertTrue(assertNotNull(page.hint).contains("offset=${page.hits.size})"), page.hint)
+
+        val next = service.searchSource(
+            wideKey, "value-", regex = false, scope = "xml", maxResults = 200, offset = page.nextOffset!!,
+        )
+        assertEquals(page.hits.last().line + 1, next.hits.first().line, "no hole, no overlap")
+    }
+
     /** A screen that does fit is not cut, and nothing says it was. */
     @Test
     fun anOrdinaryBlockIsServedWhole() = runTest {

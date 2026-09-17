@@ -18,6 +18,7 @@ fun Server.registerGetBlockTool(service: FormsService) {
             "insert or update writes — on a classed item a property the item does not write comes " +
             "from its class, which is often defined in another module; an item appears there only " +
             "when its class resolved, and the hint names the fetch_module call that resolves the rest. " +
+            "'truncated' means items or 'effectiveDml' were cut to fit one response; the hint says which. " +
             "columns=true adds the base table's columns as Forms recorded them, the columns no item " +
             "supplies, and which of those are mandatory (an insert fails unless a trigger assigns " +
             "them). A subclassed block carries an 'inherited' pointer to the module that defines " +
