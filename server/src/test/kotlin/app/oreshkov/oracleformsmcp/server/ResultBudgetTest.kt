@@ -336,6 +336,49 @@ class ResultBudgetTest {
         assertEquals(page.hits.last().line + 1, next.hits.first().line, "no hole, no overlap")
     }
 
+    /**
+     * Relations are spent through the same budget, first and within a share: a generated master of
+     * dozens of long-joined details is cut rather than crowding out its items, and the hint names
+     * the call that reads the first relation left out.
+     */
+    @Test
+    fun tooManyRelationsAreCutAndNameTheCallThatReadsTheRest() = runTest {
+        val join = "MASTER.KEY_COLUMN = DETAIL.KEY_COLUMN AND DETAIL.STATUS = 'OPEN' ".repeat(8)
+        val relations = (1..80).joinToString("\n") { n ->
+            "      <Relation Name=\"MASTER_DETAIL_$n\" DetailBlock=\"DETAIL_$n\" JoinCondition=\"$join\" " +
+                "PreventMasterlessOperations=\"true\" RelationType=\"Join\"/>"
+        }
+        formsDir.resolve("wide_fmb.xml").writeText(
+            """
+            |<?xml version="1.0" encoding="UTF-8"?>
+            |<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+            |  <FormModule Name="WIDE">
+            |    <Block Name="MASTER" QueryDataSourceName="MASTER">
+            |      <Item Name="KEY_COLUMN" ItemType="Text Item"/>
+            |$relations
+            |    </Block>
+            |  </FormModule>
+            |</Module>
+            |
+            """.trimMargin(),
+        )
+        service.fetchModule(wideKey)
+
+        val detail = service.getBlock(wideKey, "MASTER")
+
+        val served = detail.block.relations.size
+        assertTrue(served in 1..<80, "relations were not cut: $served")
+        assertEquals(1, detail.block.items.size, "the items keep their share")
+        assertTrue(detail.truncated)
+        assertTrue(textLength(toolResult(detail, detail.source)) <= MAX_RESULT_CHARS)
+        val hint = assertNotNull(detail.hint)
+        assertTrue(hint.contains("Returned $served of the 80 relations 'MASTER' is the master of"), hint)
+        assertTrue(
+            hint.contains("objectType=\"Relation\", name=\"MASTER_DETAIL_${served + 1}\", owner=\"MASTER\""),
+            hint,
+        )
+    }
+
     /** A screen that does fit is not cut, and nothing says it was. */
     @Test
     fun anOrdinaryBlockIsServedWhole() = runTest {

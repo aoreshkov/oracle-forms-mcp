@@ -45,7 +45,9 @@ Every reflex has a call:
 3. **`get_module_overview`** with `verbosity: "detailed"` — the inventory, plus the window and
    canvas objects: **modality**, sizes, toolbar canvases, and which window hosts which canvas.
 4. **`get_block`** — items with type, **property class**, prompt, trigger names, and subclassing
-   pointers. This is where a screen's fields become legible.
+   pointers. This is where a screen's fields become legible. *What can this screen see* starts
+   here too: `block.relations`/`detailOf` (with `preventMasterlessOperations`, a detail is reached
+   only through its master), then the master's `PRE-QUERY` and `dml.whereClause`.
 5. **`list_triggers`** → **`get_trigger`**, **`list_program_units`** → **`get_program_unit`** — the
    PL/SQL. `list_triggers` filters by block, item or level, which is how same-named triggers at
    different levels are told apart.

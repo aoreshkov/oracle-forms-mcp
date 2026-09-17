@@ -12,6 +12,7 @@ import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.model.ProgramUnitType
+import app.oreshkov.oracleformsmcp.model.RelationInfo
 import app.oreshkov.oracleformsmcp.model.TextEncoding
 import app.oreshkov.oracleformsmcp.model.TriggerLevel
 import app.oreshkov.oracleformsmcp.model.WindowInfo
@@ -269,10 +270,17 @@ public data class BlockList(
  * [propertyClasses] says, once per class the served items use, whether it resolved and from which
  * modules. [columns] is present only when asked for.
  *
+ * Master-detail structure is served at every verbosity, because it decides what the block can be
+ * queried through: `block.relations` are the relations this block is the master of, as Forms wrote
+ * them on it, and [detailOf] the relations in other blocks of the module that name this block as
+ * their detail — with `preventMasterlessOperations`, the block cannot be queried except through
+ * that master.
+ *
  * [itemsMatched] is set when the call named `items`: how many of the block's items it matched,
  * and every other list here then describes only those. [itemTotal] still counts the whole block.
  *
- * [truncated] says `block.items`, [effectiveDml] or [unresolvedItems] was cut to fit one response —
+ * [truncated] says `block.items`, a relation list, [effectiveDml] or [unresolvedItems] was cut to
+ * fit one response —
  * a data-entry screen of a hundred-odd detailed items with its base table behind it is larger than
  * a client accepts. The [hint] then says which, and names what to ask instead: an item missing from
  * a cut [effectiveDml] is not thereby unresolved.
@@ -291,7 +299,20 @@ public data class BlockDetail(
     val unresolvedItems: List<UnresolvedItem> = emptyList(),
     val propertyClasses: List<PropertyClassResolution> = emptyList(),
     val columns: BlockColumns? = null,
+    val detailOf: List<MasterRelation> = emptyList(),
     val annotations: ElementAnnotations = ElementAnnotations(),
+)
+
+/**
+ * A relation that names a `get_block` block as its detail, and the [masterBlock] it is written on.
+ * Forms stores a relation only with its master, so this is that block's own [RelationInfo], found
+ * by looking rather than stored a second time.
+ */
+@Serializable
+@SerialName("MasterRelation")
+public data class MasterRelation(
+    val masterBlock: String,
+    val relation: RelationInfo,
 )
 
 /**

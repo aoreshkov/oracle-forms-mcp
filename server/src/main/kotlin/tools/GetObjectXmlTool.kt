@@ -9,9 +9,10 @@ fun Server.registerGetObjectXmlTool(service: FormsService) {
         name = "get_object_xml",
         description = "The raw XML fragment of one named object, sliced from the converted file — " +
             "the escape hatch for every property the structured tools don't surface. objectType " +
-            "is the Forms2XML element name (Block, Item, Trigger, Canvas, Window, LOV, " +
+            "is the Forms2XML element name (Block, Item, Trigger, Relation, Canvas, Window, LOV, " +
             "RecordGroup, Alert, VisualAttribute, …). Pass 'owner' (e.g. 'ORDERS' or " +
-            "'ORDERS.ORDER_ID') when the name exists at several scopes. Large fragments are " +
+            "'ORDERS.ORDER_ID') when the name exists at several scopes; a Relation's owner is its " +
+            "master block. Large fragments are " +
             "truncated ('truncated', with a 'hint' naming the read_source call that continues). " +
             "Forms writes the subclassing pointer on the " +
             "enclosing owner, so a fragment of a subclassed object shows only " +
@@ -22,7 +23,7 @@ fun Server.registerGetObjectXmlTool(service: FormsService) {
             "prefer them for code and read this for properties.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
-                "objectType" to stringProp("XML element name, e.g. 'Block', 'Trigger', 'LOV'"),
+                "objectType" to stringProp("XML element name, e.g. 'Block', 'Trigger', 'Relation', 'LOV'"),
                 "name" to stringProp("The object's Name attribute value"),
                 "owner" to stringProp("Owning object path, to disambiguate (optional)"),
             ),

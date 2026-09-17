@@ -22,6 +22,7 @@ import app.oreshkov.oracleformsmcp.model.ProgramUnitInfo
 import app.oreshkov.oracleformsmcp.model.ProgramUnitType
 import app.oreshkov.oracleformsmcp.model.PropertyClassInfo
 import app.oreshkov.oracleformsmcp.model.RecordGroupInfo
+import app.oreshkov.oracleformsmcp.model.RelationInfo
 import app.oreshkov.oracleformsmcp.model.SourceRef
 import app.oreshkov.oracleformsmcp.model.TextEncoding
 import app.oreshkov.oracleformsmcp.model.TriggerInfo
@@ -71,6 +72,7 @@ internal object FormsXmlParser {
     ) {
         val items = mutableListOf<ItemInfo>()
         val triggerNames = mutableListOf<String>()
+        val relations = mutableListOf<RelationInfo>()
         var dataSourceColumnCount = 0
     }
 
@@ -87,6 +89,8 @@ internal object FormsXmlParser {
         val lovName: String?,
         val inherited: InheritanceRef?,
         val dml: ItemDml?,
+        val width: Int?,
+        val height: Int?,
     ) {
         val triggerNames = mutableListOf<String>()
     }
@@ -165,6 +169,11 @@ internal object FormsXmlParser {
                                 block?.let { it.dataSourceColumnCount++ }
                             }
 
+                            // Written on the master block only; see BlockInfo.relations.
+                            "Relation" -> if (parent?.element == "Block") {
+                                block?.relations?.add(reader.relation(name ?: "", inherited))
+                            }
+
                             "Item" -> if (block != null && parent?.element == "Block") {
                                 item = ItemBuilder(
                                     name = name ?: "",
@@ -180,6 +189,8 @@ internal object FormsXmlParser {
                                     lovName = reader.attr("LOVName") ?: reader.attr("LovName"),
                                     inherited = inherited,
                                     dml = reader.itemDml(),
+                                    width = reader.intAttr("Width"),
+                                    height = reader.intAttr("Height"),
                                 )
                             }
 
@@ -352,6 +363,7 @@ internal object FormsXmlParser {
                                     sourceRef = SourceRef(xmlPath, frame.startLine, endLine),
                                     dml = it.dml,
                                     dataSourceColumnCount = it.dataSourceColumnCount,
+                                    relations = it.relations.toList(),
                                 )
                                 block = null
                             }
@@ -373,6 +385,8 @@ internal object FormsXmlParser {
                                             triggerNames = built.triggerNames.toList(),
                                             inherited = built.inherited,
                                             dml = built.dml,
+                                            width = built.width,
+                                            height = built.height,
                                         ),
                                     )
                                     item = null
@@ -594,6 +608,26 @@ internal object FormsXmlParser {
             orderByClause = orderBy?.text,
             sqlEncoding = if (recovered) TextEncoding.RECOVERED else TextEncoding.ORIGINAL,
         ).takeUnless { it == EMPTY_BLOCK_DML }
+    }
+
+    /**
+     * The master-detail relation being read. Its join condition is SQL, recovered from double
+     * escaping like the block's clauses; every property Forms did not write stays `null`.
+     */
+    private fun XMLStreamReader.relation(name: String, inherited: InheritanceRef?): RelationInfo {
+        val join = textAttr("JoinCondition")?.let(::decodeDoubleEscaped)
+        return RelationInfo(
+            name = name,
+            detailBlock = textAttr("DetailBlock"),
+            joinCondition = join?.text,
+            joinEncoding = join?.encoding ?: TextEncoding.ORIGINAL,
+            deferred = boolAttr("Deferred"),
+            autoQuery = boolAttr("AutoQuery"),
+            preventMasterlessOperations = boolAttr("PreventMasterlessOperations"),
+            deleteRecord = textAttr("DeleteRecord"),
+            relationType = textAttr("RelationType"),
+            inherited = inherited,
+        )
     }
 
     private val EMPTY_ITEM_DML = ItemDml()

@@ -23,9 +23,9 @@ import kotlinx.serialization.Serializable
  *
  * History: `1` stamped the index; `2` added item and block DML properties, the properties of
  * declared property classes, data-source column counts, and double-escaping recovery of a block's
- * query source and clauses.
+ * query source and clauses; `3` added a block's master-detail relations and item width and height.
  */
-public const val CURRENT_INDEX_VERSION: Int = 2
+public const val CURRENT_INDEX_VERSION: Int = 3
 
 /**
  * The parsed, cacheable index of one Forms module that MCP tools read.

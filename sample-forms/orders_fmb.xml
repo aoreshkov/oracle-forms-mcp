@@ -4,11 +4,16 @@
     <Alert Name="AL_CONFIRM" AlertMessage="Save changes?"/>
     <AttachedLibrary Name="UTILS" LibraryLocation="utils"/>
     <Block Name="ORDERS" QueryDataSourceName="ORDERS" ScrollbarLength="0">
-      <Item Name="ORDER_ID" ItemType="Text Item" DataType="Number" ColumnName="ORDER_ID" CanvasName="CV_MAIN" Prompt="Order #">
+      <Item Name="ORDER_ID" ItemType="Text Item" DataType="Number" ColumnName="ORDER_ID" CanvasName="CV_MAIN" Prompt="Order #" Width="60" Height="17">
         <Trigger Name="WHEN-VALIDATE-ITEM" TriggerText="IF :ORDERS.ORDER_ID IS NULL THEN&#10;  RAISE FORM_TRIGGER_FAILURE;&#10;END IF;"/>
       </Item>
       <Item Name="CUSTOMER_NAME" ItemType="Text Item" DataType="Char" ColumnName="CUSTOMER_NAME" CanvasName="CV_MAIN" Prompt="Customer"/>
       <Trigger Name="WHEN-VALIDATE-RECORD" TriggerText="BEGIN&#10;  calc_total(:ORDERS.ORDER_ID);&#10;END;"/>
+      <Relation Name="ORDERS_ORDER_LINES" DetailBlock="ORDER_LINES" JoinCondition="ORDER_LINES.ORDER_ID = ORDERS.ORDER_ID&amp;#10;AND ORDER_LINES.CANCELLED = 'N'" DeleteRecord="Isolated" PreventMasterlessOperations="true" AutoQuery="false" RelationType="Join"/>
+    </Block>
+    <Block Name="ORDER_LINES" QueryDataSourceName="ORDER_LINES">
+      <Item Name="ORDER_ID" ItemType="Text Item" DataType="Number" ColumnName="ORDER_ID" CanvasName="CV_MAIN" Visible="false"/>
+      <Item Name="PRODUCT" ItemType="Text Item" DataType="Char" ColumnName="PRODUCT" CanvasName="CV_MAIN" Prompt="Product" Width="120" Height="17"/>
     </Block>
     <Block Name="CONTROL">
       <Item Name="BTN_SAVE" ItemType="Push Button" CanvasName="CV_MAIN" Prompt="Save"/>

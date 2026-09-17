@@ -7,11 +7,17 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 fun Server.registerGetBlockTool(service: FormsService) {
     addTool(
         name = "get_block",
-        description = "One block: base table, its DML properties, its trigger names, and every item. " +
+        description = "One block: base table, its DML properties, its trigger names, its master-detail " +
+            "relations, and every item. 'block.relations' are the relations this block is the master " +
+            "of and 'detailOf' those naming it as detail — join condition, deferred/autoQuery, " +
+            "deleteRecord, and preventMasterlessOperations (the block cannot be queried except " +
+            "through that master) — which is what decides what the screen can see. " +
             "Each item row carries its name, type, property class (which is usually where an item's " +
             "role is defined — an LOV button is only an LOV button because of the class it " +
             "inherits), prompt, item-trigger names, and its 'inherited' pointer when it is " +
-            "subclassed. verbosity=detailed adds data type, column, canvas, the visible/required/LOV " +
+            "subclassed. verbosity=detailed adds data type, column, canvas, width/height (layout " +
+            "units, usually pixels — not the accepted length, which is maximumLength), the " +
+            "visible/required/LOV " +
             "properties, each item's own 'dml' (database item, insert/update allowed, enabled, " +
             "initial value, …) exactly as the item writes them, and 'effectiveDml': the same " +
             "properties with the item's property class applied. Use 'effectiveDml' to answer what an " +
@@ -20,7 +26,7 @@ fun Server.registerGetBlockTool(service: FormsService) {
             "when its class resolved, and every item missing from it is listed in 'unresolvedItems' " +
             "with the reason and the module to fetch_module. items=[...] narrows every list to the " +
             "named items (e.g. the few whose length or insert rule a question is about). " +
-            "'truncated' means items, 'unresolvedItems' or 'effectiveDml' were cut to fit one " +
+            "'truncated' means items, relations, 'unresolvedItems' or 'effectiveDml' were cut to fit one " +
             "response; the hint says which. " +
             "columns=true adds the base table's columns as Forms recorded them, the columns no item " +
             "supplies, and which of those are mandatory (an insert fails unless a trigger assigns " +

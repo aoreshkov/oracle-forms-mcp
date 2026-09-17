@@ -71,14 +71,14 @@ class FormsServiceIntegrationTest {
     @Test
     fun fullReadPathOverAFetchedForm() = runTest {
         val summary = service.fetchModule(ordersKey)
-        assertEquals(2, summary.blockCount)
-        assertEquals(3, summary.itemCount)
+        assertEquals(3, summary.blockCount)
+        assertEquals(5, summary.itemCount)
         assertEquals(3, summary.triggerCount)
         assertEquals(3, summary.programUnitCount)
         assertEquals(listOf("UTILS"), summary.attachedLibraries)
 
         val overview = service.overview(ordersKey)
-        assertEquals(listOf("ORDERS", "CONTROL"), overview.blocks)
+        assertEquals(listOf("ORDERS", "ORDER_LINES", "CONTROL"), overview.blocks)
         assertEquals(listOf("WINDOW_MAIN"), overview.windows)
 
         val block = service.getBlock(ordersKey, "orders").block

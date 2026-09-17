@@ -19,6 +19,10 @@ import kotlinx.serialization.Serializable
  * columns as Forms recorded them. The columns themselves are not indexed: a form that repeats one
  * wide table across several blocks carries thousands of them, and they are read from the block's
  * own XML when asked for.
+ *
+ * [relations] are the master-detail relations this block is the **master** of — Forms writes a
+ * relation on its master block, and only there. Which relations name a block as their detail is
+ * worked out when served rather than stored twice.
  */
 @Serializable
 @SerialName("BlockInfo")
@@ -32,6 +36,39 @@ public data class BlockInfo(
     val sourceRef: SourceRef? = null,
     val dml: BlockDml? = null,
     val dataSourceColumnCount: Int = 0,
+    val relations: List<RelationInfo> = emptyList(),
+)
+
+/**
+ * One master-detail relation, as written on its master block (Forms2XML's `Relation`).
+ *
+ * The structure a screen queries through: a detail block is populated from its master's current
+ * record by [joinCondition], and with [preventMasterlessOperations] it cannot be queried or written
+ * without one. That limits what the form lets a user reach, and the form enforces it — not the
+ * database — so a port has to re-implement it wherever the data is served.
+ *
+ * Every property is `null` when the file did not write it, meaning "not overridden" (the Forms
+ * default), never `false`. [joinCondition] is SQL and goes through the same double-escaping recovery
+ * as PL/SQL bodies; [joinEncoding] is [TextEncoding.RECOVERED] when it was recovered. [deleteRecord]
+ * and [relationType] are kept as Forms wrote them (`Isolated`, `Non Isolated`, `Cascading`; `Join`,
+ * `REF`).
+ *
+ * [inherited] is set when the relation is subclassed with its block: what is written here is then
+ * only this module's overrides, and an absent [joinCondition] is defined with the parent.
+ */
+@Serializable
+@SerialName("RelationInfo")
+public data class RelationInfo(
+    val name: String,
+    val detailBlock: String? = null,
+    val joinCondition: String? = null,
+    val joinEncoding: TextEncoding = TextEncoding.ORIGINAL,
+    val deferred: Boolean? = null,
+    val autoQuery: Boolean? = null,
+    val preventMasterlessOperations: Boolean? = null,
+    val deleteRecord: String? = null,
+    val relationType: String? = null,
+    val inherited: InheritanceRef? = null,
 )
 
 /**
@@ -128,6 +165,10 @@ public data class ItemDml(
  * [dml] carries the insert/update-deciding properties this item writes itself (see [ItemDml]);
  * `null` when it writes none. [required] is kept at the top level where it has always been, and
  * mirrored into [dml] so a resolution over item and class reads one shape.
+ *
+ * [width] and [height] are the item's size in the form's coordinate units, usually pixels. A text
+ * item's [width] says nothing about how long a value it accepts — that is [ItemDml.maximumLength].
+ * `null` when the file did not write them (or a property class supplies them).
  */
 @Serializable
 @SerialName("ItemInfo")
@@ -145,4 +186,6 @@ public data class ItemInfo(
     val triggerNames: List<String> = emptyList(),
     val inherited: InheritanceRef? = null,
     val dml: ItemDml? = null,
+    val width: Int? = null,
+    val height: Int? = null,
 )

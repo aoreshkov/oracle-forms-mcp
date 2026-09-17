@@ -47,7 +47,7 @@ A typical session against the bundled `sample-forms` directory:
 ```text
 You:  What does ORDERS.fmb do?
 AI →  list_modules                 → ORDERS.fmb (NOT_CACHED), MAINMENU.mmb, UTILS.pll …
-AI →  fetch_module ORDERS.fmb      → converted + indexed (2 blocks, 3 triggers, 3 program units)
+AI →  fetch_module ORDERS.fmb      → converted + indexed (3 blocks, 3 triggers, 3 program units)
 AI →  get_module_overview ORDERS   → blocks, triggers, LOVs, record groups, windows, canvases …
 You:  Show me the validation logic on the ORDERS block.
 AI →  list_triggers block=ORDERS   → WHEN-VALIDATE-ITEM (on ORDER_ID), WHEN-VALIDATE-RECORD
@@ -92,7 +92,7 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 | `fetch_module` | Converts + indexes one module (idempotent; progress notifications) |
 | `get_module_overview` | Names of every section + counts — the first call after a fetch (`verbosity=detailed` adds window and canvas objects) |
 | `list_blocks` | Blocks with base table, item count, trigger count |
-| `get_block` | One block: items with type, property class, prompt and trigger names (`verbosity=detailed` adds data type, column, canvas, visible/required/LOV and the DML properties resolved through each item's property class; `columns=true` adds the base table's columns and the ones no item supplies); flags subclassed blocks/items |
+| `get_block` | One block: items with type, property class, prompt and trigger names, and its master-detail relations (`verbosity=detailed` adds data type, column, canvas, size, visible/required/LOV and the DML properties resolved through each item's property class; `columns=true` adds the base table's columns and the ones no item supplies); flags subclassed blocks/items |
 | `list_triggers` | Triggers with level/scope; filter by block, item, or level (`verbosity=detailed` adds a PL/SQL preview) |
 | `get_trigger` | One trigger's decoded PL/SQL body; `resolve` follows a subclassing pointer into a cached parent module |
 | `list_program_units` | Procedures, functions, package specs/bodies with line counts |
@@ -131,6 +131,13 @@ and name the `fetch_module` call. `items: [...]` narrows all of it to the items 
 `get_block(columns: true)` adds the block's data-source columns, the columns no item supplies, and
 which of those are mandatory in the database — the ones an insert fails on unless a trigger assigns
 them.
+
+A block's **master-detail relations** decide what it can be queried through, so `get_block` serves
+them at every verbosity: `block.relations`, the relations it is the master of (join condition,
+`deferred`, `autoQuery`, `deleteRecord`, `preventMasterlessOperations`), and `detailOf`, the
+relations that name it as their detail, with the master each is written on. A detail with
+`preventMasterlessOperations` cannot be queried except through its master — which the form enforces,
+not the database, so a port has to enforce it itself.
 
 ### Reading around a result
 
