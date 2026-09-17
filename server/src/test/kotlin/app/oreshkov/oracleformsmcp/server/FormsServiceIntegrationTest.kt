@@ -20,6 +20,9 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
@@ -182,6 +185,107 @@ class FormsServiceIntegrationTest {
         assertEquals(1, page2.offset)
         // Paging advances: the second page is a different match than the first.
         assertTrue(page1.hits.single() != page2.hits.single())
+    }
+
+    /**
+     * A cut page must say what it did not show — `truncated` alone gets read past, and a caller who
+     * stops at the last hit has silently sampled. The whole-result counts are the same on every
+     * page, and the hint names the exact call that continues.
+     */
+    @Test
+    fun aCutSearchPageCountsTheWholeResultAndNamesTheNextCall() = runTest {
+        service.fetchModule(ordersKey)
+
+        val page1 = service.searchSource(ordersKey, "Name", regex = false, scope = "xml", maxResults = 2)
+        val all = service.searchSource(ordersKey, "Name", regex = false, scope = "xml", maxResults = 200)
+        assertFalse(all.truncated, "the fixture's hits must fit one full page for this test")
+
+        assertEquals(all.hits.size, page1.total, "total counts past the page")
+        assertEquals(page1.files.sumOf { it.hits }, page1.total)
+        assertEquals(page1.files.size, page1.fileTotal)
+        assertTrue(page1.files.all { it.uri != null }, "a counted file can be opened")
+        val hint = assertNotNull(page1.hint)
+        assertTrue(hint.contains("Hits 1-2 of ${all.total}"), hint)
+        assertTrue(hint.contains("query=\"Name\", scope=\"xml\", maxResults=2, offset=2)"), hint)
+        assertTrue(hint.contains("absent needs every page"), hint)
+
+        val page2 = service.searchSource(ordersKey, "Name", regex = false, scope = "xml", maxResults = 2, offset = 2)
+        assertEquals(page1.total, page2.total, "the total does not move with the page")
+        assertEquals(page1.files, page2.files)
+
+        // The page that holds every remaining hit has nothing more to say.
+        val last = service.searchSource(
+            ordersKey, "Name", regex = false, scope = "xml", maxResults = 200, offset = 2,
+        )
+        assertFalse(last.truncated)
+        assertNull(last.nextOffset)
+        assertNull(last.hint)
+        assertNull(all.hint)
+
+        val past = service.searchSource(
+            ordersKey, "Name", regex = false, scope = "xml", maxResults = 2, offset = all.total + 5,
+        )
+        assertTrue(past.hits.isEmpty())
+        assertTrue(assertNotNull(past.hint).contains("past the last of ${all.total}"), past.hint)
+    }
+
+    @Test
+    fun aSearchWithNoHitsCountsNothingAndSaysNothing() = runTest {
+        service.fetchModule(ordersKey)
+
+        val none = service.searchSource(ordersKey, "no-such-token", regex = false, scope = "all", maxResults = 50)
+
+        assertEquals(0, none.total)
+        assertEquals(0, none.fileTotal)
+        assertTrue(none.files.isEmpty())
+        assertNull(none.hint)
+    }
+
+    /**
+     * A form's triggers call into its attached libraries, and a library that is not fetched is
+     * invisible to every read tool — so the fetch that reports the attachment names the call that
+     * closes it, and stops once it is closed.
+     */
+    @Test
+    fun fetchModuleNamesAttachedLibrariesUntilTheyAreFetched() = runTest {
+        val cold = service.fetchModule(ordersKey)
+        val hint = assertNotNull(cold.hint)
+        assertTrue(hint.contains("ORDERS attaches UTILS.pll, not fetched"), hint)
+        assertTrue(hint.contains("fetch_module(module=\"UTILS.pll\")"), hint)
+
+        // A warm hit says it too: the hint is about the cache now, not about this fetch.
+        assertEquals(hint, assertNotNull(service.fetchModule(ordersKey).hint))
+
+        service.fetchModule(utilsKey)
+        assertNull(service.fetchModule(ordersKey).hint)
+    }
+
+    /** A library the converter cannot convert gets the converter's reason alongside the call. */
+    @Test
+    fun fetchModuleCarriesTheConvertersCaveatAboutLibraries() = runTest {
+        val caveat = "PL/SQL libraries are converted with --convert-command, which cannot do it."
+        val converter = object : ModuleConverter by PreConvertedCopyConverter() {
+            override fun conversionCaveat(type: ModuleType): String? =
+                caveat.takeIf { type == ModuleType.LIBRARY }
+        }
+        val caveatService = FormsService(
+            scanner = FormsDirectoryScannerImpl(formsDir),
+            converter = converter,
+            parser = FormsModuleParser(),
+            cache = OnDiskModuleCache(temp.resolve("cache-caveat")),
+            annotationStore = OnDiskAnnotationStore(temp.resolve("annotations-caveat")),
+            formsDir = formsDir,
+        )
+
+        val hint = assertNotNull(caveatService.fetchModule(ordersKey).hint)
+
+        assertTrue(hint.endsWith(" $caveat"), hint)
+    }
+
+    /** A module that attaches nothing has no library hint, fetched or not. */
+    @Test
+    fun fetchModuleWithoutAttachedLibrariesHasNoHint() = runTest {
+        assertNull(service.fetchModule(dupesKey).hint)
     }
 
     @Test

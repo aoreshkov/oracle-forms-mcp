@@ -24,7 +24,9 @@ fun Server.registerFetchModuleTool(
             "indexed by an older build is re-parsed from the converted file it already has, " +
             "without re-converting. Call this once per module " +
             "(and again when list_modules reports STALE) before using the other tools. Returns " +
-            "a summary (block/item/trigger/program-unit counts, attached libraries).",
+            "a summary (block/item/trigger/program-unit counts, attached libraries); its 'hint' " +
+            "names the attached libraries not fetched yet — code the module calls but does not " +
+            "define is usually there.",
         inputSchema = moduleSchema(),
         title = "Fetch and index a module",
         outputSchema = outputSchemaOf<FetchModuleSummary>(),

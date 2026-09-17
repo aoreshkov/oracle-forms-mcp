@@ -34,6 +34,7 @@ import app.oreshkov.oracleformsmcp.dto.ProgramUnitSummary
 import app.oreshkov.oracleformsmcp.dto.PropertyClassResolution
 import app.oreshkov.oracleformsmcp.dto.RelationCreated
 import app.oreshkov.oracleformsmcp.dto.RelationView
+import app.oreshkov.oracleformsmcp.dto.SearchFileCount
 import app.oreshkov.oracleformsmcp.dto.SearchHit
 import app.oreshkov.oracleformsmcp.dto.SearchResults
 import app.oreshkov.oracleformsmcp.dto.SourceLocation
@@ -286,7 +287,8 @@ class FormsService(
         key: ModuleKey,
         onProgress: suspend (FetchProgress) -> Unit,
     ): FetchModuleSummary {
-        val scanned = scanner.scan().find { it.key == key }
+        val all = scanner.scan()
+        val scanned = all.find { it.key == key }
             ?: throw IllegalArgumentException(
                 "Module '$key' was not found in $formsDir. Call list_modules to see what exists.",
             )
@@ -295,10 +297,12 @@ class FormsService(
             if (cached.sourceFile == source.toString() &&
                 Fingerprints.matches(cached.fingerprint, source)
             ) {
-                if (cached.indexVersion == CURRENT_INDEX_VERSION) return cached.summary(fromCache = true)
+                if (cached.indexVersion == CURRENT_INDEX_VERSION) {
+                    return cached.summary(fromCache = true).withLibraryHint(all)
+                }
                 // The file is unchanged and only the parser moved on: re-parse, do not re-convert.
                 // Falls through to a full conversion when the converted file is gone.
-                reindexInPlace(key, cached, source, onProgress)?.let { return it }
+                reindexInPlace(key, cached, source, onProgress)?.let { return it.withLibraryHint(all) }
             }
         }
 
@@ -315,7 +319,7 @@ class FormsService(
         onProgress(FetchProgress(3, FETCH_STEPS, "Caching the index of $key"))
         val index = parsed.stamped(source)
         cache.putIndex(index)
-        return index.summary(fromCache = false)
+        return index.summary(fromCache = false).withLibraryHint(all)
     }
 
     /**
@@ -509,7 +513,7 @@ class FormsService(
             source = locationOf(index.key, block.sourceRef),
             hint = hints.joinToString(" ").ifEmpty { null },
             itemTotal = full.items.size,
-            truncated = itemsCut,
+            truncated = itemsCut || effective?.cut == true,
             effectiveDml = effective?.items.orEmpty(),
             propertyClasses = effective?.classes.orEmpty(),
             columns = blockColumns,
@@ -709,6 +713,11 @@ class FormsService(
      * and Forms writes its own names in upper case, so a case-sensitive default made the two
      * search tools disagree about the same query — and the workaround it taught was to drop the
      * first letter of a word and search for the remainder.
+     *
+     * The scan does not stop when the page is full: it goes on counting, so [SearchResults.total]
+     * and the per-file counts describe the whole result on every page. That costs nothing in the
+     * worst case — a query matching nothing already reads every file — and it is what lets a
+     * caller tell "these are all the hits" from "this is the first page of them" without paging.
      */
     suspend fun searchSource(
         key: ModuleKey,
@@ -724,35 +733,91 @@ class FormsService(
         val cap = maxResults.coerceIn(1, MAX_SEARCH_RESULTS)
         val start = offset.coerceAtLeast(0)
         val matches = lineMatcher(query, regex, ignoreCase = ignoreCase, tool = "search_source")
-        val hits = mutableListOf<SearchHit>()
-        var seen = 0 // total matches scanned across all files, for stable offset paging
-        var truncated = false
+        val pageHits = mutableListOf<SearchHit>()
+        val perFile = mutableListOf<SearchFileCount>()
+        var seen = 0 // total matches across all files, for stable offset paging and the total
 
         val files = withContext(Dispatchers.IO) { searchableFiles(index, searchScope) }
-        outer@ for ((refPath, file) in files) {
-            val lines = withContext(Dispatchers.IO) { file.readLines() }
-            for ((lineIndex, line) in lines.withIndex()) {
-                if (!matches(line)) continue
-                if (seen++ < start) continue // skip earlier pages
-                if (hits.size == cap) {
-                    truncated = true // a further match exists beyond this page
-                    break@outer
+        for ((refPath, file) in files) {
+            val uri = sourceUri(key, refPath)
+            var inFile = 0
+            withContext(Dispatchers.IO) {
+                file.useLines { lines ->
+                    for ((lineIndex, line) in lines.withIndex()) {
+                        if (!matches(line)) continue
+                        inFile++
+                        if (seen++ < start || pageHits.size == cap) continue // another page's hit
+                        pageHits += SearchHit(
+                            path = refPath,
+                            line = lineIndex + 1,
+                            snippet = line.trim().take(SNIPPET_CHARS),
+                            uri = uri,
+                        )
+                    }
                 }
-                hits += SearchHit(
-                    path = refPath,
-                    line = lineIndex + 1,
-                    snippet = line.trim().take(200),
-                    uri = sourceUri(key, refPath),
-                )
             }
+            if (inFile > 0) perFile += SearchFileCount(path = refPath, hits = inFile, uri = uri)
         }
+
+        // The counts are the summary and the hits the page; both must fit one response. The counts
+        // are spent first, under a share, because they are what a page cannot show — a module-wide
+        // identifier in a few hundred sidecars must not starve the hits it summarises.
+        val budget = RowBudget(MAX_RESULT_CHARS - RESULT_OVERHEAD_CHARS)
+        val (cappedFiles, overLimit) = capRows(perFile)
+        val (fileRows, filesCut) = budget.take(
+            cappedFiles,
+            SearchFileCount.serializer(),
+            share = budget.share(SEARCH_FILE_BUDGET_SHARE),
+        )
+        val (hits, _) = budget.take(pageHits, SearchHit.serializer())
+        val end = start + hits.size
+        val truncated = end < seen
         return SearchResults(
             query = query,
             hits = hits,
             truncated = truncated,
             offset = start,
-            nextOffset = if (truncated) start + hits.size else null,
+            nextOffset = if (truncated) end else null,
+            total = seen,
+            hint = searchSourceHint(key, query, regex, ignoreCase, searchScope, cap, start, end, seen, perFile.size),
+            fileTotal = perFile.size,
+            filesTruncated = filesCut || overLimit,
+            files = fileRows,
         )
+    }
+
+    /**
+     * What a `search_source` page does not say on its own: that hits remain past it, with the exact
+     * call that continues, or that the offset asked for is past the last hit. `null` when the page
+     * holds every hit there is.
+     */
+    private fun searchSourceHint(
+        key: ModuleKey,
+        query: String,
+        regex: Boolean,
+        ignoreCase: Boolean,
+        scope: SearchScope,
+        maxResults: Int,
+        start: Int,
+        end: Int,
+        total: Int,
+        fileTotal: Int,
+    ): String? {
+        val next = buildString {
+            append("search_source(module=\"$key\", query=")
+            append(resultJson.encodeToString(String.serializer(), query))
+            if (regex) append(", regex=true")
+            if (!ignoreCase) append(", ignoreCase=false")
+            append(", scope=\"${scope.label}\", maxResults=$maxResults, offset=")
+        }
+        return when {
+            end < total -> "Hits ${start + 1}-$end of $total across $fileTotal file(s); call $next$end) " +
+                "for the rest — 'files' counts them all, but a claim that something is absent " +
+                "needs every page."
+            start > 0 && start >= total && total > 0 -> "'offset' $start is past the last of $total " +
+                "hit(s); call ${next}0) to start over."
+            else -> null
+        }
     }
 
     /**
@@ -884,9 +949,7 @@ class FormsService(
                 namePattern = namePattern,
                 // Libraries the searched modules attach that are in the forms directory but not
                 // fetched: when a called procedure is not found, these are where it most likely is.
-                unfetchedLibraries = attached
-                    .map { ModuleKey.of(it, ModuleType.LIBRARY) }
-                    .filter { it in scannedKeys && it !in cachedSet },
+                unfetchedLibraries = unfetchedLibraries(attached, scannedKeys, cachedSet),
             ),
             hits = hits,
         )
@@ -1691,11 +1754,19 @@ class FormsService(
         val missingModule: ModuleKey?,
     )
 
-    /** [effectiveItemDml]'s result: the resolved items, and one account per class used. */
+    /**
+     * [effectiveItemDml]'s result: the resolved items that fit, and one account per class used.
+     * [resolvedTotal] counts every item that resolved, so [cut] can say how many did not fit; the
+     * map keeps item order and stops at the first row that does not fit, so the omitted items are
+     * [firstOmitted] and every resolved item after it.
+     */
     private class EffectiveDml(
         val items: Map<String, ItemDml>,
         val classes: List<PropertyClassResolution>,
         val subclassedItems: Int,
+        val resolvedTotal: Int,
+        val cut: Boolean,
+        val firstOmitted: String?,
     )
 
     /**
@@ -1730,8 +1801,9 @@ class FormsService(
             if (chain.resolved) items[item.name] = own.over(chain.dml)
         }
         // Resolved rows are the largest section after the items themselves; a screen too wide for
-        // both keeps the items it served and says the map covers fewer of them.
-        val (fitted, _) = budget.take(
+        // both keeps the items it served and cuts the map. The cut is returned, never dropped: an
+        // item absent from the map otherwise reads exactly like an item whose class did not resolve.
+        val (fitted, cut) = budget.take(
             items.entries.map { it.key to it.value },
             PairSerializer(String.serializer(), ItemDml.serializer()),
             share = budget.share(EFFECTIVE_DML_BUDGET_SHARE),
@@ -1745,7 +1817,14 @@ class FormsService(
                 itemCount = usage[canonical] ?: 0,
             )
         }
-        return EffectiveDml(fitted.toMap(), classes, subclassed)
+        return EffectiveDml(
+            items = fitted.toMap(),
+            classes = classes,
+            subclassedItems = subclassed,
+            resolvedTotal = items.size,
+            cut = cut,
+            firstOmitted = if (cut) items.keys.elementAt(fitted.size) else null,
+        )
     }
 
     /**
@@ -1808,6 +1887,17 @@ class FormsService(
      */
     private fun effectiveDmlHints(key: ModuleKey, block: String, effective: EffectiveDml, columns: Boolean): List<String> =
         buildList {
+            if (effective.cut) {
+                // First, because it changes how every other absence in the map reads.
+                add(
+                    "'effectiveDml' covers ${effective.items.size} of the ${effective.resolvedTotal} " +
+                        "items whose properties resolved: the rest, from '${effective.firstOmitted}' on, " +
+                        "did not fit one response, so an item missing from it is not thereby unresolved. " +
+                        "For one property of those items, read what each item writes with " +
+                        "search_source(module=\"$key\", scope=\"xml\", query=...) and what its class " +
+                        "writes with get_object_xml(module=\"$key\", objectType=\"PropertyClass\", name=...).",
+                )
+            }
             effective.classes.filter { !it.resolved }.groupBy { it.missingModule }.forEach { (missing, classes) ->
                 val itemCount = classes.sumOf { it.itemCount }
                 val names = classes.joinToString(", ") { it.name }
@@ -2314,6 +2404,45 @@ class FormsService(
     private fun now(): kotlin.time.Instant =
         kotlin.time.Instant.fromEpochMilliseconds(System.currentTimeMillis())
 
+    /**
+     * The libraries named in [attached] that are in the forms directory ([scannedKeys]) but not
+     * cached ([cachedKeys]): where code a module calls but does not define most likely lives, and
+     * what no read tool can see until it is fetched. A library absent from the directory is left
+     * out — naming a fetch that cannot succeed is not a hint.
+     */
+    private fun unfetchedLibraries(
+        attached: Collection<String>,
+        scannedKeys: Set<ModuleKey>,
+        cachedKeys: Set<ModuleKey>,
+    ): List<ModuleKey> = attached
+        .map { ModuleKey.of(it.trim(), ModuleType.LIBRARY) }
+        .distinct()
+        .filter { it in scannedKeys && it !in cachedKeys }
+
+    /**
+     * This summary with the `fetch_module` hint: the attached libraries not fetched yet, each as
+     * the call that fetches it. The converter's caveat about libraries rides along when it has one
+     * — a Forms2XML-based command cannot convert them, and the calls named here would fail on
+     * exactly that.
+     */
+    private suspend fun FetchModuleSummary.withLibraryHint(scanned: List<ScannedModule>): FetchModuleSummary {
+        if (attachedLibraries.isEmpty()) return this
+        val missing = unfetchedLibraries(
+            attached = attachedLibraries,
+            scannedKeys = scanned.mapTo(HashSet()) { it.key },
+            cachedKeys = cache.list().toSet(),
+        )
+        if (missing.isEmpty()) return this
+        val shown = missing.take(MAX_NAMED_LIBRARIES)
+        val more = missing.size - shown.size
+        val hint = "${module.name} attaches ${shown.joinToString(", ")}" +
+            (if (more > 0) " and $more more" else "") +
+            ", not fetched — program units its triggers call may live there: " +
+            shown.joinToString(", ") { "fetch_module(module=\"$it\")" } + "." +
+            (this@FormsService.converter.conversionCaveat(ModuleType.LIBRARY)?.let { " $it" } ?: "")
+        return copy(hint = hint)
+    }
+
     private fun ModuleIndex.summary(fromCache: Boolean): FetchModuleSummary = FetchModuleSummary(
         module = key,
         formsVersion = formsVersion,
@@ -2359,7 +2488,14 @@ class FormsService(
         const val ITEM_BUDGET_WITH_COLUMNS = 55
         const val EFFECTIVE_DML_BUDGET_SHARE = 60
 
-        /** How many un-fetched attached libraries a `search_modules` hint names before counting. */
+        /**
+         * The most of a `search_source` response its per-file counts may take. A row is ~150
+         * characters, so this holds about a hundred files; the hits get the rest, and a page of
+         * them that does not fit is cut and continued like any other.
+         */
+        const val SEARCH_FILE_BUDGET_SHARE = 30
+
+        /** How many un-fetched attached libraries a `search_modules` or `fetch_module` hint names before counting. */
         const val MAX_NAMED_LIBRARIES = 5
 
         /** Marks a `search_modules` cursor as ours, so a token from elsewhere fails cleanly. */

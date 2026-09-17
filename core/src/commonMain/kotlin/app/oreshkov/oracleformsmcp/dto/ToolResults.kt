@@ -155,7 +155,13 @@ public data class ModuleList(
     val modules: List<ModuleStatusEntry> = emptyList(),
 )
 
-/** `fetch_module` — summary of a converted-and-indexed module. */
+/**
+ * `fetch_module` — summary of a converted-and-indexed module.
+ *
+ * [hint] names the [attachedLibraries] that are in the forms directory but not fetched. A form's
+ * triggers usually call into them, and a library that is not fetched is invisible to every other
+ * tool — so the procedures it defines would otherwise read as missing rather than elsewhere.
+ */
 @Serializable
 @SerialName("FetchModuleSummary")
 public data class FetchModuleSummary(
@@ -174,6 +180,7 @@ public data class FetchModuleSummary(
      * paths in the index name it without saying where it is.
      */
     val convertedUri: String? = null,
+    val hint: String? = null,
 )
 
 /**
@@ -260,9 +267,10 @@ public data class BlockList(
  * [propertyClasses] says, once per class the block's items use, whether it resolved and from which
  * modules. [columns] is present only when asked for.
  *
- * [itemTotal] counts the block's items and [truncated] says `block.items` was cut to fit one
- * response — a data-entry screen of a hundred-odd detailed items with its base table behind it is
- * larger than a client accepts. The [hint] then names what to ask instead.
+ * [itemTotal] counts the block's items and [truncated] says `block.items` or [effectiveDml] was
+ * cut to fit one response — a data-entry screen of a hundred-odd detailed items with its base
+ * table behind it is larger than a client accepts. The [hint] then says which, and names what to
+ * ask instead: an item missing from a cut [effectiveDml] is not thereby unresolved.
  */
 @Serializable
 @SerialName("BlockDetail")
@@ -420,8 +428,28 @@ public data class SearchHit(
 )
 
 /**
- * `search_source`. [truncated] is `true` when more hits existed than the page cap; in that case
- * [nextOffset] is the `offset` to pass to fetch the next page. [offset] echoes the page start.
+ * How many of a `search_source` result's hits one file holds — across the whole result, not the
+ * page.
+ */
+@Serializable
+@SerialName("SearchFileCount")
+public data class SearchFileCount(
+    val path: String,
+    val hits: Int = 0,
+    /** Resource URI of [path], as on [SearchHit.uri]. */
+    val uri: String? = null,
+)
+
+/**
+ * `search_source`. [truncated] is `true` when more hits existed than this page carries; in that
+ * case [nextOffset] is the `offset` to pass to fetch the next page, and [hint] says so in words.
+ * [offset] echoes the page start.
+ *
+ * [total] counts every hit in the module, whichever page this is, and [files] says where they
+ * are: one row per file with at least one hit, in path order. The counts are what a hit list
+ * cannot show — whether an identifier appears anywhere past the page, and roughly where — so they
+ * are computed over the whole result. [fileTotal] counts those files; [filesTruncated] says
+ * [files] was cut to fit.
  */
 @Serializable
 @SerialName("SearchResults")
@@ -431,6 +459,11 @@ public data class SearchResults(
     val truncated: Boolean = false,
     val offset: Int = 0,
     val nextOffset: Int? = null,
+    val total: Int = 0,
+    val hint: String? = null,
+    val fileTotal: Int = 0,
+    val filesTruncated: Boolean = false,
+    val files: List<SearchFileCount> = emptyList(),
 )
 
 /**

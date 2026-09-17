@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`search_source` says what a page does not show.** Every page now carries `total` (every hit in
+  the module, not only this page's), `files` (hits per file across the whole result, with
+  `fileTotal`/`filesTruncated`) and, when hits remain, a `hint` naming the exact call for the next
+  page. A caller who stopped at the last hit of a cut page used to have sampled without knowing it;
+  now one call answers whether a name appears anywhere else, and roughly where. The page itself is
+  also kept inside the result budget — a page of long XML lines is cut to fit and continues at
+  `nextOffset` like any other.
+- **`fetch_module` names the attached libraries that are not fetched yet** — with the
+  `fetch_module` call for each, and the converter's caveat when it cannot convert libraries. A
+  form's triggers usually call into them, and an unfetched library is invisible to every other tool.
+
 ### Fixed
+- **A cut `effectiveDml` is reported.** On a block whose items fit but whose resolved properties did
+  not, `get_block(verbosity="detailed")` dropped the overflow with no signal: `truncated` stayed
+  `false`, and an item missing from `effectiveDml` read exactly like an item whose property class
+  did not resolve. The result is now `truncated`, and the hint says how many resolved items the map
+  covers, from which item on the rest were left out, and how to read their properties instead.
 - **The Claude Code plugin can set the `.pll` converter command.** 0.11.0 added `--compile-command`
   to the CLI, the environment, the `.mcpb` bundle and the registry listing, but not to the plugin,
   so a plugin install whose `convert_command` is built on `frmf2xml` still failed on every library.
