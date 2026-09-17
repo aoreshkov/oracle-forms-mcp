@@ -88,7 +88,7 @@ internal val SERVER_INSTRUCTIONS: String =
         "propertyClass, not the Forms default either: the class decides it, usually " +
         "elsewhere. get_block(verbosity=\"detailed\") resolves that into effectiveDml — what says " +
         "whether an insert or update writes an item — listing one only when its class could be " +
-        "followed; the hint names the fetch_module call for the rest. columns=true adds the base " +
+        "followed; unresolvedItems names the rest and what to fetch. columns=true adds the base " +
         "table's columns and those no item supplies. A line of converted XML is one whole object, " +
         "thousands of characters long: ask property questions with search_source(scope=\"xml\"), " +
         "and read XML a few dozen lines at a time, continuing at nextStartLine. " +

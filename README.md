@@ -124,8 +124,9 @@ supplies the value, and in a real form that is where most of an item's behaviour
 `effectiveDml`, the same properties with the class applied (item, then class, then whatever that
 class is based on, followed into other modules that are already fetched). An item is listed in
 `effectiveDml` only when that chain resolved to the end, so a `null` there really is the Forms
-default; `propertyClasses` and the result's `hint` say which classes could not be followed and name
-the `fetch_module` call that fixes it.
+default. Every other item is a row of `unresolvedItems`, with the reason and — when fetching fixes
+it — the module to fetch; `propertyClasses` and the result's `hint` give the same account per class
+and name the `fetch_module` call. `items: [...]` narrows all of it to the items a question is about.
 
 `get_block(columns: true)` adds the block's data-source columns, the columns no item supplies, and
 which of those are mandatory in the database — the ones an insert fails on unless a trigger assigns

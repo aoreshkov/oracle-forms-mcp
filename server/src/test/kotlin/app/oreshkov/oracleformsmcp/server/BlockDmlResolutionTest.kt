@@ -3,6 +3,8 @@ package app.oreshkov.oracleformsmcp.server
 import app.oreshkov.oracleformsmcp.annotation.OnDiskAnnotationStore
 import app.oreshkov.oracleformsmcp.cache.OnDiskModuleCache
 import app.oreshkov.oracleformsmcp.convert.PreConvertedCopyConverter
+import app.oreshkov.oracleformsmcp.dto.UnresolvedItem
+import app.oreshkov.oracleformsmcp.dto.UnresolvedReason
 import app.oreshkov.oracleformsmcp.model.ItemDml
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
@@ -11,9 +13,11 @@ import app.oreshkov.oracleformsmcp.scan.FormsDirectoryScannerImpl
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import kotlin.io.path.writeText
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -114,6 +118,142 @@ class BlockDmlResolutionTest {
             ModuleKey.of("absent", ModuleType.FORM),
             detail.propertyClasses.single { it.name == "MISSING_TEXT" }.missingModule,
         )
+    }
+
+    /**
+     * The failure this guards against reached a written review: a hint named the module to fetch,
+     * nobody fetched it, and an item absent from `effectiveDml` was read as an item with no length
+     * limit. The unknown is therefore stated per item, in the data, beside the map — never as a
+     * `null` inside it, where it would read as the Forms default.
+     */
+    @Test
+    fun anUnresolvedClassIsNeverServedAsTheDefault() = runTest {
+        service.fetchModule(claimsKey)
+        val lengthQuestion = listOf("CLAIM_ID", "STATUS", "AMOUNT_LOCKED", "OWNER_NAME")
+
+        val before = service.getBlock(claimsKey, "CLAIM", detailed = true, items = lengthQuestion)
+
+        assertEquals(setOf("OWNER_NAME"), before.effectiveDml.keys)
+        assertEquals(
+            listOf(
+                UnresolvedItem("CLAIM_ID", "BASE_TEXT", UnresolvedReason.CLASS_MODULE_NOT_FETCHED, stylesKey),
+                UnresolvedItem("STATUS", "BASE_TEXT", UnresolvedReason.CLASS_MODULE_NOT_FETCHED, stylesKey),
+                UnresolvedItem("AMOUNT_LOCKED", "LOCKED_TEXT", UnresolvedReason.CLASS_MODULE_NOT_FETCHED, stylesKey),
+            ),
+            before.unresolvedItems,
+        )
+        assertFalse(before.truncated, "nothing was cut: the absence is an unknown, not a size limit")
+        val hint = assertNotNull(before.hint)
+        assertTrue(hint.contains("'unresolvedItems'"), hint)
+        // The follow-up call asks the same narrow question again.
+        assertTrue(
+            hint.contains(
+                "get_block(module=\"CLAIMS.fmb\", block=\"CLAIM\", verbosity=\"detailed\", " +
+                    "items=[\"CLAIM_ID\", \"STATUS\", \"AMOUNT_LOCKED\", \"OWNER_NAME\"])",
+            ),
+            hint,
+        )
+
+        service.fetchModule(stylesKey)
+        val after = service.getBlock(claimsKey, "CLAIM", detailed = true, items = lengthQuestion)
+
+        assertEquals(lengthQuestion.toSet(), after.effectiveDml.keys)
+        assertEquals(30, after.effectiveDml.getValue("CLAIM_ID").maximumLength)
+        assertTrue(after.unresolvedItems.isEmpty(), "${after.unresolvedItems}")
+        assertNull(after.hint)
+    }
+
+    @Test
+    fun everyItemMissingFromTheMapIsListedWithItsReason() = runTest {
+        service.fetchModule(claimsKey)
+        service.fetchModule(stylesKey)
+
+        val claim = service.getBlock(claimsKey, "CLAIM", detailed = true)
+
+        // A pointer at a module the directory does not have: fetching is still the call that fixes it.
+        assertEquals(
+            listOf(UnresolvedItem("COMMENTS", "MISSING_TEXT", UnresolvedReason.CLASS_MODULE_NOT_FETCHED, ModuleKey.of("absent", ModuleType.FORM))),
+            claim.unresolvedItems,
+        )
+        assertEquals(claim.block.items.map { it.name }.toSet(), claim.effectiveDml.keys + claim.unresolvedItems.map { it.name })
+
+        val pickerKey = ModuleKey.of("picker", ModuleType.FORM)
+        service.fetchModule(pickerKey)
+        val bar = service.getBlock(pickerKey, "BAR_LIST", detailed = true)
+        assertEquals(listOf("SELECT", "CANCEL"), bar.unresolvedItems.map { it.name })
+        assertTrue(bar.unresolvedItems.all { it.reason == UnresolvedReason.SUBCLASSED && it.missingModule == null })
+    }
+
+    /** A chain that names no module this server can find cannot be fixed by a fetch, and says so. */
+    @Test
+    fun aClassThatCannotBeFollowedHasNoModuleToFetch() = runTest {
+        formsDir.resolve("loose_fmb.xml").writeText(
+            """
+            |<?xml version="1.0" encoding="UTF-8"?>
+            |<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+            |  <FormModule Name="LOOSE">
+            |    <Block Name="MAIN">
+            |      <Item Name="CODE" ItemType="Text Item" ParentModule="LOOSE" ParentModuleType="12" ParentName="NOWHERE_TEXT" ParentType="29"/>
+            |    </Block>
+            |    <PropertyClass Name="NOWHERE_TEXT" ParentModule="NOWHERE" ParentModuleType="12" ParentName="NOWHERE_TEXT" ParentType="29"/>
+            |  </FormModule>
+            |</Module>
+            |
+            """.trimMargin(),
+        )
+        val looseKey = ModuleKey.of("loose", ModuleType.FORM)
+        service.fetchModule(looseKey)
+
+        val detail = service.getBlock(looseKey, "MAIN", detailed = true)
+
+        assertTrue(detail.effectiveDml.isEmpty())
+        assertEquals(
+            listOf(UnresolvedItem("CODE", "NOWHERE_TEXT", UnresolvedReason.CLASS_NOT_FOLLOWABLE)),
+            detail.unresolvedItems,
+        )
+        assertFalse(assertNotNull(detail.hint).contains("fetch_module"), detail.hint)
+    }
+
+    @Test
+    fun itemsNarrowEveryListButNotTheBlockOrItsColumns() = runTest {
+        service.fetchModule(claimsKey)
+        service.fetchModule(stylesKey)
+
+        val detail = service.getBlock(
+            claimsKey,
+            "CLAIM",
+            detailed = true,
+            columns = true,
+            items = listOf("owner_name", "CLAIM.status", " "),
+        )
+
+        // Block order, not argument order; a block prefix and case are both accepted.
+        assertEquals(listOf("STATUS", "OWNER_NAME"), detail.block.items.map { it.name })
+        assertEquals(8, detail.itemTotal)
+        assertEquals(2, detail.itemsMatched)
+        assertEquals(setOf("STATUS", "OWNER_NAME"), detail.effectiveDml.keys)
+        assertEquals(setOf("BASE_TEXT", "LOCAL_TEXT"), detail.propertyClasses.map { it.name }.toSet())
+        assertEquals(1, detail.propertyClasses.single { it.name == "BASE_TEXT" }.itemCount)
+        // A column supplied by an item the call did not ask about is still supplied.
+        assertEquals(listOf("AMOUNT", "CREATED_BY", "CREATED_ON"), assertNotNull(detail.columns).columnsWithoutItem)
+
+        val everything = service.getBlock(claimsKey, "CLAIM", items = emptyList())
+        assertNull(everything.itemsMatched)
+        assertEquals(8, everything.block.items.size)
+    }
+
+    @Test
+    fun anUnknownItemFailsWithTheBlocksItemNames() = runTest {
+        service.fetchModule(claimsKey)
+
+        val failure = assertFailsWith<IllegalArgumentException> {
+            service.getBlock(claimsKey, "CLAIM", items = listOf("STATUS", "STATUS_CODE"))
+        }
+
+        val message = assertNotNull(failure.message)
+        assertTrue(message.contains("'STATUS_CODE'"), message)
+        assertFalse(message.contains("'STATUS'"), message)
+        assertTrue(message.contains("CLAIM_ID, STATUS, REFERENCE"), message)
     }
 
     @Test

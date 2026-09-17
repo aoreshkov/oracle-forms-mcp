@@ -261,16 +261,21 @@ public data class BlockList(
  * property class applied: what the item writes wins, then its class, then whatever that class is
  * based on — followed into other modules only when they are already fetched. An item is present
  * only when that chain resolved to the end, so an entry's `null` field really is the Forms
- * default; an item missing from the map has an unresolved class (see [propertyClasses] and [hint])
- * or is itself subclassed from another module. `block.items[].dml` stays what the item wrote.
+ * default. Every served item missing from the map for a reason other than a cut is a row of
+ * [unresolvedItems], with the module to fetch when fetching would resolve it — so the unknowns are
+ * named item by item beside the map, never folded into it as `null`s that would read as defaults.
+ * `block.items[].dml` stays what the item wrote.
  *
- * [propertyClasses] says, once per class the block's items use, whether it resolved and from which
+ * [propertyClasses] says, once per class the served items use, whether it resolved and from which
  * modules. [columns] is present only when asked for.
  *
- * [itemTotal] counts the block's items and [truncated] says `block.items` or [effectiveDml] was
- * cut to fit one response — a data-entry screen of a hundred-odd detailed items with its base
- * table behind it is larger than a client accepts. The [hint] then says which, and names what to
- * ask instead: an item missing from a cut [effectiveDml] is not thereby unresolved.
+ * [itemsMatched] is set when the call named `items`: how many of the block's items it matched,
+ * and every other list here then describes only those. [itemTotal] still counts the whole block.
+ *
+ * [truncated] says `block.items`, [effectiveDml] or [unresolvedItems] was cut to fit one response —
+ * a data-entry screen of a hundred-odd detailed items with its base table behind it is larger than
+ * a client accepts. The [hint] then says which, and names what to ask instead: an item missing from
+ * a cut [effectiveDml] is not thereby unresolved.
  */
 @Serializable
 @SerialName("BlockDetail")
@@ -280,12 +285,42 @@ public data class BlockDetail(
     val source: SourceLocation? = null,
     val hint: String? = null,
     val itemTotal: Int = 0,
+    val itemsMatched: Int? = null,
     val truncated: Boolean = false,
     val effectiveDml: Map<String, ItemDml> = emptyMap(),
+    val unresolvedItems: List<UnresolvedItem> = emptyList(),
     val propertyClasses: List<PropertyClassResolution> = emptyList(),
     val columns: BlockColumns? = null,
     val annotations: ElementAnnotations = ElementAnnotations(),
 )
+
+/**
+ * One item `get_block` could not put in `effectiveDml`, and why. Its properties are *unknown* here,
+ * not defaulted: [missingModule] names the module whose `fetch_module` resolves it, and is `null`
+ * when fetching would not help.
+ */
+@Serializable
+@SerialName("UnresolvedItem")
+public data class UnresolvedItem(
+    val name: String,
+    val propertyClass: String? = null,
+    val reason: UnresolvedReason = UnresolvedReason.CLASS_NOT_FOLLOWABLE,
+    val missingModule: ModuleKey? = null,
+)
+
+/** Why an item's effective properties could not be resolved. */
+@Serializable
+@SerialName("UnresolvedReason")
+public enum class UnresolvedReason {
+    /** Its class, or a class that one is based on, lives in a module that is not fetched or is stale. */
+    CLASS_MODULE_NOT_FETCHED,
+
+    /** Its class chain breaks where fetching cannot fix it: a class not declared where named, a loop. */
+    CLASS_NOT_FOLLOWABLE,
+
+    /** The item is subclassed from another module; its properties are defined with the parent object. */
+    SUBCLASSED,
+}
 
 /**
  * How one property class used by a block's items was resolved for `get_block`.

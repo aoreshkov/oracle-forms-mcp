@@ -262,6 +262,53 @@ class ResultBudgetTest {
         assertTrue(hint.contains("from 'FIELD_${served + 1}' on"), hint)
         assertTrue(hint.contains("not thereby unresolved"), hint)
         assertFalse(hint.contains("of 100 items: the rest would not fit"), "items were not cut: $hint")
+        assertTrue(detail.unresolvedItems.isEmpty(), "every item resolved; none is unknown")
+
+        // The follow-up the hint names reaches the omitted items, and answers from the same resolution.
+        val next = "FIELD_${served + 1}"
+        assertTrue(hint.contains("items=[\"$next\""), hint)
+        val narrowed = service.getBlock(wideKey, "WIDE_BLOCK", detailed = true, items = listOf(next))
+        assertEquals(setOf(next), narrowed.effectiveDml.keys)
+        assertFalse(narrowed.truncated)
+    }
+
+    /**
+     * The unknowns are spent through the same budget as everything else: a block of unresolved
+     * items whose rows outgrow their share is cut and says so, and the per-class count in the hint
+     * still covers every one of them.
+     */
+    @Test
+    fun aCutUnresolvedItemsListIsReported() = runTest {
+        val farAway = "SHARED_${"X".repeat(1_500)}"
+        val items = (1..100).joinToString("\n") { n ->
+            "      <Item Name=\"FIELD_$n\" ItemType=\"Text Item\" ParentModule=\"WIDE\" " +
+                "ParentModuleType=\"12\" ParentName=\"PC_REMOTE\" ParentType=\"29\"/>"
+        }
+        formsDir.resolve("wide_fmb.xml").writeText(
+            """
+            |<?xml version="1.0" encoding="UTF-8"?>
+            |<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+            |  <FormModule Name="WIDE">
+            |    <Block Name="WIDE_BLOCK" QueryDataSourceName="WIDE">
+            |$items
+            |    </Block>
+            |    <PropertyClass Name="PC_REMOTE" ParentModule="$farAway" ParentModuleType="12" ParentName="PC_REMOTE" ParentFilename="$farAway.fmb" ParentType="29"/>
+            |  </FormModule>
+            |</Module>
+            |
+            """.trimMargin(),
+        )
+        service.fetchModule(wideKey)
+
+        val detail = service.getBlock(wideKey, "WIDE_BLOCK", detailed = true)
+
+        assertEquals(100, detail.block.items.size, "the items themselves must fit for this test")
+        assertTrue(detail.unresolvedItems.size in 1..<100, "unresolvedItems was not cut: ${detail.unresolvedItems.size}")
+        assertTrue(detail.truncated)
+        assertTrue(textLength(toolResult(detail, detail.source)) <= MAX_RESULT_CHARS)
+        val hint = assertNotNull(detail.hint)
+        assertTrue(hint.contains("'unresolvedItems' lists ${detail.unresolvedItems.size} of the 100 items"), hint)
+        assertTrue(hint.contains("100 item(s) take their properties from PC_REMOTE"), hint)
     }
 
     /**

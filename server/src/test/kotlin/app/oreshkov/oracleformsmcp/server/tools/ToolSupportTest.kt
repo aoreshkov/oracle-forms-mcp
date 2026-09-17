@@ -3,7 +3,11 @@ package app.oreshkov.oracleformsmcp.server.tools
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 
 class ToolSupportTest {
 
@@ -17,5 +21,18 @@ class ToolSupportTest {
     @Test
     fun theNoArgumentSchemaIsTheSpecsBareObjectForm() {
         assertEquals("""{"type":"object"}""", Json.encodeToString(ToolSchema.serializer(), emptySchema()))
+    }
+
+    @Test
+    fun aListArgumentIsAnArrayOrACommaSeparatedStringAndNothingWhenEmpty() {
+        fun parse(json: String) = Json.parseToJsonElement("""{"items":$json}""").jsonObject.stringListArg("items")
+
+        assertEquals(listOf("A", "B"), parse("""["A", " B ", ""]"""))
+        assertEquals(listOf("A", "B"), parse("\"A, B\""))
+        assertNull(parse("[]"))
+        assertNull(parse("null"))
+        assertNull(JsonObject(emptyMap()).stringListArg("items"))
+        assertFailsWith<IllegalArgumentException> { parse("[1]") }
+        assertFailsWith<IllegalArgumentException> { parse("""{"a": "b"}""") }
     }
 }
