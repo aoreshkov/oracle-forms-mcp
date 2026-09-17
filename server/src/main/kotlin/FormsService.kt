@@ -21,6 +21,7 @@ import app.oreshkov.oracleformsmcp.dto.ElementAnnotationList
 import app.oreshkov.oracleformsmcp.dto.ElementAnnotations
 import app.oreshkov.oracleformsmcp.dto.FetchModuleSummary
 import app.oreshkov.oracleformsmcp.dto.ModuleAnnotationsView
+import app.oreshkov.oracleformsmcp.dto.MasterRelation
 import app.oreshkov.oracleformsmcp.dto.ModuleDetail
 import app.oreshkov.oracleformsmcp.dto.ModuleList
 import app.oreshkov.oracleformsmcp.dto.ModuleOverview
@@ -65,6 +66,7 @@ import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.model.ProgramUnitInfo
 import app.oreshkov.oracleformsmcp.model.ProgramUnitType
 import app.oreshkov.oracleformsmcp.model.Relation
+import app.oreshkov.oracleformsmcp.model.RelationInfo
 import app.oreshkov.oracleformsmcp.model.ScannedModule
 import app.oreshkov.oracleformsmcp.model.SourceRef
 import app.oreshkov.oracleformsmcp.model.TriggerInfo
@@ -445,7 +447,11 @@ class FormsService(
      * One block. A block of a real form runs to dozens of items, so [detailed] governs how much of
      * each row comes back, and [items] narrows the rows to the ones a question is about.
      *
-     * What `concise` drops is descriptive — data type, column, canvas, and the properties Forms
+     * The block's master-detail relations are served at every verbosity — the ones written on it,
+     * and those on other blocks that name it as their detail — because they are structure: they
+     * decide what the block can be queried through.
+     *
+     * What `concise` drops is descriptive — data type, column, canvas, size, and the properties Forms
      * only writes when they are overridden. What it keeps is everything a reader would otherwise
      * have to *infer*: the item's name and type, its property class (which is where a shop's item
      * semantics live), its prompt, its trigger names, and its subclassing pointer. Dropping that
@@ -476,15 +482,27 @@ class FormsService(
         val filtered = selected !== full.items
         val rows = if (detailed) selected else selected.map(::conciseItem)
         // One budget across the lists this result can carry, spent in the order they answer the
-        // question: the items, what is unknown about them, their resolved properties, then the
-        // base table behind them.
+        // question: the relations the block is reached through (a few rows, and what decides what it
+        // can see), the items, what is unknown about them, their resolved properties, then the base
+        // table behind them.
         val budget = RowBudget(MAX_RESULT_CHARS - RESULT_OVERHEAD_CHARS)
+        val (relations, relationsCut) = budget.take(
+            full.relations,
+            RelationInfo.serializer(),
+            share = budget.share(RELATION_BUDGET_SHARE),
+        )
+        val masters = detailRelationsOf(index, full)
+        val (detailOf, detailOfCut) = budget.take(
+            masters,
+            MasterRelation.serializer(),
+            share = budget.share(RELATION_BUDGET_SHARE),
+        )
         val (served, itemsCut) = budget.take(
             rows,
             ItemInfo.serializer(),
             share = if (columns) budget.share(ITEM_BUDGET_WITH_COLUMNS) else budget.share(ITEM_BUDGET_SHARE),
         )
-        val block = full.copy(items = served)
+        val block = full.copy(items = served, relations = relations)
         val effective = if (detailed) effectiveItemDml(index, block, budget) else null
         val blockColumns = if (columns) blockColumns(index.key, full, budget) else null
         val again: (List<String>?) -> String = { names ->
@@ -517,6 +535,15 @@ class FormsService(
             effective?.let { dml ->
                 addAll(effectiveDmlHints(dml, again, requested = selected.map { it.name }.takeIf { filtered }))
             }
+            addAll(
+                relationHints(
+                    key = index.key,
+                    block = full,
+                    served = relations,
+                    detailOfServed = detailOf,
+                    detailOfAll = masters,
+                ),
+            )
             if (blockColumns != null && blockColumns.total == 0 && block.inherited != null) {
                 add("This module records no data-source columns for the subclassed block; they are defined with it.")
             }
@@ -528,11 +555,13 @@ class FormsService(
             hint = hints.joinToString(" ").ifEmpty { null },
             itemTotal = full.items.size,
             itemsMatched = selected.size.takeIf { filtered },
-            truncated = itemsCut || effective?.cut == true || effective?.unresolvedCut == true,
+            truncated = itemsCut || relationsCut || detailOfCut ||
+                effective?.cut == true || effective?.unresolvedCut == true,
             effectiveDml = effective?.items.orEmpty(),
             unresolvedItems = effective?.unresolved.orEmpty(),
             propertyClasses = effective?.classes.orEmpty(),
             columns = blockColumns,
+            detailOf = detailOf,
             annotations = elementAnnotations(index, ElementId(index.key, ElementKind.BLOCK, block.name)),
         )
     }
@@ -1760,6 +1789,60 @@ class FormsService(
         inherited = item.inherited,
     )
 
+    // --- get_block: relations ---
+
+    /**
+     * The relations of [index] that name [block] as their detail, with the block each is written on,
+     * in block order. Forms writes a relation only on its master, so this side is found by looking
+     * rather than stored twice.
+     */
+    private fun detailRelationsOf(index: ModuleIndex, block: BlockInfo): List<MasterRelation> =
+        index.blocks.flatMap { master ->
+            master.relations
+                .filter { it.detailBlock.equals(block.name, ignoreCase = true) }
+                .map { MasterRelation(master.name, it) }
+        }
+
+    /**
+     * What a `get_block` says about the relations it served: the ones cut for size, with the call
+     * that reads each; and where a subclassed block's or relation's missing definition lives, so
+     * that no relations, or a relation with no join, never reads as a fact about the form.
+     */
+    private fun relationHints(
+        key: ModuleKey,
+        block: BlockInfo,
+        served: List<RelationInfo>,
+        detailOfServed: List<MasterRelation>,
+        detailOfAll: List<MasterRelation>,
+    ): List<String> = buildList {
+        val omitted = block.relations.drop(served.size).map { it.name to block.name } +
+            detailOfAll.drop(detailOfServed.size).map { it.relation.name to it.masterBlock }
+        omitted.firstOrNull()?.let { (name, owner) ->
+            add(
+                "Returned ${served.size} of the ${block.relations.size} relations '${block.name}' is the " +
+                    "master of and ${detailOfServed.size} of the ${detailOfAll.size} naming it as detail: " +
+                    "the rest did not fit one response. Read each with get_object_xml(module=\"$key\", " +
+                    "objectType=\"Relation\", name=\"$name\", owner=\"$owner\"), naming the next the same way.",
+            )
+        }
+        if (block.inherited != null && block.relations.isEmpty()) {
+            add(
+                "This module records no relations on the subclassed block; any it is the master of " +
+                    "are defined with it in its parent.",
+            )
+        }
+        val joinsElsewhere = (served + detailOfServed.map { it.relation })
+            .filter { it.inherited != null && it.joinCondition == null }
+            .map { it.name }
+            .distinct()
+        if (joinsElsewhere.isNotEmpty()) {
+            add(
+                "Relation(s) ${joinsElsewhere.joinToString(", ")} are subclassed and write no join " +
+                    "condition here; it is defined with the parent (see each relation's 'inherited').",
+            )
+        }
+    }
+
     // --- get_block: effective DML properties and data-source columns ---
 
     /** A property class followed to the end of its chain, or as far as the cache allowed. */
@@ -2566,13 +2649,16 @@ class FormsService(
         const val SEARCH_MODULE_CHUNK = 8
 
         /**
-         * How `get_block` divides one response between its lists. The items are the block, so they
+         * How `get_block` divides one response between its lists. Relations go first — a block is
+         * the master or detail of a handful at most — each side capped so a generated form cannot
+         * crowd out its items with them. The items are the block, so they
          * take most of it — less when the caller also asked for columns, since a base table's
          * columns are then part of the question. Each served item is then a row of either the
          * unresolved list (spent first: small, and what makes an absence from the map legible) or
          * the resolved map; what is left goes to the column rows, whose two summary name lists are
          * never cut.
          */
+        const val RELATION_BUDGET_SHARE = 10
         const val ITEM_BUDGET_SHARE = 80
         const val ITEM_BUDGET_WITH_COLUMNS = 55
         const val UNRESOLVED_BUDGET_SHARE = 40

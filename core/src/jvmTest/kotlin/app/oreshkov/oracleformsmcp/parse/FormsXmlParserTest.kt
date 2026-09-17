@@ -19,6 +19,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class FormsXmlParserTest {
@@ -53,7 +54,7 @@ class FormsXmlParserTest {
     fun indexesAllSections() {
         val index = ordersIndex()
         assertEquals("12.2.1.19.0", index.formsVersion)
-        assertEquals(listOf("ORDERS", "CONTROL"), index.blocks.map { it.name })
+        assertEquals(listOf("ORDERS", "ORDER_LINES", "CONTROL"), index.blocks.map { it.name })
         assertEquals(3, index.triggers.size)
         assertEquals(3, index.programUnits.size)
         assertEquals(listOf("UTILS"), index.attachedLibraries.map { it.name })
@@ -144,6 +145,50 @@ class FormsXmlParserTest {
             it.objectType == "Trigger" && it.ownerPath == "ORDERS.ORDER_ID"
         }
         assertTrue(readRef(itemTriggerRef.ref).contains("WHEN-VALIDATE-ITEM"))
+    }
+
+    /**
+     * A relation is written on its master block and indexed there, and only there. What Forms did
+     * not write stays `null` — `Deferred` absent is "not overridden", never `false` — and a join
+     * condition is SQL, recovered from double escaping like a body and marked so.
+     */
+    @Test
+    fun relationsAreIndexedOnTheirMasterBlock() {
+        val index = ordersIndex()
+        val blocks = index.blocks.associateBy { it.name }
+
+        val relation = blocks.getValue("ORDERS").relations.single()
+        assertEquals("ORDERS_ORDER_LINES", relation.name)
+        assertEquals("ORDER_LINES", relation.detailBlock)
+        assertEquals("ORDER_LINES.ORDER_ID = ORDERS.ORDER_ID\nAND ORDER_LINES.CANCELLED = 'N'", relation.joinCondition)
+        assertEquals(TextEncoding.RECOVERED, relation.joinEncoding)
+        assertEquals(true, relation.preventMasterlessOperations)
+        assertEquals(false, relation.autoQuery)
+        assertNull(relation.deferred)
+        assertEquals("Isolated", relation.deleteRecord)
+        assertEquals("Join", relation.relationType)
+        assertNull(relation.inherited)
+
+        // The detail side stores nothing: which relations name a block is worked out when served.
+        assertTrue(blocks.getValue("ORDER_LINES").relations.isEmpty())
+        assertTrue(blocks.getValue("CONTROL").relations.isEmpty())
+
+        // ...and the raw element stays addressable with its master as the owner.
+        val ref = index.objectRefs.single { it.objectType == "Relation" }
+        assertEquals("ORDERS", ref.ownerPath)
+        assertTrue(readRef(ref.ref).trimStart().startsWith("<Relation"))
+    }
+
+    /** Width and height are layout, read where written; an item that writes none has `null`. */
+    @Test
+    fun itemSizeIsReadWhereWrittenAndNullWhereNot() {
+        val items = ordersIndex().blocks.flatMap { b -> b.items.map { "${b.name}.${it.name}" to it } }.toMap()
+
+        assertEquals(60, items.getValue("ORDERS.ORDER_ID").width)
+        assertEquals(17, items.getValue("ORDERS.ORDER_ID").height)
+        assertEquals(120, items.getValue("ORDER_LINES.PRODUCT").width)
+        assertNull(items.getValue("ORDERS.CUSTOMER_NAME").width)
+        assertNull(items.getValue("ORDERS.CUSTOMER_NAME").height)
     }
 
     @Test

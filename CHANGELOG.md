@@ -30,6 +30,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `itemTotal` still counts the block, and `columns` are still set against all of its items. An
   unknown name fails with the block's item names. A hint that follows up on a cut `effectiveDml` or an
   unresolved class now names this narrowed call.
+- **`get_block` serves a block's master-detail relations.** `block.relations` lists the relations
+  the block is the master of — detail block, join condition, `deferred`, `autoQuery`, `deleteRecord`,
+  `relationType` and `preventMasterlessOperations` — and `detailOf` the relations that name it as
+  their detail, with the master block each is written on. Both come back at every verbosity: with
+  `preventMasterlessOperations` a detail block can only be queried through its master, so this is
+  what decides what a screen can see, and it used to be reachable only by knowing to grep the XML
+  for an element no tool named. A join condition is recovered from double escaping and marked
+  `joinEncoding: RECOVERED`, like a body; a subclassed block or relation says where its definition
+  lives. `get_object_xml` now lists `Relation` among its element types (its owner is the master).
+- **Item size.** `get_block(verbosity="detailed")` adds each item's `width` and `height` — layout
+  units, usually pixels, and not the length a field accepts, which stays `maximumLength`.
+
+### Changed
+- **Index format v3.** Every warm cache entry reports `STALE` with `staleReason: INDEX_OUTDATED`
+  once after upgrading; `fetch_module` heals it by re-parsing the converted file already in the
+  cache — no re-conversion.
 
 ### Fixed
 - **A cut `effectiveDml` is reported.** On a block whose items fit but whose resolved properties did

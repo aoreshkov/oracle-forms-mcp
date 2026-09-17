@@ -118,6 +118,11 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   own XML slice through `DataSourceColumnReader`. An item supplies a column by `ColumnName` with any
   table alias dropped (a block over an inline subquery writes `S.OWNER` for the column `OWNER`), or
   by its own name; `mandatoryColumnsWithoutItem` is the part an insert fails on.
+- **A relation is stored once, on its master.** Forms2XML writes `Relation` inside the master
+  `Block`, so that is the only place `BlockInfo.relations` holds it; `get_block`'s `detailOf` (the
+  relations naming a block as detail) is found at serve time, never indexed a second time. Relations
+  are structure, not description — served at every verbosity, and spent through the result budget
+  ahead of the items.
 - **Doubly-escaped bodies are recovered at parse time, and say so.** A converter that writes
   `&amp;#10;` leaves the whole body on one physical line, which makes `lineCount` 1 for a whole
   procedure and collapses every `SourceRef` onto that line. `decodeDoubleEscaped` undoes it only
