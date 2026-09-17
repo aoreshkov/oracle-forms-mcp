@@ -17,8 +17,11 @@ fun Server.registerGetBlockTool(service: FormsService) {
             "properties with the item's property class applied. Use 'effectiveDml' to answer what an " +
             "insert or update writes — on a classed item a property the item does not write comes " +
             "from its class, which is often defined in another module; an item appears there only " +
-            "when its class resolved, and the hint names the fetch_module call that resolves the rest. " +
-            "'truncated' means items or 'effectiveDml' were cut to fit one response; the hint says which. " +
+            "when its class resolved, and every item missing from it is listed in 'unresolvedItems' " +
+            "with the reason and the module to fetch_module. items=[...] narrows every list to the " +
+            "named items (e.g. the few whose length or insert rule a question is about). " +
+            "'truncated' means items, 'unresolvedItems' or 'effectiveDml' were cut to fit one " +
+            "response; the hint says which. " +
             "columns=true adds the base table's columns as Forms recorded them, the columns no item " +
             "supplies, and which of those are mandatory (an insert fails unless a trigger assigns " +
             "them). A subclassed block carries an 'inherited' pointer to the module that defines " +
@@ -31,6 +34,11 @@ fun Server.registerGetBlockTool(service: FormsService) {
                 ),
                 "columns" to boolProp(
                     "Add the block's data-source columns and the columns no item supplies (default false)",
+                ),
+                "items" to stringListProp(
+                    "Only these items, case-insensitive, e.g. ['CUSTOMER_ID', 'ORDERS.STATUS']; omit for " +
+                        "every item. An unknown name fails with the block's item names. 'itemTotal' still " +
+                        "counts the whole block; 'columns' still set against all of its items.",
                 ),
             ),
             extraRequired = listOf("block"),
@@ -46,6 +54,7 @@ fun Server.registerGetBlockTool(service: FormsService) {
                 blockName = args.requireStringArg("block"),
                 detailed = args.detailedArg(),
                 columns = args.booleanArg("columns") ?: false,
+                items = args.stringListArg("items"),
             )
             toolResult(result, result.source)
         }

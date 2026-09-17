@@ -109,8 +109,9 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   is item → class → the class that one is based on, resolved at serve time. Resolution follows a
   pointer only into an **already-cached, current** module (`readOnlyHint`), and an item appears in
   `effectiveDml` only when its whole chain resolved — that is what makes a `null` there mean the
-  Forms default. Everything unresolved is counted and named (`propertyClasses`, `hint`), never
-  approximated.
+  Forms default. Everything unresolved is counted and named — per item in `unresolvedItems`
+  (beside the map, never as `null`s inside it), per class in `propertyClasses`, and in the
+  `hint` — never approximated.
 - **Data-source columns are read, not indexed.** One form repeats the same wide base table across
   several blocks — thousands of `DataSourceColumn` elements, hundreds of KB — so `ModuleIndex` keeps
   only `BlockInfo.dataSourceColumnCount` and `get_block(columns=true)` reads them from the block's

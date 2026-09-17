@@ -84,8 +84,9 @@ most items write almost no properties of their own; `DatabaseItem`, `InsertAllow
 shared module. So *"which fields does this insert write?"* is
 `get_block(verbosity: "detailed")` → **`effectiveDml`**, the item's properties with its class
 applied, not `items[].dml`, which is only what the item itself wrote. An item appears in
-`effectiveDml` only when its class could be followed into a **fetched** module; `propertyClasses`
-says which ones could not and the `hint` names the `fetch_module` call. `columns: true` adds the
+`effectiveDml` only when its class could be followed into a **fetched** module; every item that is
+not is listed in `unresolvedItems` with the module to fetch — an item absent from the map is an
+unknown, never a default. `items: [...]` narrows the call to the fields a question is about. `columns: true` adds the
 base table's columns, the ones no item supplies, and which of *those* are mandatory — the columns
 an insert fails on unless a trigger assigns them.
 

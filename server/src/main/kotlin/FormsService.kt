@@ -43,6 +43,8 @@ import app.oreshkov.oracleformsmcp.dto.StaleReason
 import app.oreshkov.oracleformsmcp.dto.TriggerList
 import app.oreshkov.oracleformsmcp.dto.TriggerSource
 import app.oreshkov.oracleformsmcp.dto.TriggerSummary
+import app.oreshkov.oracleformsmcp.dto.UnresolvedItem
+import app.oreshkov.oracleformsmcp.dto.UnresolvedReason
 import app.oreshkov.oracleformsmcp.io.Fingerprints
 import app.oreshkov.oracleformsmcp.model.Annotation
 import app.oreshkov.oracleformsmcp.model.AnnotationKind
@@ -440,19 +442,19 @@ class FormsService(
     }
 
     /**
-     * One block in full. A block of a real form runs to dozens of items, so [detailed] governs how
-     * much of each row comes back.
+     * One block. A block of a real form runs to dozens of items, so [detailed] governs how much of
+     * each row comes back, and [items] narrows the rows to the ones a question is about.
      *
      * What `concise` drops is descriptive — data type, column, canvas, and the properties Forms
      * only writes when they are overridden. What it keeps is everything a reader would otherwise
      * have to *infer*: the item's name and type, its property class (which is where a shop's item
      * semantics live), its prompt, its trigger names, and its subclassing pointer. Dropping that
      * last one to save bytes would re-create the absence bug `bodySource` exists to prevent.
-     */
-    /**
-     * One block. [detailed] adds the descriptive item properties and resolves each item's DML
-     * properties through its property class ([BlockDetail.effectiveDml]); [columns] reads the
-     * block's data-source columns out of its XML and sets them against the items.
+     *
+     * [detailed] also resolves each item's DML properties through its property class
+     * ([BlockDetail.effectiveDml]) and names every item it could not ([BlockDetail.unresolvedItems]);
+     * [columns] reads the block's data-source columns out of its XML and sets them against *all* of
+     * its items, whatever [items] selected, since a column is supplied by any item of the block.
      *
      * Resolution follows a class into another module only when that module is already cached and
      * current — the same read-only rule as `resolve` on bodies — and says which module to fetch
@@ -463,15 +465,19 @@ class FormsService(
         blockName: String,
         detailed: Boolean = false,
         columns: Boolean = false,
+        items: List<String>? = null,
     ): BlockDetail {
         val index = index(key)
         val full = index.blocks.firstOrNull { it.name.equals(blockName, ignoreCase = true) }
             ?: throw IllegalArgumentException(
                 "No block '$blockName' in $key. Blocks: ${index.blocks.joinToString(", ") { it.name }}",
             )
-        val rows = if (detailed) full.items else full.items.map(::conciseItem)
-        // One budget across the three lists this result can carry, spent in the order they answer
-        // the question: the items, their resolved properties, then the base table behind them.
+        val selected = selectItems(index.key, full, items)
+        val filtered = selected !== full.items
+        val rows = if (detailed) selected else selected.map(::conciseItem)
+        // One budget across the lists this result can carry, spent in the order they answer the
+        // question: the items, what is unknown about them, their resolved properties, then the
+        // base table behind them.
         val budget = RowBudget(MAX_RESULT_CHARS - RESULT_OVERHEAD_CHARS)
         val (served, itemsCut) = budget.take(
             rows,
@@ -479,15 +485,21 @@ class FormsService(
             share = if (columns) budget.share(ITEM_BUDGET_WITH_COLUMNS) else budget.share(ITEM_BUDGET_SHARE),
         )
         val block = full.copy(items = served)
-        val effective = if (detailed) effectiveItemDml(index, full.copy(items = served), budget) else null
+        val effective = if (detailed) effectiveItemDml(index, block, budget) else null
         val blockColumns = if (columns) blockColumns(index.key, full, budget) else null
+        val again: (List<String>?) -> String = { names ->
+            "get_block(module=\"$key\", block=\"${full.name}\", verbosity=\"detailed\"" +
+                (if (columns) ", columns=true" else "") +
+                (names?.let { list -> ", items=[${list.joinToString(", ") { "\"$it\"" }}]" } ?: "") + ")"
+        }
         val hints = buildList {
             if (itemsCut) {
+                val of = if (filtered) "the ${selected.size} matched" else "${full.items.size}"
                 add(
-                    "Returned ${served.size} of ${full.items.size} items: the rest would not fit one " +
-                        "response. Ask again with verbosity=\"concise\" (smaller rows, every item), or " +
-                        "answer a single-property question over all of them with " +
-                        "search_source(module=\"$key\", scope=\"xml\", query=...).",
+                    "Returned ${served.size} of $of items: the rest would not fit one response. Ask " +
+                        "again with verbosity=\"concise\" (smaller rows, every item) or with items=[...] " +
+                        "naming the ones the question is about, or answer a single-property question " +
+                        "over all of them with search_source(module=\"$key\", scope=\"xml\", query=...).",
                 )
             }
             block.inherited?.let { ref ->
@@ -502,7 +514,9 @@ class FormsService(
                     ),
                 )
             }
-            effective?.let { addAll(effectiveDmlHints(key, block.name, it, columns)) }
+            effective?.let { dml ->
+                addAll(effectiveDmlHints(dml, again, requested = selected.map { it.name }.takeIf { filtered }))
+            }
             if (blockColumns != null && blockColumns.total == 0 && block.inherited != null) {
                 add("This module records no data-source columns for the subclassed block; they are defined with it.")
             }
@@ -513,8 +527,10 @@ class FormsService(
             source = locationOf(index.key, block.sourceRef),
             hint = hints.joinToString(" ").ifEmpty { null },
             itemTotal = full.items.size,
-            truncated = itemsCut || effective?.cut == true,
+            itemsMatched = selected.size.takeIf { filtered },
+            truncated = itemsCut || effective?.cut == true || effective?.unresolvedCut == true,
             effectiveDml = effective?.items.orEmpty(),
+            unresolvedItems = effective?.unresolved.orEmpty(),
             propertyClasses = effective?.classes.orEmpty(),
             columns = blockColumns,
             annotations = elementAnnotations(index, ElementId(index.key, ElementKind.BLOCK, block.name)),
@@ -1755,36 +1771,47 @@ class FormsService(
     )
 
     /**
-     * [effectiveItemDml]'s result: the resolved items that fit, and one account per class used.
-     * [resolvedTotal] counts every item that resolved, so [cut] can say how many did not fit; the
-     * map keeps item order and stops at the first row that does not fit, so the omitted items are
-     * [firstOmitted] and every resolved item after it.
+     * [effectiveItemDml]'s result: the resolved items that fit, the unresolved items that fit, and
+     * one account per class used. [resolvedTotal] and [unresolvedTotal] count every item of each
+     * kind, so a cut can say how many did not fit. Both lists keep item order and stop at the first
+     * row that does not fit, so the items omitted from the map are [firstOmitted] and every resolved
+     * item after it.
      */
     private class EffectiveDml(
         val items: Map<String, ItemDml>,
+        val unresolved: List<UnresolvedItem>,
         val classes: List<PropertyClassResolution>,
         val subclassedItems: Int,
         val resolvedTotal: Int,
         val cut: Boolean,
-        val firstOmitted: String?,
-    )
+        val omitted: List<String>,
+        val unresolvedTotal: Int,
+        val unresolvedCut: Boolean,
+    ) {
+        val firstOmitted: String? get() = omitted.firstOrNull()
+    }
 
     /**
      * Each item's DML properties with its property class applied, field by field: what the item
      * writes, else what its class writes, else what that class is based on.
      *
      * An item is included only when its chain resolved to the end, because only then is a `null`
-     * field the Forms default rather than "not known". An item subclassed from another module is
-     * never included: its properties live with its parent object, which this does not walk.
+     * field the Forms default rather than "not known". Every other item becomes an
+     * [UnresolvedItem] instead, so the absence is stated per item rather than left to be inferred:
+     * one whose chain needs a module that is not fetched or is stale, one whose chain cannot be
+     * followed at all, and one subclassed from another module, whose properties live with its
+     * parent object, which this does not walk.
      */
     private suspend fun effectiveItemDml(index: ModuleIndex, block: BlockInfo, budget: RowBudget): EffectiveDml {
         val chains = mutableMapOf<String, ClassChain>()
         val usage = mutableMapOf<String, Int>()
         val items = linkedMapOf<String, ItemDml>()
+        val unresolved = mutableListOf<UnresolvedItem>()
         var subclassed = 0
         for (item in block.items) {
             if (item.inherited != null) {
                 subclassed++
+                unresolved += UnresolvedItem(item.name, item.propertyClass, UnresolvedReason.SUBCLASSED)
                 continue
             }
             val own = item.dml ?: ItemDml()
@@ -1798,8 +1825,24 @@ class FormsService(
             val chain = chains.getOrPut(canonical) {
                 resolveClassChain(index, className, visited = mutableSetOf(), hops = 0)
             }
-            if (chain.resolved) items[item.name] = own.over(chain.dml)
+            when {
+                chain.resolved -> items[item.name] = own.over(chain.dml)
+                chain.missingModule != null -> unresolved += UnresolvedItem(
+                    item.name,
+                    className,
+                    UnresolvedReason.CLASS_MODULE_NOT_FETCHED,
+                    chain.missingModule,
+                )
+                else -> unresolved += UnresolvedItem(item.name, className, UnresolvedReason.CLASS_NOT_FOLLOWABLE)
+            }
         }
+        // The unknowns are spent first: they are small, and they are what keeps an item missing
+        // from the map from reading as an item with nothing to report.
+        val (unresolvedFitted, unresolvedCut) = budget.take(
+            unresolved,
+            UnresolvedItem.serializer(),
+            share = budget.share(UNRESOLVED_BUDGET_SHARE),
+        )
         // Resolved rows are the largest section after the items themselves; a screen too wide for
         // both keeps the items it served and cuts the map. The cut is returned, never dropped: an
         // item absent from the map otherwise reads exactly like an item whose class did not resolve.
@@ -1819,11 +1862,14 @@ class FormsService(
         }
         return EffectiveDml(
             items = fitted.toMap(),
+            unresolved = unresolvedFitted,
             classes = classes,
             subclassedItems = subclassed,
             resolvedTotal = items.size,
             cut = cut,
-            firstOmitted = if (cut) items.keys.elementAt(fitted.size) else null,
+            omitted = items.keys.drop(fitted.size),
+            unresolvedTotal = unresolved.size,
+            unresolvedCut = unresolvedCut,
         )
     }
 
@@ -1882,38 +1928,52 @@ class FormsService(
     )
 
     /**
-     * What a detailed `get_block` says about the items it could not resolve: the module to fetch,
-     * named with the exact call, and the subclassed items it does not try to resolve.
+     * What a detailed `get_block` says about the items missing from `effectiveDml`: the ones cut
+     * for size, with the call that reaches them; the module to fetch for an unresolved class,
+     * named with the exact call; and the subclassed items it does not try to resolve. [again]
+     * renders this call narrowed to the given item names (or as [requested], when `null`).
      */
-    private fun effectiveDmlHints(key: ModuleKey, block: String, effective: EffectiveDml, columns: Boolean): List<String> =
+    private fun effectiveDmlHints(
+        effective: EffectiveDml,
+        again: (List<String>?) -> String,
+        requested: List<String>?,
+    ): List<String> =
         buildList {
             if (effective.cut) {
                 // First, because it changes how every other absence in the map reads.
+                val named = effective.omitted.take(MAX_NAMED_OMITTED_ITEMS)
+                val more = if (effective.omitted.size > named.size) {
+                    " (the first ${named.size} of ${effective.omitted.size}; name the rest the same way)"
+                } else {
+                    ""
+                }
                 add(
                     "'effectiveDml' covers ${effective.items.size} of the ${effective.resolvedTotal} " +
                         "items whose properties resolved: the rest, from '${effective.firstOmitted}' on, " +
                         "did not fit one response, so an item missing from it is not thereby unresolved. " +
-                        "For one property of those items, read what each item writes with " +
-                        "search_source(module=\"$key\", scope=\"xml\", query=...) and what its class " +
-                        "writes with get_object_xml(module=\"$key\", objectType=\"PropertyClass\", name=...).",
+                        "Ask for them by name with ${again(named)}$more.",
+                )
+            }
+            if (effective.unresolvedCut) {
+                add(
+                    "'unresolvedItems' lists ${effective.unresolved.size} of the ${effective.unresolvedTotal} " +
+                        "items whose properties are unknown; the counts below cover all of them.",
                 )
             }
             effective.classes.filter { !it.resolved }.groupBy { it.missingModule }.forEach { (missing, classes) ->
                 val itemCount = classes.sumOf { it.itemCount }
                 val names = classes.joinToString(", ") { it.name }
                 if (missing != null) {
-                    val again = "get_block(module=\"$key\", block=\"$block\", verbosity=\"detailed\"" +
-                        (if (columns) ", columns=true" else "") + ")"
                     add(
                         "$itemCount item(s) take their properties from $names, defined in '$missing', " +
-                            "which is not fetched or is stale, so they are missing from 'effectiveDml'. " +
-                            "Call fetch_module(module=\"$missing\"), then $again.",
+                            "which is not fetched or is stale, so they are in 'unresolvedItems', not " +
+                            "'effectiveDml'. Call fetch_module(module=\"$missing\"), then ${again(requested)}.",
                     )
                 } else {
                     add(
                         "$itemCount item(s) use $names, whose definition could not be followed; " +
-                            "they are missing from 'effectiveDml' — get_object_xml(objectType=\"PropertyClass\") " +
-                            "shows the raw attributes.",
+                            "they are in 'unresolvedItems', not 'effectiveDml' — " +
+                            "get_object_xml(objectType=\"PropertyClass\") shows the raw attributes.",
                     )
                 }
             }
@@ -1925,6 +1985,33 @@ class FormsService(
                 )
             }
         }
+
+    /**
+     * The items of [block] a `get_block` call asked for, in block order — or every item, as the
+     * same list instance, when [names] selects nothing. A name may carry its block as a prefix
+     * (`ORDERS.CUSTOMER_ID`), the way items are written in PL/SQL. A name the block does not have
+     * fails the call with the block's item names, rather than quietly returning fewer rows.
+     */
+    private fun selectItems(key: ModuleKey, block: BlockInfo, names: List<String>?): List<ItemInfo> {
+        val wanted = names.orEmpty()
+            .map { name -> name.trim().removePrefix(":").let { stripBlockPrefix(it, block.name) }.uppercase() }
+            .filter { it.isNotEmpty() }
+        if (wanted.isEmpty()) return block.items
+        val present = block.items.mapTo(HashSet()) { it.name.uppercase() }
+        val unknown = wanted.filter { it !in present }.distinct()
+        require(unknown.isEmpty()) {
+            val shown = block.items.take(MAX_OVERVIEW_NAMES).joinToString(", ") { it.name }
+            val more = (block.items.size - MAX_OVERVIEW_NAMES).takeIf { it > 0 }?.let { " … and $it more" }.orEmpty()
+            "No item ${unknown.joinToString(", ") { "'$it'" }} in block '${block.name}' of $key. Items: $shown$more"
+        }
+        val set = wanted.toSet()
+        return block.items.filter { it.name.uppercase() in set }
+    }
+
+    private fun stripBlockPrefix(name: String, block: String): String {
+        val dot = name.indexOf('.')
+        return if (dot > 0 && name.substring(0, dot).equals(block, ignoreCase = true)) name.substring(dot + 1) else name
+    }
 
     /**
      * The block's data-source columns, read from its own slice of the converted XML, and the columns
@@ -2479,14 +2566,20 @@ class FormsService(
         const val SEARCH_MODULE_CHUNK = 8
 
         /**
-         * How `get_block` divides one response between its three lists. The items are the block, so
-         * they take most of it — less when the caller also asked for columns, since a base table's
-         * columns are then part of the question. The resolved properties cover the items served;
-         * what is left goes to the column rows, whose two summary name lists are never cut.
+         * How `get_block` divides one response between its lists. The items are the block, so they
+         * take most of it — less when the caller also asked for columns, since a base table's
+         * columns are then part of the question. Each served item is then a row of either the
+         * unresolved list (spent first: small, and what makes an absence from the map legible) or
+         * the resolved map; what is left goes to the column rows, whose two summary name lists are
+         * never cut.
          */
         const val ITEM_BUDGET_SHARE = 80
         const val ITEM_BUDGET_WITH_COLUMNS = 55
+        const val UNRESOLVED_BUDGET_SHARE = 40
         const val EFFECTIVE_DML_BUDGET_SHARE = 60
+
+        /** How many of the items cut from `effectiveDml` a `get_block` hint names in its follow-up call. */
+        const val MAX_NAMED_OMITTED_ITEMS = 20
 
         /**
          * The most of a `search_source` response its per-file counts may take. A row is ~150

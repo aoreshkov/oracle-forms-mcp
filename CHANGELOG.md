@@ -18,6 +18,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`fetch_module` names the attached libraries that are not fetched yet** — with the
   `fetch_module` call for each, and the converter's caveat when it cannot convert libraries. A
   form's triggers usually call into them, and an unfetched library is invisible to every other tool.
+- **`get_block` names every item it could not resolve.** At `verbosity="detailed"`, `unresolvedItems`
+  lists each item missing from `effectiveDml` with its property class, a `reason`
+  (`CLASS_MODULE_NOT_FETCHED`, `CLASS_NOT_FOLLOWABLE`, `SUBCLASSED`) and, where fetching fixes it,
+  the `missingModule`. The unknown used to be stated only per class and in prose, so an item absent
+  from the map was easy to read as an item with nothing to report — which is how a class-supplied
+  length limit got reported as no limit. `effectiveDml` itself is unchanged: an item is there only
+  when its whole chain resolved, so a `null` in it is still the Forms default.
+- **`get_block(items=[...])` narrows a block to the items a question is about.** Names are
+  case-insensitive and may carry the block (`ORDERS.STATUS`); `itemsMatched` counts the matches while
+  `itemTotal` still counts the block, and `columns` are still set against all of its items. An
+  unknown name fails with the block's item names. A hint that follows up on a cut `effectiveDml` or an
+  unresolved class now names this narrowed call.
 
 ### Fixed
 - **A cut `effectiveDml` is reported.** On a block whose items fit but whose resolved properties did

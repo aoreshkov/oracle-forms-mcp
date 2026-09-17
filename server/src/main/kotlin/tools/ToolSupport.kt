@@ -12,6 +12,8 @@ import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -120,6 +122,12 @@ internal fun boolProp(description: String): JsonObject = buildJsonObject {
     put("description", description)
 }
 
+internal fun stringListProp(description: String): JsonObject = buildJsonObject {
+    put("type", "array")
+    put("items", buildJsonObject { put("type", "string") })
+    put("description", description)
+}
+
 /** A string property constrained to [values] (rendered as JSON Schema `enum`). */
 internal fun enumProp(description: String, values: List<String>): JsonObject = buildJsonObject {
     put("type", "string")
@@ -188,6 +196,24 @@ internal fun JsonObject.stringArg(name: String): String? =
 
 internal fun JsonObject.requireStringArg(name: String): String =
     stringArg(name) ?: throw IllegalArgumentException("Missing required argument '$name'")
+
+/**
+ * A list-of-strings argument; `null` when absent or empty. A lone string is taken as a
+ * comma-separated list, because that is the shape a caller most often sends by mistake, and
+ * rejecting it would cost a round trip to say what the schema already says.
+ */
+internal fun JsonObject.stringListArg(name: String): List<String>? {
+    val values = when (val raw = this[name]) {
+        null, is JsonNull -> return null
+        is JsonArray -> raw.map {
+            (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content
+                ?: throw IllegalArgumentException("$name must be an array of strings")
+        }
+        is JsonPrimitive -> raw.contentOrNull.orEmpty().split(',')
+        else -> throw IllegalArgumentException("$name must be an array of strings")
+    }
+    return values.map { it.trim() }.filter { it.isNotEmpty() }.ifEmpty { null }
+}
 
 internal fun JsonObject.intArg(name: String): Int? =
     (this[name] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
