@@ -13,7 +13,10 @@ fun Server.registerGetTriggerTool(service: FormsService) {
             "empty here and the code that runs lives in the parent: the result then says " +
             "bodySource='inherited' and carries 'inherited' (the parent module and the path to " +
             "the trigger there) plus a hint naming the exact call. Never read an empty 'text' as " +
-            "'this trigger does nothing' without checking bodySource.",
+            "'this trigger does nothing' without checking bodySource. " +
+            "'source' addresses the extracted body, which is a file holding this trigger alone: its " +
+            "lines count from the first line of the body, so cite them as TRIGGER:line (e.g. " +
+            "POST-INSERT:75), never as module:line — the .fmb has no such line.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "name" to stringProp("Trigger name, e.g. 'WHEN-VALIDATE-ITEM'"),

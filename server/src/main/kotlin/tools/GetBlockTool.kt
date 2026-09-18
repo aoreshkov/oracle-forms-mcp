@@ -8,7 +8,12 @@ fun Server.registerGetBlockTool(service: FormsService) {
     addTool(
         name = "get_block",
         description = "One block: base table, its DML properties, its trigger names, its master-detail " +
-            "relations, and every item. 'block.relations' are the relations this block is the master " +
+            "relations, and every item. The block's own 'dml' answers what the block queries and " +
+            "writes as a whole: 'whereClause' and 'orderByClause' (the SQL Forms appends to every " +
+            "query — a block can be restricted to a subset of its table without one line of " +
+            "PL/SQL), 'dmlDataTargetName', insert/update/delete/queryAllowed, and 'keyMode'/" +
+            "'lockMode'. " +
+            "'block.relations' are the relations this block is the master " +
             "of and 'detailOf' those naming it as detail — join condition, deferred/autoQuery, " +
             "deleteRecord, and preventMasterlessOperations (the block cannot be queried except " +
             "through that master) — which is what decides what the screen can see. " +

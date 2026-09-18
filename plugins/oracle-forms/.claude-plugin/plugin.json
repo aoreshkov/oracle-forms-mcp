@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "oracle-forms",
   "displayName": "Oracle Forms",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Read Oracle Forms modules (.fmb/.mmb/.pll/.olb) from a directory — blocks, items, triggers, program units, PL/SQL, and durable annotations. Needs a JDK 21+ on PATH.",
   "author": {
     "name": "Atanas Oreshkov",

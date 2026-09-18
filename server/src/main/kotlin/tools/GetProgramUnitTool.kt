@@ -10,7 +10,10 @@ fun Server.registerGetProgramUnitTool(service: FormsService) {
         description = "The PL/SQL body of one program unit. Pass 'unitType' when a package's " +
             "spec and body share the name (PACKAGE_SPEC vs PACKAGE_BODY). A subclassed unit " +
             "returns bodySource='inherited' with a pointer to the module that defines it, rather " +
-            "than an empty body that reads as 'no code'.",
+            "than an empty body that reads as 'no code'. " +
+            "'source' lines count from the first line of the body — cite them as UNIT:line, not " +
+            "module:line. A .pll is the exception: its units are ranges within the one .pld dump " +
+            "of the whole library.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "name" to stringProp("Program unit name, e.g. 'CALC_TOTAL' or 'PKG_ORDERS'"),
