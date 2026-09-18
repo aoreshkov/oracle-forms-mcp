@@ -26,7 +26,9 @@ fun Server.registerFetchModuleTool(
             "(and again when list_modules reports STALE) before using the other tools. Returns " +
             "a summary (block/item/trigger/program-unit counts, attached libraries); its 'hint' " +
             "names the attached libraries not fetched yet — code the module calls but does not " +
-            "define is usually there.",
+            "define is usually there — and, separately, any the forms directory does not hold, " +
+            "which nothing here can read: treat a routine you cannot find in one of those as " +
+            "undetermined rather than absent.",
         inputSchema = moduleSchema(),
         title = "Fetch and index a module",
         outputSchema = outputSchemaOf<FetchModuleSummary>(),

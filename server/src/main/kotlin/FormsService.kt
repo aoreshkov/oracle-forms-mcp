@@ -505,6 +505,10 @@ class FormsService(
         )
         val block = full.copy(items = served, relations = relations)
         val effective = if (detailed) effectiveItemDml(index, block, budget) else null
+        // Only the modules an unresolved class actually needs, and only then: the check costs a
+        // directory listing, and "which module holds the answer" is a different question from
+        // "can this server reach it".
+        val absentClassModules = absentModules(effective?.classes.orEmpty().mapNotNull { it.missingModule })
         val blockColumns = if (columns) blockColumns(index.key, full, budget) else null
         val again: (List<String>?) -> String = { names ->
             "get_block(module=\"$key\", block=\"${full.name}\", verbosity=\"detailed\"" +
@@ -534,7 +538,14 @@ class FormsService(
                 )
             }
             effective?.let { dml ->
-                addAll(effectiveDmlHints(dml, again, requested = selected.map { it.name }.takeIf { filtered }))
+                addAll(
+                    effectiveDmlHints(
+                        dml,
+                        again,
+                        requested = selected.map { it.name }.takeIf { filtered },
+                        absentModules = absentClassModules,
+                    ),
+                )
             }
             addAll(
                 relationHints(
@@ -585,7 +596,7 @@ class FormsService(
                 blockColumns?.namesTruncated == true,
             effectiveDml = effective?.items.orEmpty(),
             effectiveGeometry = effective?.geometry.orEmpty(),
-            unresolvedItems = effective?.unresolved.orEmpty(),
+            unresolvedItems = effective?.unresolved.orEmpty().map { it.againstDirectory(absentClassModules) },
             propertyClasses = effective?.classes.orEmpty(),
             columns = blockColumns,
             detailOf = detailOf,
@@ -851,8 +862,12 @@ class FormsService(
             offset = start,
             nextOffset = if (truncated) end else null,
             total = seen,
-            hint = searchSourceHint(key, query, regex, ignoreCase, searchScope, cap, start, end, seen, perFile.size),
+            hint = searchSourceHint(
+                key, query, regex, ignoreCase, searchScope, cap, start, end, seen,
+                fileTotal = perFile.size, filesSearched = files.size,
+            ),
             fileTotal = perFile.size,
+            filesSearched = files.size,
             filesTruncated = filesCut || overLimit,
             files = fileRows,
         )
@@ -874,6 +889,7 @@ class FormsService(
         end: Int,
         total: Int,
         fileTotal: Int,
+        filesSearched: Int,
     ): String? {
         val next = buildString {
             append("search_source(module=\"$key\", query=")
@@ -888,8 +904,37 @@ class FormsService(
                 "needs every page."
             start > 0 && start >= total && total > 0 -> "'offset' $start is past the last of $total " +
                 "hit(s); call ${next}0) to start over."
+            // The empty result is the one that most needs saying something. It looks like an
+            // answer — and the false negative it invites is a pattern that could not have matched,
+            // read as a fact about the form.
+            total == 0 -> "No hits in scope=\"${scope.label}\", searched across $filesSearched " +
+                "file(s). A pattern that matches nothing shows the pattern is absent, not the " +
+                "fact: " + emptySearchAdvice(scope)
             else -> null
         }
+    }
+
+    /**
+     * Where to look after a search of [scope] found nothing — the places that scope cannot reach.
+     *
+     * Forms writes the same fact in three ways: as PL/SQL, as an attribute, and as nothing at all
+     * (a database item populated by the query, an LOV's return item, a relation copying a master's
+     * key). Only the first two are searchable, so an empty result has to name the third.
+     */
+    private fun emptySearchAdvice(scope: SearchScope): String = when {
+        scope.plsql && scope.xml ->
+            "a value can be written with no PL/SQL and no attribute that names it — query " +
+                "population of a database item, a property class, an LOV return item, a " +
+                "relation's join key, InitializeValue — and search_modules asks the same question " +
+                "of every other fetched module."
+        scope.xml ->
+            "here a '<' is a literal '<', never '&lt;', and an attribute value is already decoded; " +
+                "PL/SQL bodies are in scope=\"plsql\" or scope=\"all\"."
+        else ->
+            "properties, layout and subclassing pointers are attributes rather than code — search " +
+                "scope=\"xml\" or scope=\"all\" for those — and some values are written with no " +
+                "PL/SQL at all (query population of a database item, a property class, an LOV " +
+                "return item, a relation's join key)."
     }
 
     /**
@@ -1019,9 +1064,10 @@ class FormsService(
                 stale = staleSkipped,
                 truncated = next != null,
                 namePattern = namePattern,
-                // Libraries the searched modules attach that are in the forms directory but not
-                // fetched: when a called procedure is not found, these are where it most likely is.
-                unfetchedLibraries = unfetchedLibraries(attached, scannedKeys, cachedSet),
+                // Libraries the searched modules attach that this search could not see: when a
+                // called procedure is not found, these are where it most likely is — whether or
+                // not fetching one is possible.
+                unreadLibraries = unreadLibraries(attached, scannedKeys, cachedSet),
             ),
             hits = hits,
         )
@@ -1735,7 +1781,7 @@ class FormsService(
         stale: Int,
         truncated: Boolean,
         namePattern: String?,
-        unfetchedLibraries: List<ModuleKey> = emptyList(),
+        unreadLibraries: UnreadLibraries? = null,
     ): String? {
         val patternArg = namePattern?.let { ", pattern=\"$it\"" } ?: ""
         val sentences = buildList {
@@ -1746,14 +1792,24 @@ class FormsService(
                         "fetch_module adds one to the search.",
                 )
             }
-            if (unfetchedLibraries.isNotEmpty()) {
-                val shown = unfetchedLibraries.take(MAX_NAMED_LIBRARIES).joinToString(", ")
-                val more = unfetchedLibraries.size - MAX_NAMED_LIBRARIES
+            unreadLibraries?.fetchable?.takeIf { it.isNotEmpty() }?.let { fetchable ->
+                val shown = fetchable.take(MAX_NAMED_LIBRARIES).joinToString(", ")
+                val more = fetchable.size - MAX_NAMED_LIBRARIES
                 add(
                     "The searched modules attach libraries that are not fetched: $shown" +
                         (if (more > 0) " and $more more" else "") +
                         ". Code they call that is not found here is most likely there — " +
                         "fetch_module each, then search again.",
+                )
+            }
+            unreadLibraries?.absent?.takeIf { it.isNotEmpty() }?.let { absent ->
+                val shown = absent.take(MAX_NAMED_LIBRARIES).joinToString(", ")
+                val more = absent.size - MAX_NAMED_LIBRARIES
+                add(
+                    "The searched modules attach libraries that are not in the forms directory: " +
+                        shown + (if (more > 0) " and $more more" else "") +
+                        ". Nothing here can search them, so a name this result does not contain may " +
+                        "still be defined there — undetermined, not absent.",
                 )
             }
             if (stale > 0) {
@@ -2087,6 +2143,7 @@ class FormsService(
         effective: EffectiveDml,
         again: (List<String>?) -> String,
         requested: List<String>?,
+        absentModules: Set<ModuleKey> = emptySet(),
     ): List<String> =
         buildList {
             if (effective.cut) {
@@ -2127,7 +2184,17 @@ class FormsService(
             effective.classes.filter { !it.resolved }.groupBy { it.missingModule }.forEach { (missing, classes) ->
                 val itemCount = classes.sumOf { it.itemCount }
                 val names = classes.joinToString(", ") { it.name }
-                if (missing != null) {
+                if (missing != null && missing in absentModules) {
+                    // No fetch_module is named: that call cannot succeed, and naming it anyway is
+                    // what sent a caller round a failing call while reading "not fetched".
+                    add(
+                        "$itemCount item(s) take their properties from $names, defined in '$missing', " +
+                            "which is not in the forms directory — so they are in 'unresolvedItems' " +
+                            "and nothing here can resolve them. Their properties are undetermined, " +
+                            "not the Forms default; get_object_xml(objectType=\"PropertyClass\") " +
+                            "shows what this module's own stub records.",
+                    )
+                } else if (missing != null) {
                     add(
                         "$itemCount item(s) take their properties from $names, defined in '$missing', " +
                             "which is not fetched or is stale, so they are in 'unresolvedItems', not " +
@@ -2672,42 +2739,101 @@ class FormsService(
         kotlin.time.Instant.fromEpochMilliseconds(System.currentTimeMillis())
 
     /**
-     * The libraries named in [attached] that are in the forms directory ([scannedKeys]) but not
-     * cached ([cachedKeys]): where code a module calls but does not define most likely lives, and
-     * what no read tool can see until it is fetched. A library absent from the directory is left
-     * out — naming a fetch that cannot succeed is not a hint.
+     * The libraries named in [attached] that no read tool can see yet, split by what the caller can
+     * do about it: [UnreadLibraries.fetchable] are in the forms directory ([scannedKeys]) and not
+     * cached ([cachedKeys]), so a `fetch_module` reaches them; [UnreadLibraries.absent] are not in
+     * the directory at all, so nothing here will ever read them.
+     *
+     * The absent ones used to be dropped, on the grounds that naming a fetch which cannot succeed
+     * is not a hint. That is true of the *call*, not of the fact: silence made "attached and already
+     * fetched" and "attached and unavailable" the same answer, which is how a paragraph about
+     * transaction scope comes to rest on routine names nobody could read. So the call is withheld
+     * and the fact is stated.
      */
-    private fun unfetchedLibraries(
+    private fun unreadLibraries(
         attached: Collection<String>,
         scannedKeys: Set<ModuleKey>,
         cachedKeys: Set<ModuleKey>,
-    ): List<ModuleKey> = attached
-        .map { ModuleKey.of(it.trim(), ModuleType.LIBRARY) }
-        .distinct()
-        .filter { it in scannedKeys && it !in cachedKeys }
+    ): UnreadLibraries {
+        val keys = attached.map { ModuleKey.of(it.trim(), ModuleType.LIBRARY) }.distinct()
+        return UnreadLibraries(
+            fetchable = keys.filter { it in scannedKeys && it !in cachedKeys },
+            absent = keys.filter { it !in scannedKeys },
+        )
+    }
+
+    /** Attached libraries a result cannot show, and whether fetching one is even possible. */
+    private class UnreadLibraries(
+        val fetchable: List<ModuleKey>,
+        val absent: List<ModuleKey>,
+    )
+
+    /**
+     * This row with `CLASS_MODULE_NOT_FETCHED` narrowed to `CLASS_MODULE_NOT_IN_DIRECTORY` when the
+     * module it names is not served here at all. The reason is the structured half of the hint, and
+     * "not fetched" reads as an instruction; a module the directory does not hold deserves the
+     * other word.
+     */
+    private fun UnresolvedItem.againstDirectory(absent: Set<ModuleKey>): UnresolvedItem =
+        if (reason == UnresolvedReason.CLASS_MODULE_NOT_FETCHED && missingModule in absent) {
+            copy(reason = UnresolvedReason.CLASS_MODULE_NOT_IN_DIRECTORY)
+        } else {
+            this
+        }
+
+    /**
+     * Which of [needed] are not in the forms directory, so that no `fetch_module` would reach them.
+     *
+     * The same distinction the library hints draw, for the modules a property-class chain needs. An
+     * empty [needed] skips the scan: this is on the `get_block` read path, and a directory listing
+     * is not worth paying for a question nobody asked.
+     */
+    private suspend fun absentModules(needed: List<ModuleKey>): Set<ModuleKey> {
+        if (needed.isEmpty()) return emptySet()
+        val scanned = scanner.scan().mapTo(HashSet()) { it.key }
+        return needed.filterNot { it in scanned }.toSet()
+    }
 
     /**
      * This summary with the `fetch_module` hint: the attached libraries not fetched yet, each as
-     * the call that fetches it. The converter's caveat about libraries rides along when it has one
-     * — a Forms2XML-based command cannot convert them, and the calls named here would fail on
-     * exactly that.
+     * the call that fetches it, and the ones that are not in the forms directory at all — stated
+     * without a call, because there is none to make. The converter's caveat about libraries rides
+     * along when it has one — a Forms2XML-based command cannot convert them, and the calls named
+     * here would fail on exactly that.
      */
     private suspend fun FetchModuleSummary.withLibraryHint(scanned: List<ScannedModule>): FetchModuleSummary {
         if (attachedLibraries.isEmpty()) return this
-        val missing = unfetchedLibraries(
+        val unread = unreadLibraries(
             attached = attachedLibraries,
             scannedKeys = scanned.mapTo(HashSet()) { it.key },
             cachedKeys = cache.list().toSet(),
         )
-        if (missing.isEmpty()) return this
-        val shown = missing.take(MAX_NAMED_LIBRARIES)
-        val more = missing.size - shown.size
-        val hint = "${module.name} attaches ${shown.joinToString(", ")}" +
-            (if (more > 0) " and $more more" else "") +
-            ", not fetched — program units its triggers call may live there: " +
-            shown.joinToString(", ") { "fetch_module(module=\"$it\")" } + "." +
-            (this@FormsService.converter.conversionCaveat(ModuleType.LIBRARY)?.let { " $it" } ?: "")
-        return copy(hint = hint)
+        val sentences = buildList {
+            if (unread.fetchable.isNotEmpty()) {
+                val shown = unread.fetchable.take(MAX_NAMED_LIBRARIES)
+                val more = unread.fetchable.size - shown.size
+                add(
+                    "${module.name} attaches ${shown.joinToString(", ")}" +
+                        (if (more > 0) " and $more more" else "") +
+                        ", not fetched — program units its triggers call may live there: " +
+                        shown.joinToString(", ") { "fetch_module(module=\"$it\")" } + "." +
+                        (this@FormsService.converter.conversionCaveat(ModuleType.LIBRARY)?.let { " $it" } ?: ""),
+                )
+            }
+            if (unread.absent.isNotEmpty()) {
+                val shown = unread.absent.take(MAX_NAMED_LIBRARIES)
+                val more = unread.absent.size - shown.size
+                add(
+                    "${module.name} attaches ${shown.joinToString(", ")}" +
+                        (if (more > 0) " and $more more" else "") +
+                        ", which ${if (shown.size + more > 1) "are" else "is"} not in the forms " +
+                        "directory — program units its triggers call may live there, and nothing " +
+                        "here can read them. Treat a routine you cannot find as undetermined, not " +
+                        "as absent.",
+                )
+            }
+        }
+        return if (sentences.isEmpty()) this else copy(hint = sentences.joinToString(" "))
     }
 
     private fun ModuleIndex.summary(fromCache: Boolean): FetchModuleSummary = FetchModuleSummary(

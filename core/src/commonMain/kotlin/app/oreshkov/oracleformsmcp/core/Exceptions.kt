@@ -31,7 +31,7 @@ public class ModuleStaleException(key: ModuleKey) : Exception(
  * so: a caller weighing a re-fetch on a large directory should know that no conversion runs.
  */
 public class ModuleIndexOutdatedException(key: ModuleKey, found: Int, current: Int) : Exception(
-    "Module '$key' was indexed by a ${if (found < current) "older" else "newer"} build of this " +
+    "Module '$key' was indexed by ${if (found < current) "an older" else "a newer"} build of this " +
         "server (index v$found, current v$current), so its facts may be incomplete. Call " +
         "fetch_module with module \"$key\" to re-index it — the converted file is reused, so no " +
         "conversion runs.",
