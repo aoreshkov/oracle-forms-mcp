@@ -139,6 +139,13 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   unknown elements are skipped generically (but still get an `ObjectRef` when named).
 - **Every tool** declares title, annotations, and `outputSchemaOf<Dto>()`; DTO fields are
   defaulted so schemas stay forward-compatible. `ToolRegistrationTest` enforces this.
+- **Every tool is registered with `addCheckedTool`, never the SDK's bare `addTool`.** It checks the
+  arguments against the tool's own `inputSchema` before the handler runs — the SDK's `ToolSchema`
+  cannot say `additionalProperties: false`, so without it an argument a tool lacks is silently
+  dropped — and reports every unknown/missing/out-of-enum argument in one error, then counts every
+  `isError` in `ToolErrorTally`. So the schema *is* the contract: an argument a handler reads must
+  be declared, and a new tool that bypasses the wrapper fails
+  `ToolRegistrationTest.everyToolRejectsAnArgumentItDoesNotHave`. Write tools pass an `example`.
 - **Every list-shaped result is bounded and says so.** Clients cap tool output (Claude Code at
   25k tokens), and a real forms directory holds thousands of modules, so no tool may return an
   unbounded collection: `list_modules` filters (`pattern`/`type`/`status`) then pages

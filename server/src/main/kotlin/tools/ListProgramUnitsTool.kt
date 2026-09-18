@@ -5,7 +5,7 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerListProgramUnitsTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "list_program_units",
         description = "List a fetched module's PL/SQL program units (procedures, functions, " +
             "package specs and bodies) with their line counts. For .pll libraries this is the " +

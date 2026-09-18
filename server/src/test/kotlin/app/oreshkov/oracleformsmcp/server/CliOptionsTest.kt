@@ -1,5 +1,6 @@
 package app.oreshkov.oracleformsmcp.server
 
+import app.oreshkov.oracleformsmcp.model.ModuleType
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -37,6 +38,18 @@ class CliOptionsTest {
         val options = parse("/srv/forms", env = env::get)
         assertEquals("/opt/tools/fmb2xml.sh", options.convertCommand)
         assertEquals(Path.of("/srv/forms-xml"), options.convertedDir)
+    }
+
+    @Test
+    fun prefetchTakesAPatternOrAllAndAnOptionalType() {
+        assertNull(parse("/srv/forms").prefetch, "serving is the default")
+        assertEquals(Prefetch(pattern = "ORDER"), parse("/srv/forms", "--prefetch", "ORDER").prefetch)
+        assertEquals(Prefetch(pattern = null), parse("/srv/forms", "--prefetch-all").prefetch)
+        assertEquals(Prefetch(pattern = null), parse("/srv/forms", "--prefetch", "*").prefetch)
+        assertEquals(
+            Prefetch(pattern = "ORDER", type = ModuleType.LIBRARY),
+            parse("/srv/forms", "--prefetch", "ORDER", "--prefetch-type", "library").prefetch,
+        )
     }
 
     @Test

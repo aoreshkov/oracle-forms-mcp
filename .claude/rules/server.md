@@ -14,6 +14,12 @@ Tool files in `tools/` are **declarative adapters**: parse args → call `FormsS
 matching `structuredContent`. DTO fields are defaulted so output schemas stay forward-compatible.
 `ToolRegistrationTest` enforces all of this — a new tool that skips a piece fails that test.
 
+Register with **`addCheckedTool`** (`tools/ToolArguments.kt`), not the SDK's `addTool`: it
+validates the arguments against the tool's `inputSchema` (unknown, missing, out-of-enum — all in
+one error) before the handler runs, and tallies `isError` results. Declare every argument the
+handler reads, or the check rejects it; conditional requirements (`uri` *or* `file`) stay in the
+handler. Give write tools an `example` call.
+
 **A result that names a file carries a `SourceLocation`** (`uri` + cache-relative `file` + line
 range) and passes it to `toolResult(dto, dto.source)`, which attaches the `resource_link` block.
 URIs are built in `resources/SourceUris.kt` — kept apart from `ModuleResources.kt` so `FormsService`

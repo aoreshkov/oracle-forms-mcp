@@ -6,11 +6,12 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.types.ToolAnnotations
 
 fun Server.registerRemoveAnnotationTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "remove_annotation",
         description = "Delete one stored annotation or relation by its id (as returned by " +
             "annotate_element / relate_elements or shown in get_element_annotations). Reports " +
             "removed=false when no entry had that id.",
+        example = "remove_annotation(module=\"ORDERS.fmb\", id=\"<id from annotate_element>\")",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "id" to stringProp("The id of the annotation or relation to remove"),

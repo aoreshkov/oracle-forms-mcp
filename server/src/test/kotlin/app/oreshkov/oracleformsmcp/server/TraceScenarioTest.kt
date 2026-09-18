@@ -5,10 +5,13 @@ import app.oreshkov.oracleformsmcp.cache.OnDiskModuleCache
 import app.oreshkov.oracleformsmcp.convert.PreConvertedCopyConverter
 import app.oreshkov.oracleformsmcp.parse.FormsModuleParser
 import app.oreshkov.oracleformsmcp.scan.FormsDirectoryScannerImpl
+import app.oreshkov.oracleformsmcp.server.tools.ToolErrorTally
+import app.oreshkov.oracleformsmcp.server.tools.registerAnnotateElementTool
 import app.oreshkov.oracleformsmcp.server.tools.registerFetchModuleTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetBlockTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetModuleOverviewTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetObjectXmlTool
+import app.oreshkov.oracleformsmcp.server.tools.registerGetProgramUnitTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetTriggerTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListModulesTool
 import app.oreshkov.oracleformsmcp.server.tools.registerListTriggersTool
@@ -31,6 +34,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -99,6 +103,8 @@ class TraceScenarioTest {
         registerSearchModulesTool(service)
         registerReadSourceTool(service)
         registerGetObjectXmlTool(service)
+        registerGetProgramUnitTool(service)
+        registerAnnotateElementTool(service)
     }
 
     private val connection = FakeClientConnection()
@@ -107,10 +113,12 @@ class TraceScenarioTest {
     private val steps = mutableListOf<Pair<String, Int>>()
 
     init {
-        listOf("entry_fmb.xml", "picker_fmb.xml", "toolbar_fmb.xml").forEach { name ->
-            val resource = javaClass.getResourceAsStream("/fixtures/$name") ?: error("missing fixture $name")
-            resource.use { Files.copy(it, formsDir.resolve(name)) }
-        }
+        addFixtures("entry_fmb.xml", "picker_fmb.xml", "toolbar_fmb.xml")
+    }
+
+    private fun addFixtures(vararg names: String) = names.forEach { name ->
+        val resource = javaClass.getResourceAsStream("/fixtures/$name") ?: error("missing fixture $name")
+        resource.use { Files.copy(it, formsDir.resolve(name)) }
     }
 
     @AfterTest
@@ -136,6 +144,19 @@ class TraceScenarioTest {
         return assertNotNull(result.structuredContent, "$tool returned no structuredContent")
     }
 
+    /**
+     * Calls [tool] with arguments a real caller got wrong, and returns the error text — which is
+     * the thing under test: it is all the caller has to get the next call right.
+     */
+    private suspend fun callExpectingError(tool: String, arguments: JsonObject): String {
+        val result = server.tools.getValue(tool).handler(
+            connection,
+            CallToolRequest(CallToolRequestParams(name = tool, arguments = arguments)),
+        )
+        assertTrue(result.isError == true, "$tool was expected to fail: ${result.content}")
+        return result.content.joinToString("\n") { (it as? TextContent)?.text.orEmpty() }
+    }
+
     private fun args(vararg pairs: Pair<String, Any>): JsonObject = buildJsonObject {
         pairs.forEach { (key, value) ->
             put(
@@ -143,6 +164,7 @@ class TraceScenarioTest {
                 when (value) {
                     is Boolean -> JsonPrimitive(value)
                     is Int -> JsonPrimitive(value)
+                    is List<*> -> JsonArray(value.map { JsonPrimitive(it.toString()) })
                     else -> JsonPrimitive(value.toString())
                 },
             )
@@ -291,5 +313,118 @@ class TraceScenarioTest {
             oversized,
             "these responses exceed $RESPONSE_BUDGET_CHARS chars: ${steps.joinToString { "${it.first}=${it.second}" }}",
         )
+    }
+
+    /*
+     * The calls a real trace got wrong, each kept as a case. Seven of one session's twenty-six calls
+     * errored — not on anything the server could not answer, but on arguments it dropped, required
+     * one at a time, or would not take in the shape its own results use. Each case below is one of
+     * those calls, asserting either that it now works or that its error carries the fix.
+     */
+
+    /** `level` is the vocabulary list_triggers filters by and get_trigger reports; it was dropped. */
+    @Test
+    fun getTriggerTakesTheLevelItReports() = runBlocking {
+        addFixtures("dupes_fmb.xml")
+        call("fetch_module", args("module" to "DUPES.fmb"))
+
+        val ambiguous = callExpectingError("get_trigger", args("module" to "DUPES.fmb", "name" to "KEY-NEXT-ITEM"))
+        assertTrue(ambiguous.contains("level="), "the ambiguity must mention level: $ambiguous")
+
+        val form = call("get_trigger", args("module" to "DUPES.fmb", "name" to "KEY-NEXT-ITEM", "level" to "form"))
+        assertEquals("FORM", form.str("level"))
+    }
+
+    /** An argument the tool does not have is named, with the one it most likely meant. */
+    @Test
+    fun anUnknownArgumentIsNamedNotDropped() = runBlocking {
+        call("fetch_module", args("module" to "ENTRY.fmb"))
+        // `pattern` carried over from list_modules, where it is the right word.
+        val search = callExpectingError("search_source", args("module" to "ENTRY.fmb", "pattern" to "GLOBAL"))
+        assertTrue(search.contains("unknown argument 'pattern' — did you mean 'query'?"), search)
+
+        val before = ToolErrorTally.byTool()["search_source"] ?: 0
+        callExpectingError("search_source", args("module" to "ENTRY.fmb", "pattern" to "GLOBAL"))
+        assertEquals(before + 1, ToolErrorTally.byTool()["search_source"], "every tool error is counted")
+    }
+
+    /** Every search hit carries a uri naming its module; pasting it back must be enough. */
+    @Test
+    fun readSourceTakesTheUriOfAHitAlone() = runBlocking {
+        call("fetch_module", args("module" to "ENTRY.fmb"))
+        val hit = call("search_source", args("module" to "ENTRY.fmb", "query" to ":GLOBAL.picked_ref"))
+            .getValue("hits").jsonArray.first().jsonObject
+        val source = call("read_source", args("uri" to hit.str("uri"), "startLine" to 1, "maxLines" to 20))
+        assertTrue(source.str("text").contains(":GLOBAL.picked_ref"), source.str("text"))
+
+        call("fetch_module", args("module" to "PICKER.fmb"))
+        val mismatch = callExpectingError("read_source", args("module" to "PICKER.fmb", "uri" to hit.str("uri")))
+        assertTrue(mismatch.contains("name different modules"), mismatch)
+    }
+
+    /**
+     * An item filter naming a base-table column fails — no item has that name — but the failure
+     * says what the name *is*, which was the question.
+     */
+    @Test
+    fun anItemFilterNamingAColumnSaysItIsOne() = runBlocking {
+        addFixtures("claims_fmb.xml")
+        call("fetch_module", args("module" to "CLAIMS.fmb"))
+        val error = callExpectingError(
+            "get_block",
+            args("module" to "CLAIMS.fmb", "block" to "CLAIM", "items" to listOf("CREATED_BY"), "columns" to true),
+        )
+        assertTrue(
+            error.contains("'CREATED_BY' is a data-source column (VARCHAR2(30)) supplied by no item. It is mandatory."),
+            error,
+        )
+        val supplied = callExpectingError(
+            "get_block",
+            args("module" to "CLAIMS.fmb", "block" to "CLAIM", "items" to listOf("OWNER")),
+        )
+        assertTrue(supplied.contains("supplied by item 'OWNER_NAME'"), supplied)
+    }
+
+    /** Four round trips became one: every problem, each with its permitted values, and an example. */
+    @Test
+    fun annotateElementReportsEveryArgumentProblemAtOnce() = runBlocking {
+        call("fetch_module", args("module" to "ENTRY.fmb"))
+        val error = callExpectingError(
+            "annotate_element",
+            args(
+                "module" to "ENTRY.fmb",
+                "elementType" to "trigger",
+                "name" to "KEY-HELP",
+                "summary" to "opens the picker",
+                "tags" to "modal",
+            ),
+        )
+        listOf(
+            "unknown argument 'elementType' — did you mean 'elementKind'?",
+            "unknown argument 'summary'",
+            "unknown argument 'tags'",
+            "missing required argument 'elementKind'",
+            "program_unit",
+            "missing required argument 'kind'",
+            "note, tag, summary, classification",
+            "missing required argument 'body'",
+            "Example: annotate_element(",
+        ).forEach { assertTrue(error.contains(it), "expected '$it' in: $error") }
+    }
+
+    /**
+     * A body calling a routine the form does not define is only half read while the library that
+     * may define it is unfetched — and the read says so, not just the fetch long before it.
+     */
+    @Test
+    fun bodyReadsRepeatTheUnfetchedLibrary() = runBlocking {
+        addFixtures("orders_fmb.xml", "utils.pld")
+        call("fetch_module", args("module" to "ORDERS.fmb"))
+        val cold = call("get_trigger", args("module" to "ORDERS.fmb", "name" to "KEY-COMMIT"))
+        assertTrue(cold.str("hint").contains("fetch_module(module=\"UTILS.pll\")"), cold.str("hint"))
+
+        call("fetch_module", args("module" to "UTILS.pll"))
+        val warm = call("get_trigger", args("module" to "ORDERS.fmb", "name" to "KEY-COMMIT"))
+        assertEquals(null, warm["hint"], "the hint goes away with the gap")
     }
 }

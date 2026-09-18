@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Every tool validates its arguments against its own schema, and reports every problem at
+  once.** An argument a tool does not have used to be dropped without a word — `get_trigger` took
+  `level="form"`, ignored it, and then asked for the scope it had named. Now the call is not run,
+  and one error lists each unknown argument (with the declared one it most likely meant:
+  `pattern` → `query`, `elementType` → `elementKind`), each missing required argument (with its
+  description and permitted values), and each value outside an enum. A missing enum argument in a
+  handler's own check now names its values too.
+- **`get_trigger` takes `level`** — `form`, `block`, `item` or `menu`, the vocabulary
+  `list_triggers` filters by and `get_trigger` reports. An ambiguity error now mentions it.
+- **`read_source` takes a `uri` alone.** The URI of every search hit and every `source` names its
+  module, so `module` is optional with `uri` (still required with `file`); passing both and having
+  them disagree is an error rather than a silent choice.
+- **`get_trigger` and `get_program_unit` repeat the unfetched-library hint.** While the module
+  attaches a library that is not cached, the body's `hint` names it with the `fetch_module` call: a
+  routine the body calls that the module does not define may live there, and is undetermined until
+  it is read. It used to be said once, at `fetch_module` time.
+- **`get_block(items=[...])` says when a name it cannot find is a base-table column** — with the
+  column's type, whether it is mandatory, and the item that supplies it, if any — instead of only
+  listing the block's items.
+- **Example calls in the write tools' descriptions** (`annotate_element`, `relate_elements`,
+  `remove_annotation`), repeated in their argument errors, and in the `trace-form` skill.
+- **`--prefetch <pattern>` / `--prefetch-all` (with `--prefetch-type`)** run the server once as a
+  batch job that fetches every matching module and exits, so `search_modules` can cover a directory
+  of thousands instead of reporting it `skippedNotCached`. Failures are listed and do not stop the run; a rerun
+  skips what is already current. `search_modules` names the option when many modules were skipped.
+- **Tool errors are counted** by tool and by argument names, logged (stderr) as they happen and
+  summarised when the server closes — the number that says which description is costing calls.
+
 ## [0.12.0] - 2026-09-18
 
 ### Added

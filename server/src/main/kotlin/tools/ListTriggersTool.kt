@@ -5,7 +5,7 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerListTriggersTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "list_triggers",
         description = "List a fetched module's triggers with their level (form/block/item/menu), " +
             "owning block/item, and line count. Filter by block, item, or level. 'concise' (default) " +
@@ -17,7 +17,10 @@ fun Server.registerListTriggersTool(service: FormsService) {
             extraProps = mapOf(
                 "block" to stringProp("Only triggers of this block (optional)"),
                 "item" to stringProp("Only triggers of this item (optional; combine with 'block')"),
-                "level" to stringProp("Only this level: form, block, item, menu, or all (default all)"),
+                "level" to enumProp(
+                    "Only this level (default all). One of: form, block, item, menu, all.",
+                    listOf("form", "block", "item", "menu", "all"),
+                ),
                 "verbosity" to verbosityProp("omits each trigger's one-line PL/SQL preview"),
             ),
         ),

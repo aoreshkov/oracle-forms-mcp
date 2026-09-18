@@ -15,7 +15,7 @@ fun Server.registerFetchModuleTool(
     service: FormsService,
     onFetched: suspend (ModuleKey) -> Unit = {},
 ) {
-    addTool(
+    addCheckedTool(
         name = "fetch_module",
         description = "Convert an Oracle Forms module to its text form and index it, warming the " +
             "local cache. With ORACLE_HOME set the binary is converted via frmf2xml/frmcmp; " +

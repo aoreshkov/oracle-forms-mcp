@@ -5,7 +5,7 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerGetProgramUnitTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "get_program_unit",
         description = "The PL/SQL body of one program unit. Pass 'unitType' when a package's " +
             "spec and body share the name (PACKAGE_SPEC vs PACKAGE_BODY). A subclassed unit " +
@@ -13,7 +13,9 @@ fun Server.registerGetProgramUnitTool(service: FormsService) {
             "than an empty body that reads as 'no code'. " +
             "'source' lines count from the first line of the body — cite them as UNIT:line, not " +
             "module:line. A .pll is the exception: its units are ranges within the one .pld dump " +
-            "of the whole library.",
+            "of the whole library. While the module attaches a library that is not fetched, the " +
+            "'hint' says which: a routine the body calls that the module does not define may live " +
+            "there, and is undetermined until it is read.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "name" to stringProp("Program unit name, e.g. 'CALC_TOTAL' or 'PKG_ORDERS'"),

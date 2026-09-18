@@ -20,15 +20,21 @@ import app.oreshkov.oracleformsmcp.server.tools.registerSearchModulesTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchSourceTool
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /**
  * Every registered tool must carry the metadata the MCP spec encourages: a display title,
@@ -164,6 +170,38 @@ class ToolRegistrationTest {
             assertEquals(false, annotations.destructiveHint, name)
             assertEquals(false, annotations.idempotentHint, name)
             assertEquals(false, annotations.openWorldHint, name)
+        }
+    }
+
+    /**
+     * Every tool is registered through `addCheckedTool`, so none silently drops an argument it does
+     * not have — the failure that let `get_trigger(level=...)` be ignored while the error asked for
+     * the very scope `level` had named. The check runs before the handler, so the fake service is
+     * never reached; a tool registered with the SDK's bare `addTool` would reach it and not fail
+     * this way.
+     */
+    @Test
+    fun everyToolRejectsAnArgumentItDoesNotHave() = runBlocking {
+        val server = serverWithAllTools()
+        server.tools.forEach { (name, registered) ->
+            val result = registered.handler(
+                FakeClientConnection(),
+                CallToolRequest(
+                    CallToolRequestParams(name = name, arguments = buildJsonObject { put("notAnArgument", "x") }),
+                ),
+            )
+            assertEquals(true, result.isError, "$name accepted an argument it does not declare")
+            val text = result.content.filterIsInstance<TextContent>().joinToString { it.text }
+            assertTrue("unknown argument 'notAnArgument'" in text, "$name: $text")
+        }
+    }
+
+    /** An example call is the only form of `input_examples` MCP can carry; write tools need one. */
+    @Test
+    fun writeToolsCarryAnExampleCall() {
+        listOf("annotate_element", "relate_elements", "remove_annotation").forEach { name ->
+            val description = assertNotNull(tools().getValue(name).description)
+            assertTrue("Example: $name(" in description, "$name's description has no example call")
         }
     }
 

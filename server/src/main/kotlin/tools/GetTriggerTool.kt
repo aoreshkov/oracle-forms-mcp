@@ -1,28 +1,36 @@
 package app.oreshkov.oracleformsmcp.server.tools
 
 import app.oreshkov.oracleformsmcp.dto.TriggerSource
+import app.oreshkov.oracleformsmcp.model.TriggerLevel
 import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerGetTriggerTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "get_trigger",
-        description = "The decoded PL/SQL body of one trigger. Pass 'ownerPath' (or 'block'/'item') " +
-            "when the same trigger name exists at several scopes — e.g. a KEY-NEXT-ITEM at form, " +
-            "block and item level. When the trigger is subclassed from another module its body is " +
+        description = "The decoded PL/SQL body of one trigger. Pass 'ownerPath' (or 'level', or " +
+            "'block'/'item') when the same trigger name exists at several scopes — e.g. a " +
+            "KEY-NEXT-ITEM at form, block and item level; level=\"form\" is the form-level one. When the trigger is subclassed from another module its body is " +
             "empty here and the code that runs lives in the parent: the result then says " +
             "bodySource='inherited' and carries 'inherited' (the parent module and the path to " +
             "the trigger there) plus a hint naming the exact call. Never read an empty 'text' as " +
             "'this trigger does nothing' without checking bodySource. " +
             "'source' addresses the extracted body, which is a file holding this trigger alone: its " +
             "lines count from the first line of the body, so cite them as TRIGGER:line (e.g. " +
-            "POST-INSERT:75), never as module:line — the .fmb has no such line.",
+            "POST-INSERT:75), never as module:line — the .fmb has no such line. While the module " +
+            "attaches a library that is not fetched, the 'hint' says which: a routine the body " +
+            "calls that the module does not define may live there, and is undetermined until it " +
+            "is read.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "name" to stringProp("Trigger name, e.g. 'WHEN-VALIDATE-ITEM'"),
                 "ownerPath" to stringProp(
                     "Exact scope, to disambiguate (optional): 'BLOCK', 'BLOCK.ITEM', or ':FORM' " +
                         "for the form-level trigger",
+                ),
+                "level" to enumPropOf<TriggerLevel>(
+                    "Trigger level, to disambiguate (optional) — the 'level' list_triggers reports; " +
+                        "'form' selects the form-level trigger",
                 ),
                 "block" to stringProp("Owning block, to disambiguate (optional)"),
                 "item" to stringProp("Owning item, to disambiguate (optional)"),
@@ -47,6 +55,7 @@ fun Server.registerGetTriggerTool(service: FormsService) {
                 item = args.stringArg("item"),
                 ownerPath = args.stringArg("ownerPath"),
                 resolve = args.booleanArg("resolve") ?: false,
+                level = args.enumArgOf<TriggerLevel>("level"),
             )
             toolResult(result, result.source)
         }

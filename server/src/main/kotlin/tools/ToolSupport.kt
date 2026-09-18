@@ -162,16 +162,22 @@ internal const val MODULE_DESCRIPTION: String =
     "Module name, optionally with extension: 'ORDERS' or 'ORDERS.fmb'. The extension " +
         "(fmb/mmb/pll/olb) is only required when the same name exists as several module types."
 
-/** Schema with the shared `module` property plus [extraProps]; [extraRequired] adds to `required`. */
+/**
+ * Schema with the shared `module` property plus [extraProps]; [extraRequired] adds to `required`.
+ * [moduleDescription] and [moduleRequired] are for a tool whose other arguments can name the
+ * module themselves (`read_source`, whose `uri` carries it).
+ */
 internal fun moduleSchema(
     extraProps: Map<String, JsonObject> = emptyMap(),
     extraRequired: List<String> = emptyList(),
+    moduleDescription: String = MODULE_DESCRIPTION,
+    moduleRequired: Boolean = true,
 ): ToolSchema = ToolSchema(
     properties = buildJsonObject {
-        put("module", stringProp(MODULE_DESCRIPTION))
+        put("module", stringProp(moduleDescription))
         extraProps.forEach { (name, prop) -> put(name, prop) }
     },
-    required = listOf("module") + extraRequired,
+    required = (if (moduleRequired) listOf("module") else emptyList()) + extraRequired,
 )
 
 /**
@@ -235,9 +241,11 @@ internal inline fun <reified E : Enum<E>> JsonObject.enumArgOf(name: String): E?
         ?: throw IllegalArgumentException("$name must be one of: ${enumNamesLower<E>().joinToString(", ")}")
 }
 
-/** Like [enumArgOf] but required. */
+/** Like [enumArgOf] but required; a missing one is reported with its permitted values. */
 internal inline fun <reified E : Enum<E>> JsonObject.requireEnumArg(name: String): E =
-    enumArgOf<E>(name) ?: throw IllegalArgumentException("Missing required argument '$name'")
+    enumArgOf<E>(name) ?: throw IllegalArgumentException(
+        "Missing required argument '$name' — one of: ${enumNamesLower<E>().joinToString(", ")}",
+    )
 
 /** The raw `module` argument; resolution to a [ModuleKey] happens in `FormsService`. */
 internal fun JsonObject.moduleArg(): String = requireStringArg("module")
