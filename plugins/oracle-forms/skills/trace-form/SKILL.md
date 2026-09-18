@@ -91,7 +91,9 @@ shared module. So *"which fields does this insert write?"* is
 applied, not `items[].dml`, which is only what the item itself wrote. An item appears in
 `effectiveDml` only when its class could be followed into a **fetched** module; every item that is
 not is listed in `unresolvedItems` with the module to fetch — an item absent from the map is an
-unknown, never a default. `items: [...]` narrows the call to the fields a question is about. `columns: true` adds the
+unknown, never a default. The same holds for *how big* a field is: a classed item writes a width and
+no height at all, so ask `effectiveGeometry`, not `items[].width`/`height`, which are only what the
+item itself wrote. (Neither is the length it accepts — that is `maximumLength`.) `items: [...]` narrows the call to the fields a question is about. `columns: true` adds the
 base table's columns, the ones no item supplies, and which of *those* are mandatory — the columns
 an insert fails on unless a trigger assigns them.
 

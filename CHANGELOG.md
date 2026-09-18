@@ -41,8 +41,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lives. `get_object_xml` now lists `Relation` among its element types (its owner is the master).
 - **Item size.** `get_block(verbosity="detailed")` adds each item's `width` and `height` — layout
   units, usually pixels, and not the length a field accepts, which stays `maximumLength`.
+- **`effectiveGeometry` resolves an item's size through its property class**, the way
+  `effectiveDml` resolves the rest. A classed item in a real form writes a `Width` and no `Height`
+  at all — measured on a 142-item screen, 107 of its 125 classed items carried a width and *none*
+  carried a height — so serving only what the item wrote reported every one of them as having no
+  height, an absence indistinguishable from one nobody set. That is the failure `unresolvedItems`
+  exists to prevent, and the size question had been left outside it. An item is in
+  `effectiveGeometry` only when its whole chain resolved, is named in `unresolvedItems` when it did
+  not, and is left out entirely when no link of the chain writes a size — never served as a row of
+  `null`s. `items[].width`/`height` still mean what the item itself wrote.
 
 ### Changed
+- **The column-name lists are bounded, and say when they are cut.** `columnsWithoutItem` and
+  `mandatoryColumnsWithoutItem` are the answer `columns=true` exists to give, so they are still
+  computed over every column and still served ahead of the column rows — but they were built after
+  the rows had been budgeted and were capped by nothing at all, which on a thousand-column table
+  carried the whole result past the size ceiling on names alone. They now spend from the same
+  budget, cap at 500 names, and carry `columnsWithoutItemTotal`,
+  `mandatoryColumnsWithoutItemTotal` and `namesTruncated` so a shortened list is never read as the
+  whole set.
 - **The tool descriptions name the block's own DML properties** — `dml.whereClause`,
   `orderByClause`, `dmlDataTargetName`, `keyMode`/`lockMode` — instead of only "its DML properties".
   A `whereClause` restricts what a block queries without a line of PL/SQL, so it decides what a
@@ -60,11 +77,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   LOV return items). With two rules that each cost a wrong claim: a zero-hit pattern proves the
   pattern absent, not the write; and in `scope: "xml"` a `<` is a literal `<`, so a pattern spelled
   `&lt;Relation` is a silently dead branch. Plugin version 1.2.0.
-- **Index format v3.** Every warm cache entry reports `STALE` with `staleReason: INDEX_OUTDATED`
+- **Index format v4.** Every warm cache entry reports `STALE` with `staleReason: INDEX_OUTDATED`
   once after upgrading; `fetch_module` heals it by re-parsing the converted file already in the
-  cache — no re-conversion.
+  cache — no re-conversion. (One re-index, not two: v3 was never released.)
 
 ### Fixed
+- **A cut column list is reported.** On a block over a wide base table, `columns` was cut to fit
+  while the result's own `truncated` stayed `false` — the flag was assembled from the item and
+  property lists alone — and no hint mentioned the columns at all. A caller reading the rows as the
+  table was short some columns with nothing saying so: the same silent omission as an item missing
+  from `effectiveDml`. `truncated` now covers the column rows and both name lists, and the hint says
+  how many of how many columns the rows show, that the name lists still cover every column, and how
+  to leave more room for the rest.
 - **A cut `effectiveDml` is reported.** On a block whose items fit but whose resolved properties did
   not, `get_block(verbosity="detailed")` dropped the overflow with no signal: `truncated` stayed
   `false`, and an item missing from `effectiveDml` read exactly like an item whose property class

@@ -7,6 +7,7 @@ import app.oreshkov.oracleformsmcp.model.BlockInfo
 import app.oreshkov.oracleformsmcp.model.CanvasInfo
 import app.oreshkov.oracleformsmcp.model.InheritanceRef
 import app.oreshkov.oracleformsmcp.model.ItemDml
+import app.oreshkov.oracleformsmcp.model.ItemGeometry
 import app.oreshkov.oracleformsmcp.model.ItemInfo
 import app.oreshkov.oracleformsmcp.model.LovInfo
 import app.oreshkov.oracleformsmcp.model.MenuInfo
@@ -296,6 +297,7 @@ internal object FormsXmlParser {
                                     name = name ?: "",
                                     item = reader.itemDml(),
                                     block = reader.blockDml(alsoRecovered = false),
+                                    geometry = reader.itemGeometry(),
                                     propertyClass = reader.localParentName(moduleName),
                                     inherited = inherited,
                                 )
@@ -587,6 +589,15 @@ internal object FormsXmlParser {
     ).takeUnless { it == EMPTY_ITEM_DML }
 
     /**
+     * The size the element being read writes itself, or `null` when it writes neither dimension.
+     * Read off items and property classes alike, so the two resolve field by field like [itemDml].
+     */
+    private fun XMLStreamReader.itemGeometry(): ItemGeometry? = ItemGeometry(
+        width = intAttr("Width"),
+        height = intAttr("Height"),
+    ).takeUnless { it == EMPTY_ITEM_GEOMETRY }
+
+    /**
      * The block DML properties written on the element being read, or `null` when there are none.
      * The clauses are SQL and are recovered from double escaping like bodies; [alsoRecovered] carries
      * the same verdict for the block's query source, which is read separately.
@@ -632,6 +643,7 @@ internal object FormsXmlParser {
 
     private val EMPTY_ITEM_DML = ItemDml()
     private val EMPTY_BLOCK_DML = BlockDml()
+    private val EMPTY_ITEM_GEOMETRY = ItemGeometry()
 
     /**
      * `ParentName` when the parent is in *this* module — the candidate property class.

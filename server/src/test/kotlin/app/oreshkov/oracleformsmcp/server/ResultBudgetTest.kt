@@ -223,6 +223,37 @@ class ResultBudgetTest {
     }
 
     /**
+     * A narrow block over a very wide base table: the only thing cut is the column rows.
+     *
+     * That cut used to be invisible from outside the section — `truncated` was assembled from the
+     * item and property lists alone, so the result said `false` while `columns.truncated` said
+     * `true` inside it, and no hint mentioned the columns at all. A reader taking the rows for the
+     * table is then short some columns with nothing to say so, which is the same failure as an item
+     * quietly missing from `effectiveDml`.
+     */
+    @Test
+    fun aCutColumnListSetsTruncatedAndSaysWhatItDidNotShow() = runTest {
+        writeCrowdedBlock(items = 5, columns = 1_200)
+        service.fetchModule(wideKey)
+
+        val detail = service.getBlock(wideKey, "WIDE_BLOCK", detailed = true, columns = true)
+        val size = textLength(toolResult(detail, detail.source))
+        val columns = assertNotNull(detail.columns)
+
+        assertTrue(size <= MAX_RESULT_CHARS, "a detailed block serialized to $size chars")
+        assertEquals(5, detail.block.items.size, "the items all fit: the columns are the only cut")
+        assertEquals(5, detail.effectiveDml.size)
+        assertTrue(columns.truncated)
+        assertTrue(columns.columns.size < 1_200)
+        assertEquals(1_200, columns.total, "the total describes the table, not the rows that fit")
+        assertTrue(detail.truncated, "a cut column list is a cut result")
+
+        val hint = assertNotNull(detail.hint)
+        assertTrue(hint.contains("'columns' lists ${columns.columns.size} of 1200"), hint)
+        assertTrue(hint.contains("complete"), "the name lists still cover every column: $hint")
+    }
+
+    /**
      * Items small enough to all fit, whose class writes a long initial value: the resolved map is
      * the part that overflows. An item missing from a cut map must not read like an item whose
      * class did not resolve — that absence is how a property gets reported as the Forms default.

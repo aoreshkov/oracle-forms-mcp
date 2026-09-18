@@ -148,6 +148,22 @@ public data class ItemDml(
 )
 
 /**
+ * An item's size in layout units (usually pixels), as written in one place — an item, or a property
+ * class. Not the length a field accepts, which is [ItemDml.maximumLength].
+ *
+ * Each field is `null` when that place did not write it, and on a classed item that is not the
+ * Forms default either: in a real form most items write a [width] and no [height] at all, because
+ * the class supplies it. `get_block` resolves the chain into `effectiveGeometry` and never
+ * back-fills it here, exactly as it does for [ItemDml] — the two halves of the same rule.
+ */
+@Serializable
+@SerialName("ItemGeometry")
+public data class ItemGeometry(
+    val width: Int? = null,
+    val height: Int? = null,
+)
+
+/**
  * One item of a block (field, button, checkbox, …).
  *
  * [propertyClass] is where an item's semantics usually live in a real application: Forms shops

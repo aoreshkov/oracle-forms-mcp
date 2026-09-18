@@ -6,6 +6,7 @@ import app.oreshkov.oracleformsmcp.convert.PreConvertedCopyConverter
 import app.oreshkov.oracleformsmcp.dto.UnresolvedItem
 import app.oreshkov.oracleformsmcp.dto.UnresolvedReason
 import app.oreshkov.oracleformsmcp.model.ItemDml
+import app.oreshkov.oracleformsmcp.model.ItemGeometry
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.parse.FormsModuleParser
@@ -96,6 +97,42 @@ class BlockDmlResolutionTest {
         assertEquals(listOf(claimsKey, stylesKey), locked.resolvedThrough)
         assertEquals(1, locked.itemCount)
         assertEquals(3, detail.propertyClasses.single { it.name == "BASE_TEXT" }.itemCount)
+    }
+
+    /**
+     * A size is a class-supplied property like any other, and the one most often written by halves:
+     * a real classed item carries a `Width` and no `Height` at all, so serving only what the item
+     * wrote reports every such item as having no height — an absence indistinguishable from a
+     * height nobody set. `effectiveGeometry` resolves it the way `effectiveDml` resolves the rest.
+     */
+    @Test
+    fun anItemsSizeResolvesThroughItsClassLikeEveryOtherProperty() = runTest {
+        service.fetchModule(claimsKey)
+        service.fetchModule(stylesKey)
+
+        val detail = service.getBlock(claimsKey, "CLAIM", detailed = true)
+        val size = detail.effectiveGeometry
+
+        // The item writes its own width; the height exists only on the shared class.
+        assertEquals(ItemGeometry(width = 60, height = 24), size["CLAIM_ID"])
+        // Writes neither: both dimensions come from the class.
+        assertEquals(ItemGeometry(width = 120, height = 24), size["STATUS"])
+        // Through a stub to a class based on another class, both hops in the shared module.
+        assertEquals(ItemGeometry(width = 120, height = 24), size["AMOUNT_LOCKED"])
+        // A class in this module, supplying a height and no width: what is unset stays null.
+        assertEquals(ItemGeometry(height = 18), size["OWNER_NAME"])
+
+        // The item's own row is untouched by resolution — it is what the item wrote, nothing more.
+        val claimId = detail.block.items.single { it.name == "CLAIM_ID" }
+        assertEquals(60, claimId.width)
+        assertNull(claimId.height)
+        assertNull(detail.block.items.single { it.name == "STATUS" }.width)
+
+        // An item with no size anywhere in its chain is left out rather than served as an empty row.
+        assertFalse("NOTES" in size, "an item with no size written anywhere says nothing here")
+        // An unresolved class yields no size either: it is an unknown, not a default.
+        assertFalse("COMMENTS" in size)
+        assertTrue(detail.unresolvedItems.any { it.name == "COMMENTS" })
     }
 
     @Test

@@ -112,6 +112,13 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   Forms default. Everything unresolved is counted and named — per item in `unresolvedItems`
   (beside the map, never as `null`s inside it), per class in `propertyClasses`, and in the
   `hint` — never approximated.
+- **The item's *size* is one of those properties, and the rule holds for it too.** A classed item in
+  a real form writes a `Width` and no `Height` at all, so `ItemInfo.width`/`height` alone report
+  every such item as having no height — an absence indistinguishable from one nobody set.
+  `PropertyClassInfo.geometry` records what a class supplies and `get_block`'s `effectiveGeometry`
+  resolves the same chain as `effectiveDml`, with the same contract: present only when the chain
+  resolved, absent (and named in `unresolvedItems`) when it did not. An item with no size anywhere
+  in its chain is left out rather than served as a row of `null`s.
 - **Data-source columns are read, not indexed.** One form repeats the same wide base table across
   several blocks — thousands of `DataSourceColumn` elements, hundreds of KB — so `ModuleIndex` keeps
   only `BlockInfo.dataSourceColumnCount` and `get_block(columns=true)` reads them from the block's
