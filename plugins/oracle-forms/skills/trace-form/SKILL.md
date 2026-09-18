@@ -133,9 +133,11 @@ Two rules that cost a wrong claim if skipped:
 
 - **A zero-hit pattern proves the pattern absent, not the write.** A regex like
   `(customer_name|…)\s*:=` returning nothing says nothing about a
-  `SELECT … INTO :orders.customer_name`. Before concluding "written only here",
-  check that the searches above were actually run — and read `total` and `files`, which count the
-  whole module, not just the page you were shown.
+  `SELECT … INTO :orders.customer_name`. A search that found nothing says so itself now —
+  `filesSearched` with a `hint` naming what that scope cannot reach — but it cannot know which
+  shapes you did not try. Before concluding "written only here", check that the searches above were
+  actually run, and read `total` and `files`, which count the whole module, not just the page you
+  were shown.
 - **In `scope: "xml"`, `<` is a literal `<`.** The search runs over the file's own text, where
   element markup is written with real angle brackets, so a pattern written `&lt;Relation` can only
   match a file that literally spells that — it is a silently dead branch, and in an alternation a
@@ -156,8 +158,11 @@ Matching is case-insensitive by default, because the same module is written `PIC
 `cachedModules`, `scannedModules`, `skippedNotCached`, `skippedStale`. Only fetched modules are
 searched, so a thin result may mean "not fetched yet" — the `hint` names the `fetch_module` call
 that widens the search, and names the **attached libraries** of the modules it did search: a
-procedure a form calls but does not define is most often in one of those `.pll` files. When
-`truncated` is set, pass the returned `nextCursor` back with the same arguments.
+procedure a form calls but does not define is most often in one of those `.pll` files. Some of those
+libraries are not in the forms directory at all; the hint says so separately, and there is no call
+for that case — a routine defined in one of them is **undetermined**, not absent, and a claim about
+what it does rests on nothing until the library is served. When `truncated` is set, pass the
+returned `nextCursor` back with the same arguments.
 
 ## When `get_object_xml` is the right call
 

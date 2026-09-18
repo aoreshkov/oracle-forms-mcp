@@ -167,7 +167,10 @@ public data class ModuleList(
 /**
  * `fetch_module` — summary of a converted-and-indexed module.
  *
- * [hint] names the [attachedLibraries] that are in the forms directory but not fetched. A form's
+ * [hint] names the [attachedLibraries] no tool here can read yet: the ones in the forms directory
+ * but not fetched, each with the call that fetches it, and separately the ones the directory does
+ * not hold at all — stated without a call, because there is none to make, and stated all the same,
+ * since silence would make an unavailable library look like a fetched one. A form's
  * triggers usually call into them, and a library that is not fetched is invisible to every other
  * tool — so the procedures it defines would otherwise read as missing rather than elsewhere.
  */
@@ -351,6 +354,14 @@ public enum class UnresolvedReason {
     /** Its class, or a class that one is based on, lives in a module that is not fetched or is stale. */
     CLASS_MODULE_NOT_FETCHED,
 
+    /**
+     * Same chain, but the module it needs is not in the forms directory at all, so no `fetch_module`
+     * will resolve it. Distinct from [CLASS_MODULE_NOT_FETCHED] because that reason names an action
+     * and this one names a limit: a shop keeps its classes in a form that is simply not served here,
+     * and reporting it as "not fetched" sends a caller round a call that fails.
+     */
+    CLASS_MODULE_NOT_IN_DIRECTORY,
+
     /** Its class chain breaks where fetching cannot fix it: a class not declared where named, a loop. */
     CLASS_NOT_FOLLOWABLE,
 
@@ -530,6 +541,11 @@ public data class SearchFileCount(
  * cannot show — whether an identifier appears anywhere past the page, and roughly where — so they
  * are computed over the whole result. [fileTotal] counts those files; [filesTruncated] says
  * [files] was cut to fit.
+ *
+ * [filesSearched] is how many files the scope actually read, hit or not. It is the coverage a zero
+ * hit result otherwise asserts nothing about: "no hits" and "nothing searched" look identical on
+ * the wire, and the first gets read as proof the form does not contain the thing. The [hint] says
+ * the same in words when there are no hits, along with where the scope could not look.
  */
 @Serializable
 @SerialName("SearchResults")
@@ -542,6 +558,7 @@ public data class SearchResults(
     val total: Int = 0,
     val hint: String? = null,
     val fileTotal: Int = 0,
+    val filesSearched: Int = 0,
     val filesTruncated: Boolean = false,
     val files: List<SearchFileCount> = emptyList(),
 )

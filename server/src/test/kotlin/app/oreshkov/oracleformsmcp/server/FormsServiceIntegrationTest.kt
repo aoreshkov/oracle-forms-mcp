@@ -229,8 +229,17 @@ class FormsServiceIntegrationTest {
         assertTrue(assertNotNull(past.hint).contains("past the last of ${all.total}"), past.hint)
     }
 
+    /**
+     * The empty result is the one that most needs saying something, and it used to say the least:
+     * no total, no coverage, no hint. It reads as an answer, which is how a pattern that could not
+     * have matched — a regex missing the `SELECT … INTO` form, an `&lt;` written where the file
+     * holds a literal `<` — becomes a finding that the form does not contain the thing.
+     *
+     * So it reports what it read, and names where this scope cannot look at all: Forms writes plenty
+     * of values with no PL/SQL and no attribute naming them.
+     */
     @Test
-    fun aSearchWithNoHitsCountsNothingAndSaysNothing() = runTest {
+    fun aSearchWithNoHitsSaysWhatItReadAndWhereItCouldNotLook() = runTest {
         service.fetchModule(ordersKey)
 
         val none = service.searchSource(ordersKey, "no-such-token", regex = false, scope = "all", maxResults = 50)
@@ -238,7 +247,21 @@ class FormsServiceIntegrationTest {
         assertEquals(0, none.total)
         assertEquals(0, none.fileTotal)
         assertTrue(none.files.isEmpty())
-        assertNull(none.hint)
+        assertTrue(none.filesSearched > 0, "a zero-hit result must say it actually read something")
+
+        val hint = assertNotNull(none.hint, "no hits is not the same claim as nothing searched")
+        assertTrue(hint.contains("searched across ${none.filesSearched} file(s)"), hint)
+        assertTrue(hint.contains("shows the pattern is absent, not the fact"), hint)
+        // scope=all can only add the writers that are not searchable at all.
+        assertTrue(hint.contains("LOV return item"), hint)
+
+        // In scope=plsql the other two scopes are the first thing to try.
+        val plsql = service.searchSource(ordersKey, "no-such-token", regex = false, scope = "plsql", maxResults = 50)
+        assertTrue(assertNotNull(plsql.hint).contains("scope=\"xml\""), plsql.hint)
+
+        // In scope=xml the dead-branch trap is the one worth naming.
+        val xml = service.searchSource(ordersKey, "no-such-token", regex = false, scope = "xml", maxResults = 50)
+        assertTrue(assertNotNull(xml.hint).contains("literal '<'"), xml.hint)
     }
 
     /**
@@ -258,6 +281,38 @@ class FormsServiceIntegrationTest {
 
         service.fetchModule(utilsKey)
         assertNull(service.fetchModule(ordersKey).hint)
+    }
+
+    /**
+     * An attached library the forms directory does not hold at all.
+     *
+     * This used to be dropped from the hint, on the grounds that naming a fetch which cannot
+     * succeed is not a hint. True of the call — but the silence made "attached and already
+     * fetched" and "attached and unreadable here" the same answer, and the second is the one that
+     * leaves a claim about a routine resting on its name. So the fact is stated and the call is not.
+     */
+    @Test
+    fun fetchModuleSaysWhenAnAttachedLibraryIsNotInTheDirectory() = runTest {
+        val alone = Files.createDirectories(temp.resolve("no-library"))
+        Files.copy(formsDir.resolve("orders_fmb.xml"), alone.resolve("orders_fmb.xml"))
+        val isolated = FormsService(
+            scanner = FormsDirectoryScannerImpl(alone),
+            converter = PreConvertedCopyConverter(),
+            parser = FormsModuleParser(),
+            cache = OnDiskModuleCache(temp.resolve("cache-no-library")),
+            annotationStore = OnDiskAnnotationStore(temp.resolve("annotations-no-library")),
+            formsDir = alone,
+        )
+
+        val summary = isolated.fetchModule(ordersKey)
+
+        assertEquals(listOf("UTILS"), summary.attachedLibraries, "the attachment is a fact either way")
+        val hint = assertNotNull(summary.hint, "an unreadable library must not be reported by silence")
+        assertTrue(hint.contains("UTILS.pll, which is not in the forms directory"), hint)
+        assertFalse(
+            hint.contains("fetch_module(module=\"UTILS.pll\")"),
+            "no call is named, because none would succeed: $hint",
+        )
     }
 
     /** A library the converter cannot convert gets the converter's reason alongside the call. */

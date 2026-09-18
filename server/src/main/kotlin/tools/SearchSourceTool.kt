@@ -15,7 +15,10 @@ fun Server.registerSearchSourceTool(service: FormsService) {
             "'total' (all hits in the module) and 'files' (hits per file across the whole result), " +
             "so one call says whether and roughly where a name appears. When 'truncated' is true " +
             "the 'hint' names the call for the next page ('offset' = 'nextOffset'); a claim that " +
-            "something is absent needs every page.",
+            "something is absent needs every page. A result with no hits reports " +
+            "'filesSearched' and a 'hint' naming where this scope could not look — a pattern that " +
+            "matches nothing shows the pattern is absent, not the fact, and Forms writes many " +
+            "values with no PL/SQL naming them at all.",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "query" to stringProp("Substring (default) or regex to search for"),

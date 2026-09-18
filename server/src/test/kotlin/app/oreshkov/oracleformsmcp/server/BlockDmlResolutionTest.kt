@@ -150,11 +150,48 @@ class BlockDmlResolutionTest {
         assertTrue(hint.contains("fetch_module(module=\"STYLES.fmb\")"), hint)
         assertTrue(hint.contains("get_block(module=\"CLAIMS.fmb\", block=\"CLAIM\", verbosity=\"detailed\")"), hint)
         assertTrue(hint.contains("5 item(s)"), "BASE_TEXT, CONTROL_TEXT and LOCKED_TEXT items: $hint")
-        // A pointer at a module that is not there at all is reported the same way, and separately.
+        // A pointer at a module that is not there at all is reported separately.
         assertEquals(
             ModuleKey.of("absent", ModuleType.FORM),
             detail.propertyClasses.single { it.name == "MISSING_TEXT" }.missingModule,
         )
+    }
+
+    /**
+     * A class whose module is in the directory and a class whose module is not are both unresolved,
+     * but only one of them has anything a caller can do about it.
+     *
+     * Naming `fetch_module` for a module the directory does not hold sends a caller round a call
+     * that fails, while reporting the reason as "not fetched" — which is how the same result tells
+     * them to retry and tells them nothing. The library hints already drew this distinction; the
+     * class hints did not, and the two sat in the same response.
+     */
+    @Test
+    fun aClassModuleTheDirectoryDoesNotHoldIsDistinguishedFromOneMerelyUnfetched() = runTest {
+        service.fetchModule(claimsKey)
+
+        val detail = service.getBlock(claimsKey, "CLAIM", detailed = true)
+        val absentKey = ModuleKey.of("absent", ModuleType.FORM)
+
+        // COMMENTS needs absent.fmb, which is not in the forms directory: no call can fix it.
+        assertEquals(
+            UnresolvedItem("COMMENTS", "MISSING_TEXT", UnresolvedReason.CLASS_MODULE_NOT_IN_DIRECTORY, absentKey),
+            detail.unresolvedItems.single { it.name == "COMMENTS" },
+        )
+        // STATUS needs styles.fmb, which is there and simply not fetched yet.
+        assertEquals(
+            UnresolvedItem("STATUS", "BASE_TEXT", UnresolvedReason.CLASS_MODULE_NOT_FETCHED, stylesKey),
+            detail.unresolvedItems.single { it.name == "STATUS" },
+        )
+
+        val hint = assertNotNull(detail.hint)
+        assertTrue(hint.contains("'ABSENT.fmb', which is not in the forms directory"), hint)
+        assertFalse(
+            hint.contains("fetch_module(module=\"ABSENT.fmb\")"),
+            "a call that cannot succeed is not a hint: $hint",
+        )
+        // The fetchable one still gets its call.
+        assertTrue(hint.contains("fetch_module(module=\"STYLES.fmb\")"), hint)
     }
 
     /**
@@ -207,9 +244,17 @@ class BlockDmlResolutionTest {
 
         val claim = service.getBlock(claimsKey, "CLAIM", detailed = true)
 
-        // A pointer at a module the directory does not have: fetching is still the call that fixes it.
+        // A pointer at a module the directory does not have: named, with the module still given,
+        // but as a limit rather than as a fetch to retry.
         assertEquals(
-            listOf(UnresolvedItem("COMMENTS", "MISSING_TEXT", UnresolvedReason.CLASS_MODULE_NOT_FETCHED, ModuleKey.of("absent", ModuleType.FORM))),
+            listOf(
+                UnresolvedItem(
+                    "COMMENTS",
+                    "MISSING_TEXT",
+                    UnresolvedReason.CLASS_MODULE_NOT_IN_DIRECTORY,
+                    ModuleKey.of("absent", ModuleType.FORM),
+                ),
+            ),
             claim.unresolvedItems,
         )
         assertEquals(claim.block.items.map { it.name }.toSet(), claim.effectiveDml.keys + claim.unresolvedItems.map { it.name })

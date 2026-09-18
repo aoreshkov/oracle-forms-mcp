@@ -52,6 +52,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `null`s. `items[].width`/`height` still mean what the item itself wrote.
 
 ### Changed
+- **A module that is not in the forms directory is said to be missing, not to be unfetched.** Two
+  hints in the same response used to disagree about this: the attached-library hint stayed silent
+  when the library was not in the directory — making an unreadable library look like a fetched one —
+  while the property-class hint named a `fetch_module` for a module that is not there, a call that
+  fails. Both now draw the same distinction: the call is named when it would work, and the fact is
+  stated either way. `unresolvedItems` gains the reason `CLASS_MODULE_NOT_IN_DIRECTORY` beside
+  `CLASS_MODULE_NOT_FETCHED`, because one names an action and the other names a limit, and a form
+  whose property classes live in a module this server does not serve gets the second.
+- **A `search_source` that finds nothing says what it read and where it could not look.** An empty
+  result carried no total, no coverage and no hint, so it read as an answer — which is how a pattern
+  that could never have matched becomes a finding that the form does not contain the thing. It now
+  reports `filesSearched` and a hint naming what the scope cannot reach: from `plsql`, that
+  properties and subclassing pointers are attributes (`scope="xml"`); from `xml`, that a `<` there
+  is a literal `<` and never `&lt;`; and from either, that Forms writes values with no PL/SQL naming
+  them at all — query population, a property class, an LOV return item, a relation's join key.
 - **The column-name lists are bounded, and say when they are cut.** `columnsWithoutItem` and
   `mandatoryColumnsWithoutItem` are the answer `columns=true` exists to give, so they are still
   computed over every column and still served ahead of the column rows — but they were built after
@@ -82,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cache — no re-conversion. (One re-index, not two: v3 was never released.)
 
 ### Fixed
+- The `INDEX_OUTDATED` message read "indexed by a older build".
 - **A cut column list is reported.** On a block over a wide base table, `columns` was cut to fit
   while the result's own `truncated` stayed `false` — the flag was assembled from the item and
   property lists alone — and no hint mentioned the columns at all. A caller reading the rows as the

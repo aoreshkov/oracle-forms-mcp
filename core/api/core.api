@@ -1230,10 +1230,11 @@ public final class app/oreshkov/oracleformsmcp/dto/SearchHit$Companion {
 
 public final class app/oreshkov/oracleformsmcp/dto/SearchResults {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/SearchResults$Companion;
-	public fun <init> (Ljava/lang/String;Ljava/util/List;ZILjava/lang/Integer;ILjava/lang/String;IZLjava/util/List;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZILjava/lang/Integer;ILjava/lang/String;IZLjava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/util/List;ZILjava/lang/Integer;ILjava/lang/String;IIZLjava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZILjava/lang/Integer;ILjava/lang/String;IIZLjava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
-	public final fun component10 ()Ljava/util/List;
+	public final fun component10 ()Z
+	public final fun component11 ()Ljava/util/List;
 	public final fun component2 ()Ljava/util/List;
 	public final fun component3 ()Z
 	public final fun component4 ()I
@@ -1241,12 +1242,13 @@ public final class app/oreshkov/oracleformsmcp/dto/SearchResults {
 	public final fun component6 ()I
 	public final fun component7 ()Ljava/lang/String;
 	public final fun component8 ()I
-	public final fun component9 ()Z
-	public final fun copy (Ljava/lang/String;Ljava/util/List;ZILjava/lang/Integer;ILjava/lang/String;IZLjava/util/List;)Lapp/oreshkov/oracleformsmcp/dto/SearchResults;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/SearchResults;Ljava/lang/String;Ljava/util/List;ZILjava/lang/Integer;ILjava/lang/String;IZLjava/util/List;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/SearchResults;
+	public final fun component9 ()I
+	public final fun copy (Ljava/lang/String;Ljava/util/List;ZILjava/lang/Integer;ILjava/lang/String;IIZLjava/util/List;)Lapp/oreshkov/oracleformsmcp/dto/SearchResults;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/SearchResults;Ljava/lang/String;Ljava/util/List;ZILjava/lang/Integer;ILjava/lang/String;IIZLjava/util/List;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/SearchResults;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getFileTotal ()I
 	public final fun getFiles ()Ljava/util/List;
+	public final fun getFilesSearched ()I
 	public final fun getFilesTruncated ()Z
 	public final fun getHint ()Ljava/lang/String;
 	public final fun getHits ()Ljava/util/List;
@@ -1528,6 +1530,7 @@ public final class app/oreshkov/oracleformsmcp/dto/UnresolvedItem$Companion {
 
 public final class app/oreshkov/oracleformsmcp/dto/UnresolvedReason : java/lang/Enum {
 	public static final field CLASS_MODULE_NOT_FETCHED Lapp/oreshkov/oracleformsmcp/dto/UnresolvedReason;
+	public static final field CLASS_MODULE_NOT_IN_DIRECTORY Lapp/oreshkov/oracleformsmcp/dto/UnresolvedReason;
 	public static final field CLASS_NOT_FOLLOWABLE Lapp/oreshkov/oracleformsmcp/dto/UnresolvedReason;
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/UnresolvedReason$Companion;
 	public static final field SUBCLASSED Lapp/oreshkov/oracleformsmcp/dto/UnresolvedReason;
