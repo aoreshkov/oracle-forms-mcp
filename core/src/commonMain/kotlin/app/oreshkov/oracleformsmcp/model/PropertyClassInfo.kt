@@ -14,8 +14,12 @@ import kotlinx.serialization.Serializable
  * nothing but the pointer to the shared one. [inherited] is that pointer; [item] and [block] are
  * then `null`, and the values are found by following it into a cached parent.
  *
- * [item] and [block] are `null` when the class writes none of those properties itself, following
- * the same "not written ≠ false" rule as everywhere else.
+ * [item], [block] and [geometry] are `null` when the class writes none of those properties itself,
+ * following the same "not written ≠ false" rule as everywhere else.
+ *
+ * [geometry] is here for the same reason [item] is: a classed item in a real form writes a `Width`
+ * and no `Height`, so the size a screen actually uses is a property of the class, and serving only
+ * what the item wrote would make an unknown height indistinguishable from an unset one.
  *
  * [propertyClass] is set when the class is itself based on another class declared in this module;
  * what it does not write, that class supplies.
@@ -26,6 +30,7 @@ public data class PropertyClassInfo(
     val name: String,
     val item: ItemDml? = null,
     val block: BlockDml? = null,
+    val geometry: ItemGeometry? = null,
     val propertyClass: String? = null,
     val inherited: InheritanceRef? = null,
 )

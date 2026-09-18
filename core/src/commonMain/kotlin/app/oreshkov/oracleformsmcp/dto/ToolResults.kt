@@ -8,6 +8,7 @@ import app.oreshkov.oracleformsmcp.model.DataSourceColumnInfo
 import app.oreshkov.oracleformsmcp.model.ElementId
 import app.oreshkov.oracleformsmcp.model.InheritanceRef
 import app.oreshkov.oracleformsmcp.model.ItemDml
+import app.oreshkov.oracleformsmcp.model.ItemGeometry
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleStatus
 import app.oreshkov.oracleformsmcp.model.ModuleType
@@ -274,6 +275,12 @@ public data class BlockList(
  * named item by item beside the map, never folded into it as `null`s that would read as defaults.
  * `block.items[].dml` stays what the item wrote.
  *
+ * [effectiveGeometry] is the same resolution for the item's size, and exists for the same reason:
+ * in a real form a classed item writes a `Width` and no `Height` at all, so serving only what the
+ * item wrote would make a class-supplied height indistinguishable from an unset one — the very
+ * absence [unresolvedItems] exists to prevent. An item is present only when its chain resolved and
+ * the chain wrote at least one dimension; `block.items[].width`/`height` stay what the item wrote.
+ *
  * [propertyClasses] says, once per class the served items use, whether it resolved and from which
  * modules. [columns] is present only when asked for.
  *
@@ -286,8 +293,8 @@ public data class BlockList(
  * [itemsMatched] is set when the call named `items`: how many of the block's items it matched,
  * and every other list here then describes only those. [itemTotal] still counts the whole block.
  *
- * [truncated] says `block.items`, a relation list, [effectiveDml] or [unresolvedItems] was cut to
- * fit one response —
+ * [truncated] says `block.items`, a relation list, [effectiveDml], [effectiveGeometry],
+ * [unresolvedItems] or [BlockColumns.columns] was cut to fit one response —
  * a data-entry screen of a hundred-odd detailed items with its base table behind it is larger than
  * a client accepts. The [hint] then says which, and names what to ask instead: an item missing from
  * a cut [effectiveDml] is not thereby unresolved.
@@ -303,6 +310,7 @@ public data class BlockDetail(
     val itemsMatched: Int? = null,
     val truncated: Boolean = false,
     val effectiveDml: Map<String, ItemDml> = emptyMap(),
+    val effectiveGeometry: Map<String, ItemGeometry> = emptyMap(),
     val unresolvedItems: List<UnresolvedItem> = emptyList(),
     val propertyClasses: List<PropertyClassResolution> = emptyList(),
     val columns: BlockColumns? = null,
@@ -376,6 +384,12 @@ public data class PropertyClassResolution(
  * `ColumnName`. It is structural and does not ask whether each item is a database item.
  * [mandatoryColumnsWithoutItem] is the part of it that is NOT NULL in the database: an insert fails
  * unless a trigger assigns those. [total] counts every column; [truncated] says [columns] was cut.
+ *
+ * The two name lists are what answers the question, so they are cut only when nothing else is left
+ * to give: they are computed over every column, whatever [columns] shows, and are capped only past
+ * the point where a list of names is itself kilobytes. [columnsWithoutItemTotal] and
+ * [mandatoryColumnsWithoutItemTotal] count them whole, and [namesTruncated] says a list is shorter
+ * than its count — because a name list read as exhaustive is how a mandatory column gets missed.
  */
 @Serializable
 @SerialName("BlockColumns")
@@ -384,7 +398,10 @@ public data class BlockColumns(
     val truncated: Boolean = false,
     val columns: List<DataSourceColumnInfo> = emptyList(),
     val columnsWithoutItem: List<String> = emptyList(),
+    val columnsWithoutItemTotal: Int = 0,
     val mandatoryColumnsWithoutItem: List<String> = emptyList(),
+    val mandatoryColumnsWithoutItemTotal: Int = 0,
+    val namesTruncated: Boolean = false,
 )
 
 /**

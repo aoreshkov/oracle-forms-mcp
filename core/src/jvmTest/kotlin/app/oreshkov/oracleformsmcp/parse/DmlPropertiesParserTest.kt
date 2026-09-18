@@ -3,6 +3,7 @@ package app.oreshkov.oracleformsmcp.parse
 import app.oreshkov.oracleformsmcp.copyFixture
 import app.oreshkov.oracleformsmcp.model.BlockDml
 import app.oreshkov.oracleformsmcp.model.ItemDml
+import app.oreshkov.oracleformsmcp.model.ItemGeometry
 import app.oreshkov.oracleformsmcp.model.ModuleIndex
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
@@ -109,6 +110,23 @@ class DmlPropertiesParserTest {
         val local = classes.getValue("LOCAL_TEXT")
         assertEquals(ItemDml(databaseItem = true, required = true, maximumLength = 40), local.item)
         assertNull(local.inherited)
+    }
+
+    /**
+     * A class supplies a size as readily as it supplies a DML property, and a classed item in a
+     * real form writes a width and no height at all — so a class whose geometry went unrecorded
+     * would leave every such item looking as though nobody had set its height.
+     */
+    @Test
+    fun propertyClassesKeepTheSizeTheySupply() {
+        val classes = parse("styles_fmb.xml", ModuleKey.of("styles", ModuleType.FORM))
+            .propertyClassDetails.associateBy { it.name }
+
+        assertEquals(ItemGeometry(width = 120, height = 24), classes.getValue("BASE_TEXT").geometry)
+        // Written by halves, like the items: one dimension here, the other from what it is based on.
+        assertEquals(ItemGeometry(height = 18), claims().propertyClassDetails.single { it.name == "LOCAL_TEXT" }.geometry)
+        // A class that writes neither says so with null, not with a row of nulls.
+        assertNull(classes.getValue("CONTROL_TEXT").geometry)
     }
 
     @Test

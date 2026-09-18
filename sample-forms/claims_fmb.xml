@@ -2,7 +2,7 @@
 <Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
   <FormModule Name="CLAIMS" Title="Insert-scope properties: DML, property classes, base-table columns">
     <Block Name="CLAIM" QueryDataSourceName="CLAIMS" DeleteAllowed="false" WhereClause="status = 'OPEN'&amp;#10;AND owner = USER" OrderByClause="claim_id">
-      <Item Name="CLAIM_ID" ItemType="Text Item" DataType="Number" CanvasName="CV_CLAIM" Prompt="Claim" ParentModule="CLAIMS" ParentModuleType="12" ParentName="BASE_TEXT" ParentType="29" PrimaryKey="true"/>
+      <Item Name="CLAIM_ID" ItemType="Text Item" DataType="Number" CanvasName="CV_CLAIM" Prompt="Claim" ParentModule="CLAIMS" ParentModuleType="12" ParentName="BASE_TEXT" ParentType="29" PrimaryKey="true" Width="60"/>
       <Item Name="STATUS" ItemType="Text Item" DataType="Char" CanvasName="CV_CLAIM" Prompt="Status" ParentModule="CLAIMS" ParentModuleType="12" ParentName="BASE_TEXT" ParentType="29" InitializeValue="OPEN"/>
       <Item Name="REFERENCE" ItemType="Text Item" DataType="Char" CanvasName="CV_CLAIM" Prompt="Reference" ParentModule="CLAIMS" ParentModuleType="12" ParentName="BASE_TEXT" ParentType="29" InsertAllowed="false" UpdateAllowed="false">
         <Trigger Name="WHEN-VALIDATE-ITEM" TriggerText="check_reference(:CLAIM.REFERENCE);"/>
@@ -27,7 +27,7 @@
     <PropertyClass Name="BASE_TEXT" ParentModule="STYLES" ParentModuleType="12" ParentName="BASE_TEXT" ParentFilename="styles.fmb" ParentType="29"/>
     <PropertyClass Name="CONTROL_TEXT" ParentModule="STYLES" ParentModuleType="12" ParentName="CONTROL_TEXT" ParentFilename="styles.fmb" ParentType="29"/>
     <PropertyClass Name="LOCKED_TEXT" ParentModule="STYLES" ParentModuleType="12" ParentName="LOCKED_TEXT" ParentFilename="styles.fmb" ParentType="29"/>
-    <PropertyClass Name="LOCAL_TEXT" DatabaseItem="true" MaximumLength="40" Required="true"/>
+    <PropertyClass Name="LOCAL_TEXT" DatabaseItem="true" MaximumLength="40" Required="true" Height="18"/>
     <PropertyClass Name="MISSING_TEXT" ParentModule="ABSENT" ParentModuleType="12" ParentName="MISSING_TEXT" ParentFilename="absent.fmb" ParentType="29"/>
     <Window Name="WIN_CLAIM" Title="Claims"/>
   </FormModule>

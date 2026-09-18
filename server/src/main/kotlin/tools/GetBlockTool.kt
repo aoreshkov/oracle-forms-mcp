@@ -20,7 +20,7 @@ fun Server.registerGetBlockTool(service: FormsService) {
             "Each item row carries its name, type, property class (which is usually where an item's " +
             "role is defined — an LOV button is only an LOV button because of the class it " +
             "inherits), prompt, item-trigger names, and its 'inherited' pointer when it is " +
-            "subclassed. verbosity=detailed adds data type, column, canvas, width/height (layout " +
+            "subclassed. verbosity=detailed adds data type, column, canvas, its own width/height (layout " +
             "units, usually pixels — not the accepted length, which is maximumLength), the " +
             "visible/required/LOV " +
             "properties, each item's own 'dml' (database item, insert/update allowed, enabled, " +
@@ -29,10 +29,14 @@ fun Server.registerGetBlockTool(service: FormsService) {
             "insert or update writes — on a classed item a property the item does not write comes " +
             "from its class, which is often defined in another module; an item appears there only " +
             "when its class resolved, and every item missing from it is listed in 'unresolvedItems' " +
-            "with the reason and the module to fetch_module. items=[...] narrows every list to the " +
+            "with the reason and the module to fetch_module. 'effectiveGeometry' is that same " +
+            "resolution for the item's size: a classed item typically writes a width and no height " +
+            "at all, so ask the size question there and not of 'items[].width'/'height', which are " +
+            "only what the item itself wrote. items=[...] narrows every list to the " +
             "named items (e.g. the few whose length or insert rule a question is about). " +
-            "'truncated' means items, relations, 'unresolvedItems' or 'effectiveDml' were cut to fit one " +
-            "response; the hint says which. " +
+            "'truncated' means items, relations, 'unresolvedItems', 'effectiveDml', " +
+            "'effectiveGeometry' or the column rows were cut to fit one " +
+            "response; the hint says which, and what the cut list does not show. " +
             "columns=true adds the base table's columns as Forms recorded them, the columns no item " +
             "supplies, and which of those are mandatory (an insert fails unless a trigger assigns " +
             "them). A subclassed block carries an 'inherited' pointer to the module that defines " +

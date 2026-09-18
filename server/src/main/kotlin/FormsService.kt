@@ -57,6 +57,7 @@ import app.oreshkov.oracleformsmcp.model.BlockInfo
 import app.oreshkov.oracleformsmcp.model.DataSourceColumnInfo
 import app.oreshkov.oracleformsmcp.model.InheritanceRef
 import app.oreshkov.oracleformsmcp.model.ItemDml
+import app.oreshkov.oracleformsmcp.model.ItemGeometry
 import app.oreshkov.oracleformsmcp.model.ItemInfo
 import app.oreshkov.oracleformsmcp.model.ModuleFingerprint
 import app.oreshkov.oracleformsmcp.model.ModuleIndex
@@ -547,6 +548,29 @@ class FormsService(
             if (blockColumns != null && blockColumns.total == 0 && block.inherited != null) {
                 add("This module records no data-source columns for the subclassed block; they are defined with it.")
             }
+            // The column rows give way first, so on a wide base table this is the cut a caller is
+            // likeliest to meet — and the one place the result can say that the answer above it
+            // (which columns no item supplies) was still computed over every column.
+            if (blockColumns != null && blockColumns.truncated) {
+                add(
+                    "'columns' lists ${blockColumns.columns.size} of ${blockColumns.total} " +
+                        "data-source columns; the rest did not fit. 'columnsWithoutItem' and " +
+                        "'mandatoryColumnsWithoutItem' are computed over all ${blockColumns.total}, " +
+                        "so what they name is complete. For the remaining column rows themselves, ask " +
+                        "again naming fewer items — ${again(listOf("<one item>"))} — which leaves more " +
+                        "of the response for them.",
+                )
+            }
+            if (blockColumns != null && blockColumns.namesTruncated) {
+                add(
+                    "The column-name lists are themselves cut: 'columnsWithoutItem' names " +
+                        "${blockColumns.columnsWithoutItem.size} of " +
+                        "${blockColumns.columnsWithoutItemTotal} and 'mandatoryColumnsWithoutItem' " +
+                        "${blockColumns.mandatoryColumnsWithoutItem.size} of " +
+                        "${blockColumns.mandatoryColumnsWithoutItemTotal}, so neither is the whole " +
+                        "set — read the totals, not the lengths.",
+                )
+            }
         }
         return BlockDetail(
             module = index.key,
@@ -556,8 +580,11 @@ class FormsService(
             itemTotal = full.items.size,
             itemsMatched = selected.size.takeIf { filtered },
             truncated = itemsCut || relationsCut || detailOfCut ||
-                effective?.cut == true || effective?.unresolvedCut == true,
+                effective?.cut == true || effective?.unresolvedCut == true ||
+                effective?.geometryCut == true || blockColumns?.truncated == true ||
+                blockColumns?.namesTruncated == true,
             effectiveDml = effective?.items.orEmpty(),
+            effectiveGeometry = effective?.geometry.orEmpty(),
             unresolvedItems = effective?.unresolved.orEmpty(),
             propertyClasses = effective?.classes.orEmpty(),
             columns = blockColumns,
@@ -1848,6 +1875,7 @@ class FormsService(
     /** A property class followed to the end of its chain, or as far as the cache allowed. */
     private class ClassChain(
         val dml: ItemDml,
+        val geometry: ItemGeometry,
         val resolved: Boolean,
         val through: List<ModuleKey>,
         val missingModule: ModuleKey?,
@@ -1862,6 +1890,7 @@ class FormsService(
      */
     private class EffectiveDml(
         val items: Map<String, ItemDml>,
+        val geometry: Map<String, ItemGeometry>,
         val unresolved: List<UnresolvedItem>,
         val classes: List<PropertyClassResolution>,
         val subclassedItems: Int,
@@ -1870,6 +1899,9 @@ class FormsService(
         val omitted: List<String>,
         val unresolvedTotal: Int,
         val unresolvedCut: Boolean,
+        val geometryTotal: Int,
+        val geometryCut: Boolean,
+        val geometryOmitted: List<String>,
     ) {
         val firstOmitted: String? get() = omitted.firstOrNull()
     }
@@ -1889,6 +1921,7 @@ class FormsService(
         val chains = mutableMapOf<String, ClassChain>()
         val usage = mutableMapOf<String, Int>()
         val items = linkedMapOf<String, ItemDml>()
+        val geometry = linkedMapOf<String, ItemGeometry>()
         val unresolved = mutableListOf<UnresolvedItem>()
         var subclassed = 0
         for (item in block.items) {
@@ -1898,9 +1931,11 @@ class FormsService(
                 continue
             }
             val own = item.dml ?: ItemDml()
+            val ownSize = ItemGeometry(item.width, item.height)
             val className = item.propertyClass
             if (className == null) {
                 items[item.name] = own
+                geometry.putSize(item.name, ownSize)
                 continue
             }
             val canonical = className.uppercase()
@@ -1909,7 +1944,10 @@ class FormsService(
                 resolveClassChain(index, className, visited = mutableSetOf(), hops = 0)
             }
             when {
-                chain.resolved -> items[item.name] = own.over(chain.dml)
+                chain.resolved -> {
+                    items[item.name] = own.over(chain.dml)
+                    geometry.putSize(item.name, ownSize.over(chain.geometry))
+                }
                 chain.missingModule != null -> unresolved += UnresolvedItem(
                     item.name,
                     className,
@@ -1934,6 +1972,14 @@ class FormsService(
             PairSerializer(String.serializer(), ItemDml.serializer()),
             share = budget.share(EFFECTIVE_DML_BUDGET_SHARE),
         )
+        // Sizes are two small ints per row and are asked for far less often than the DML, so they
+        // go last of the resolved sections — but they are still counted and cut like the rest,
+        // because an item silently dropped from here reads as an item with no size of its own.
+        val (fittedSizes, geometryCut) = budget.take(
+            geometry.entries.map { it.key to it.value },
+            PairSerializer(String.serializer(), ItemGeometry.serializer()),
+            share = budget.share(EFFECTIVE_GEOMETRY_BUDGET_SHARE),
+        )
         val classes = chains.map { (canonical, chain) ->
             PropertyClassResolution(
                 name = index.propertyClassDetails.firstOrNull { it.name.uppercase() == canonical }?.name ?: canonical,
@@ -1945,6 +1991,7 @@ class FormsService(
         }
         return EffectiveDml(
             items = fitted.toMap(),
+            geometry = fittedSizes.toMap(),
             unresolved = unresolvedFitted,
             classes = classes,
             subclassedItems = subclassed,
@@ -1953,7 +2000,19 @@ class FormsService(
             omitted = items.keys.drop(fitted.size),
             unresolvedTotal = unresolved.size,
             unresolvedCut = unresolvedCut,
+            geometryTotal = geometry.size,
+            geometryCut = geometryCut,
+            geometryOmitted = geometry.keys.drop(fittedSizes.size),
         )
+    }
+
+    /**
+     * Records [size] for [name] unless it is empty. A row carrying neither dimension says only
+     * "resolved, and nothing written anywhere in the chain" — which the item's presence in
+     * `effectiveDml` already says, so it would spend budget to repeat it.
+     */
+    private fun MutableMap<String, ItemGeometry>.putSize(name: String, size: ItemGeometry) {
+        if (size.width != null || size.height != null) put(name, size)
     }
 
     /**
@@ -1971,23 +2030,25 @@ class FormsService(
         val here = listOf(index.key)
         val info = index.propertyClassDetails.firstOrNull { it.name.equals(className, ignoreCase = true) }
         if (info == null || hops >= MAX_INHERITANCE_HOPS || !visited.add("${index.key}:${className.uppercase()}")) {
-            return ClassChain(ItemDml(), resolved = false, through = here, missingModule = null)
+            return ClassChain(ItemDml(), ItemGeometry(), resolved = false, through = here, missingModule = null)
         }
         val own = info.item ?: ItemDml()
+        val ownSize = info.geometry ?: ItemGeometry()
         val pointer = info.inherited
         val parent: ClassChain = when {
             pointer != null -> {
                 val parentKey = inheritedModuleKey(pointer)
-                    ?: return ClassChain(own, resolved = false, through = here, missingModule = null)
+                    ?: return ClassChain(own, ownSize, resolved = false, through = here, missingModule = null)
                 val parentIndex = runCatching { index(parentKey) }.getOrNull()
-                    ?: return ClassChain(own, resolved = false, through = here, missingModule = parentKey)
+                    ?: return ClassChain(own, ownSize, resolved = false, through = here, missingModule = parentKey)
                 resolveClassChain(parentIndex, pointer.name ?: className, visited, hops + 1)
             }
             info.propertyClass != null -> resolveClassChain(index, info.propertyClass!!, visited, hops + 1)
-            else -> return ClassChain(own, resolved = true, through = here, missingModule = null)
+            else -> return ClassChain(own, ownSize, resolved = true, through = here, missingModule = null)
         }
         return ClassChain(
             dml = own.over(parent.dml),
+            geometry = ownSize.over(parent.geometry),
             resolved = parent.resolved,
             through = (here + parent.through).distinct(),
             missingModule = parent.missingModule,
@@ -2008,6 +2069,12 @@ class FormsService(
         maximumLength = maximumLength ?: fallback.maximumLength,
         initialValue = initialValue ?: fallback.initialValue,
         copyValueFromItem = copyValueFromItem ?: fallback.copyValueFromItem,
+    )
+
+    /** This size where it is written, [fallback]'s where it is not — per dimension, as for DML. */
+    private fun ItemGeometry.over(fallback: ItemGeometry): ItemGeometry = ItemGeometry(
+        width = width ?: fallback.width,
+        height = height ?: fallback.height,
     )
 
     /**
@@ -2041,6 +2108,20 @@ class FormsService(
                 add(
                     "'unresolvedItems' lists ${effective.unresolved.size} of the ${effective.unresolvedTotal} " +
                         "items whose properties are unknown; the counts below cover all of them.",
+                )
+            }
+            if (effective.geometryCut) {
+                val named = effective.geometryOmitted.take(MAX_NAMED_OMITTED_ITEMS)
+                val more = if (effective.geometryOmitted.size > named.size) {
+                    " (the first ${named.size} of ${effective.geometryOmitted.size}; name the rest the same way)"
+                } else {
+                    ""
+                }
+                add(
+                    "'effectiveGeometry' covers ${effective.geometry.size} of the " +
+                        "${effective.geometryTotal} items whose size resolved: the rest did not fit, so " +
+                        "an item missing from it has a size this response does not state. Ask for them " +
+                        "by name with ${again(named)}$more.",
                 )
             }
             effective.classes.filter { !it.resolved }.groupBy { it.missingModule }.forEach { (missing, classes) ->
@@ -2111,16 +2192,32 @@ class FormsService(
         }
         val named = block.items.mapTo(HashSet()) { (it.columnName?.substringAfterLast('.') ?: it.name).uppercase() }
         val withoutItem = all.filter { it.name.uppercase() !in named }
-        // The two name lists are the answer; the column rows are the evidence, so they are what
-        // gives way first when a 350-column table meets a wide block.
+        val mandatory = withoutItem.filter { it.mandatory }
+        // The two name lists are the answer and the column rows are the evidence, so the rows give
+        // way first: the names are spent from the budget before them, mandatory ones first, since
+        // those are what an insert fails on. They are spent rather than merely capped because they
+        // are built after the rows and a thousand names is kilobytes — enough, once, to carry the
+        // whole result past MAX_RESULT_CHARS.
+        val (shownMandatory, mandatoryCut) = budget.take(
+            mandatory.take(MAX_COLUMN_NAMES).map { it.name },
+            String.serializer(),
+        )
+        val (shownWithoutItem, withoutItemCut) = budget.take(
+            withoutItem.take(MAX_COLUMN_NAMES).map { it.name },
+            String.serializer(),
+        )
         val (capped, overLimit) = capRows(all)
         val (rows, cut) = budget.take(capped, DataSourceColumnInfo.serializer())
         return BlockColumns(
             total = all.size,
             truncated = cut || overLimit,
             columns = rows,
-            columnsWithoutItem = withoutItem.map { it.name },
-            mandatoryColumnsWithoutItem = withoutItem.filter { it.mandatory }.map { it.name },
+            columnsWithoutItem = shownWithoutItem,
+            columnsWithoutItemTotal = withoutItem.size,
+            mandatoryColumnsWithoutItem = shownMandatory,
+            mandatoryColumnsWithoutItemTotal = mandatory.size,
+            namesTruncated = withoutItemCut || mandatoryCut ||
+                shownWithoutItem.size < withoutItem.size || shownMandatory.size < mandatory.size,
         )
     }
 
@@ -2655,14 +2752,15 @@ class FormsService(
          * take most of it — less when the caller also asked for columns, since a base table's
          * columns are then part of the question. Each served item is then a row of either the
          * unresolved list (spent first: small, and what makes an absence from the map legible) or
-         * the resolved map; what is left goes to the column rows, whose two summary name lists are
-         * never cut.
+         * the resolved map, then the resolved sizes; what is left goes to the column rows, whose two
+         * summary name lists are never cut.
          */
         const val RELATION_BUDGET_SHARE = 10
         const val ITEM_BUDGET_SHARE = 80
         const val ITEM_BUDGET_WITH_COLUMNS = 55
         const val UNRESOLVED_BUDGET_SHARE = 40
         const val EFFECTIVE_DML_BUDGET_SHARE = 60
+        const val EFFECTIVE_GEOMETRY_BUDGET_SHARE = 40
 
         /** How many of the items cut from `effectiveDml` a `get_block` hint names in its follow-up call. */
         const val MAX_NAMED_OMITTED_ITEMS = 20
@@ -2688,6 +2786,15 @@ class FormsService(
          */
         const val MAX_LIST_ROWS = 1_000
         const val MAX_OVERVIEW_NAMES = 500
+
+        /**
+         * How many column names each of `get_block(columns=true)`'s two summary lists carries.
+         * They are built after the column rows were budgeted, so this is what bounds them; a
+         * generated table of a thousand columns would otherwise push the result past
+         * [MAX_RESULT_CHARS] on names alone, which is what it once did.
+         */
+        const val MAX_COLUMN_NAMES = 500
+
 
         /**
          * `read_source` ceilings. Two of them, because neither bounds this data alone: a converted
