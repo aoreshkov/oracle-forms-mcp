@@ -43,6 +43,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   units, usually pixels, and not the length a field accepts, which stays `maximumLength`.
 
 ### Changed
+- **The tool descriptions name the block's own DML properties** — `dml.whereClause`,
+  `orderByClause`, `dmlDataTargetName`, `keyMode`/`lockMode` — instead of only "its DML properties".
+  A `whereClause` restricts what a block queries without a line of PL/SQL, so it decides what a
+  screen can see; it was documented only for item-level `effectiveDml` and had to be found by
+  reading the returned JSON.
+- **`get_trigger` and `get_program_unit` say what their line numbers count from.** A body is
+  extracted to a file holding that body alone, so line 1 is the first line of the body: cite it as
+  `POST-INSERT:75`, never `ORDERS.fmb:75`, which addresses a line nobody opening the form can find.
+  A `.pll` is the exception — its units are ranges within the one `.pld` dump of the whole library.
+  `SourceLocation` now documents the same rule.
+- **The `trace-form` skill gains "Where is a value written"** — the PL/SQL write shapes to search
+  for (`:=`, `SELECT`/`FETCH`/`RETURNING … INTO`, `Copy`, `Set_Item_Property`/`Set_Block_Property`,
+  OUT arguments, `:GLOBAL`), the ones no search can reach, and the declarative writers no PL/SQL
+  search can see at all (the query itself, `copyValueFromItem`, `initialValue`, relation join keys,
+  LOV return items). With two rules that each cost a wrong claim: a zero-hit pattern proves the
+  pattern absent, not the write; and in `scope: "xml"` a `<` is a literal `<`, so a pattern spelled
+  `&lt;Relation` is a silently dead branch. Plugin version 1.2.0.
 - **Index format v3.** Every warm cache entry reports `STALE` with `staleReason: INDEX_OUTDATED`
   once after upgrading; `fetch_module` heals it by re-parsing the converted file already in the
   cache — no re-conversion.

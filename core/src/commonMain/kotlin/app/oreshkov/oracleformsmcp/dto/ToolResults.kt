@@ -34,6 +34,13 @@ import kotlinx.serialization.Serializable
  * the HTTP transport a host path means nothing at all — so the range on its own resolved to
  * nothing a caller could open. [uri] closes that: it addresses the same file as an MCP resource,
  * and `read_source` takes either form.
+ *
+ * **What the lines count from is [file], never the module.** A trigger's or program unit's body is
+ * extracted to a sidecar of its own holding that body alone, so [startLine] 1 is the first line of
+ * *that body* — `POST-INSERT:75` is line 75 of the POST-INSERT trigger, and citing it as
+ * `ORDERS.fmb:75` points at nothing anyone can find. The exceptions are the two files that are
+ * whole modules: the converted XML, and a `.pll`'s `.pld` dump, whose program units carry their
+ * line range within the one dump.
  */
 @Serializable
 @SerialName("SourceLocation")

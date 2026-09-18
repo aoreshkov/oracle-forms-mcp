@@ -50,7 +50,10 @@ Every reflex has a call:
    only through its master), then the master's `PRE-QUERY` and `dml.whereClause`.
 5. **`list_triggers`** → **`get_trigger`**, **`list_program_units`** → **`get_program_unit`** — the
    PL/SQL. `list_triggers` filters by block, item or level, which is how same-named triggers at
-   different levels are told apart.
+   different levels are told apart. A body comes back in a file of its own, so its line numbers
+   count from the first line of *that body*: cite them as `POST-INSERT:75`, never `ORDERS.fmb:75`,
+   which is a line nobody opening the form will find. (A `.pll` is the exception — its units are
+   ranges within the one `.pld` dump of the whole library.)
 6. **`search_source`** inside one module; **`search_modules`** when the question leaves it.
 7. **`read_source`** — the lines around anything a result pointed at, by its `uri`. Over converted
    XML ask for a few dozen lines at a time: one line is one whole object and can run to thousands
@@ -91,6 +94,50 @@ not is listed in `unresolvedItems` with the module to fetch — an item absent f
 unknown, never a default. `items: [...]` narrows the call to the fields a question is about. `columns: true` adds the
 base table's columns, the ones no item supplies, and which of *those* are mandatory — the columns
 an insert fails on unless a trigger assigns them.
+
+## Where is a value written
+
+*"Where does `:ORDERS.CUSTOMER_NAME` get its value?"* is the question that structures most tracing,
+and the one most often answered wrongly — because the obvious search covers a fraction of the ways
+Forms writes a field, and a search that matches nothing looks like an answer.
+
+There is no `find_writes` tool: nothing here parses PL/SQL, so this is `search_source` plus knowing
+what to search for. Cover the PL/SQL shapes — each is a separate search, and the last two are not
+reachable by searching for the item's name at all:
+
+| Shape | What to search |
+|---|---|
+| assignment | `:=` next to the name, but also the name alone — spacing varies (`:ORDERS.CUSTOMER_NAME:=`) |
+| query into a variable | `into` (`SELECT … INTO :orders.customer_name`, `FETCH … INTO`, `RETURNING … INTO`) |
+| string-addressed | `copy(` — `Copy(v, 'ORDERS.CUSTOMER_NAME')` names the item in a *string*, which a search for `:orders.customer_name` never matches |
+| item properties | `set_item_property`, `set_block_property` (a `DEFAULT_WHERE` rewrites what the block queries) |
+| globals | `:global.` — a global is written in one module and read in another |
+| through an argument | an OUT / IN OUT parameter: the call site passes the item, the write is inside the procedure |
+| built at runtime | a name concatenated into a string: unreachable lexically, by construction |
+
+Then the **declarative** writers, which no PL/SQL search can see at all:
+
+- **the query itself** — a database item is populated by every fetch; `get_block(verbosity:
+  "detailed")` → `effectiveDml.databaseItem`;
+- **`copyValueFromItem`** and **`initialValue`** (Forms' `InitializeValue`) — both in
+  `effectiveDml`, and on a classed item they usually come from the class, not the item;
+- **relation join keys** — Forms copies the master's value into the detail's join item on every
+  coordination: `get_block` → `relations`/`detailOf` and read `joinCondition`;
+- **an LOV return item** — the index keeps the LOV's name (`items[].lovName`) and its column names,
+  but not which item each column returns into. `get_object_xml(objectType: "LOV", name: …)` is the
+  call for that.
+
+Two rules that cost a wrong claim if skipped:
+
+- **A zero-hit pattern proves the pattern absent, not the write.** A regex like
+  `(customer_name|…)\s*:=` returning nothing says nothing about a
+  `SELECT … INTO :orders.customer_name`. Before concluding "written only here",
+  check that the searches above were actually run — and read `total` and `files`, which count the
+  whole module, not just the page you were shown.
+- **In `scope: "xml"`, `<` is a literal `<`.** The search runs over the file's own text, where
+  element markup is written with real angle brackets, so a pattern written `&lt;Relation` can only
+  match a file that literally spells that — it is a silently dead branch, and in an alternation a
+  sibling that *does* match hides it.
 
 ## Questions that leave the module
 

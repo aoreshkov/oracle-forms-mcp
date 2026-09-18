@@ -26,6 +26,7 @@ import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -117,6 +118,31 @@ class ToolRegistrationTest {
                 MAX_RESULT_CHARS,
                 tool.meta?.get("anthropic/maxResultSizeChars")?.jsonPrimitive?.int,
                 name,
+            )
+        }
+    }
+
+    /**
+     * Two facts a caller acts on *before* it has ever seen a result, which is why they belong in
+     * the description and not only in the payload.
+     *
+     * The block-level DML properties are the first: `whereClause` and `orderByClause` restrict what
+     * a block queries without a line of PL/SQL, and each has been the crux of a review finding —
+     * found by reading the returned JSON, because the description covered only item-level
+     * `effectiveDml`. The second is what a body's line numbers count from: they get copied into
+     * documents, and `ORDERS.fmb:75` sends whoever opens the form to a line that does not exist.
+     */
+    @Test
+    fun descriptionsNameTheBlockDmlPropertiesAndWhatBodyLinesCountFrom() {
+        val getBlock = assertNotNull(tools().getValue("get_block").description)
+        listOf("whereClause", "orderByClause", "keyMode", "lockMode").forEach { field ->
+            assertTrue(field in getBlock, "get_block's description no longer names dml.$field")
+        }
+        listOf("get_trigger", "get_program_unit").forEach { name ->
+            val description = assertNotNull(tools().getValue(name).description)
+            assertTrue(
+                "lines count from the first line of the body" in description,
+                "$name's description no longer says what its line numbers count from",
             )
         }
     }
