@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-18
+
 ### Added
 - **`search_source` says what a page does not show.** Every page now carries `total` (every hit in
   the module, not only this page's), `files` (hits per file across the whole result, with
@@ -526,7 +528,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.8.0...v0.9.0
