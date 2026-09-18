@@ -12,7 +12,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 fun Server.registerListModulesTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "list_modules",
         description = "List Oracle Forms modules in the configured directory (.fmb, .mmb, .pll, " +
             ".olb) with their cache status: NOT_CACHED (call fetch_module first), CACHED (ready " +

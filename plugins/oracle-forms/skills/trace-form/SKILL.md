@@ -50,12 +50,16 @@ Every reflex has a call:
    only through its master), then the master's `PRE-QUERY` and `dml.whereClause`.
 5. **`list_triggers`** → **`get_trigger`**, **`list_program_units`** → **`get_program_unit`** — the
    PL/SQL. `list_triggers` filters by block, item or level, which is how same-named triggers at
-   different levels are told apart. A body comes back in a file of its own, so its line numbers
+   different levels are told apart — and `get_trigger` takes the same `level` (or an exact
+   `ownerPath`, `:FORM` for form level). While the module attaches a library that is not fetched,
+   a body's `hint` says so: a routine it calls that the module does not define may live there, and
+   what that call does is undetermined until the library is read. A body comes back in a file of its own, so its line numbers
    count from the first line of *that body*: cite them as `POST-INSERT:75`, never `ORDERS.fmb:75`,
    which is a line nobody opening the form will find. (A `.pll` is the exception — its units are
    ranges within the one `.pld` dump of the whole library.)
 6. **`search_source`** inside one module; **`search_modules`** when the question leaves it.
-7. **`read_source`** — the lines around anything a result pointed at, by its `uri`. Over converted
+7. **`read_source`** — the lines around anything a result pointed at, by its `uri` alone (the URI
+   names its module, so `module` is not needed with it). Over converted
    XML ask for a few dozen lines at a time: one line is one whole object and can run to thousands
    of characters. A cut page says so, gives `nextStartLine`, and its `hint` is the next call —
    continue from *that*, not from where you assumed the page ended.
@@ -208,7 +212,18 @@ reaching for the shell — that is a gap in the server, and it is the kind that 
 
 A trace is expensive and the conclusions are not in the `.fmb` — what a naming convention means,
 which property class marks a base-table item, which field is validated but never written.
-`annotate_element` stores a note,
-tag, summary or classification on one element; `relate_elements` records a directed cross-reference
-(this trigger *calls* that program unit; this button *opens* that form). Both survive re-indexing
-and cache eviction, and the read tools surface them inline the next time anyone looks.
+`annotate_element` stores one annotation on one element; `relate_elements` records a directed
+cross-reference (this trigger *calls* that program unit; this button *opens* that form). Both
+survive re-indexing and cache eviction, and the read tools surface them inline the next time anyone
+looks. The annotation's sort is the `kind` argument (`note`, `tag`, `summary`, `classification`),
+its text is `body`, and which object it is about is `elementKind` + `name` (+ `ownerPath`):
+
+```
+annotate_element(module="ORDERS.fmb", elementKind="program_unit", name="CALC_TOTAL",
+                 kind="summary", body="Sums line amounts; commits via Forms_Ddl.")
+relate_elements(module="ORDERS.fmb", fromKind="trigger", fromName="WHEN-BUTTON-PRESSED",
+                fromOwner="B1.PB_OK", toKind="program_unit", toName="CALC_TOTAL", relType="calls")
+```
+
+A call with a wrong or missing argument is not run, and its error lists every problem at once with
+the values each argument accepts — fix them all from that one message.

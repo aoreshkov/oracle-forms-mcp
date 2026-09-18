@@ -5,7 +5,7 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerListBlocksTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "list_blocks",
         description = "List the data blocks of a fetched form module with their base table " +
             "(query data source), item count, and trigger count. Use get_block for a block's " +

@@ -1,5 +1,6 @@
 package app.oreshkov.oracleformsmcp.server
 
+import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.server.transport.runHttpServer
 import app.oreshkov.oracleformsmcp.server.transport.runStdioServer
 import java.nio.file.Path
@@ -53,6 +54,14 @@ private val USAGE = """
       --cache-dir <path>          Cache directory (default: OS cache dir + /oracle-forms-mcp)
       --annotations-dir <path>    Durable annotation store (default: <cache dir>/annotations)
       --conversion-timeout <sec>  Kill a conversion after this many seconds (default: 120)
+      --prefetch <pattern>        Instead of serving, fetch (convert and index) every module whose
+                                  name contains <pattern> (case-insensitive), one at a time, then
+                                  exit, so a session's search_modules covers them. Already-current
+                                  modules are skipped cheaply, so a rerun resumes. Exits 1 when
+                                  any module failed.
+      --prefetch-all              The same for every module in the forms directory
+      --prefetch-type <type>      Only prefetch this module type: form, menu, library,
+                                  object_library (given alone: every module of that type)
       --help                      Show this help and exit
 
     Environment (a flag always wins over its variable):
@@ -66,6 +75,7 @@ private val USAGE = """
       server --forms-dir /srv/forms --transport http --port 3000   # http://127.0.0.1:3000/mcp
       server --forms-dir C:\forms --convert-command C:\tools\fmb2xml.bat --converted-dir C:\forms-xml
       server --forms-dir /srv/forms --convert-command "/opt/forms/convert.sh --xml {}"
+      server --forms-dir /srv/forms --prefetch-all                 # warm the whole cache, then exit
       server --forms-dir /srv/forms --converted-dir /srv/forms-xml \
         --compile-command "frmcmp_batch Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}"
 """.trimIndent()
@@ -89,7 +99,14 @@ internal data class CliOptions(
     val convertCommand: String? = null,
     val compileCommand: String? = null,
     val convertedDir: Path? = null,
+    /**
+     * `--prefetch`/`--prefetch-all`: run the warm-up instead of a transport. [Prefetch.pattern] is
+     * `null` for every module.
+     */
+    val prefetch: Prefetch? = null,
 )
+
+internal data class Prefetch(val pattern: String? = null, val type: ModuleType? = null)
 
 /**
  * A configured value, or `null` when the option was left unset.
@@ -149,6 +166,19 @@ internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::g
                     ?: fail("Invalid --conversion-timeout (expected seconds, 1-3600)")
                 options = options.copy(conversionTimeoutSeconds = seconds)
             }
+            // `*` is accepted as "all" where a shell passes it through, but it is not the spelling to
+            // document: the JVM launcher on Windows expands a bare `*` into file names.
+            "--prefetch" -> {
+                val pattern = value(arg).trim().takeUnless { it.isEmpty() || it == "*" }
+                options = options.copy(prefetch = (options.prefetch ?: Prefetch()).copy(pattern = pattern))
+            }
+            "--prefetch-all" -> options = options.copy(prefetch = (options.prefetch ?: Prefetch()).copy(pattern = null))
+            "--prefetch-type" -> {
+                val raw = value(arg)
+                val type = ModuleType.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+                    ?: fail("Unknown --prefetch-type '$raw' (expected form, menu, library or object_library)")
+                options = options.copy(prefetch = (options.prefetch ?: Prefetch()).copy(type = type))
+            }
             else -> {
                 // A single positional argument is the forms directory.
                 if (arg.startsWith("--")) fail("Unknown option '$arg'")
@@ -192,6 +222,30 @@ private fun convertedDir(dir: Path, formsDir: Path): Path {
     return resolved
 }
 
+/**
+ * The `--prefetch` run: every matching module fetched in turn, one line per module on stderr as it
+ * lands, the failures repeated at the end (they are what the operator acts on), and the count of
+ * them returned for the exit code. No transport is started, so stdout carries only the summary.
+ */
+private suspend fun runPrefetch(service: FormsService, prefetch: Prefetch): Int {
+    val outcomes = service.prefetch(pattern = prefetch.pattern, type = prefetch.type) { done, total, outcome ->
+        val status = when {
+            outcome.error != null -> "FAILED: ${outcome.error.lineSequence().first()}"
+            outcome.summary?.fromCache == true -> "current"
+            else -> "fetched"
+        }
+        System.err.println("[$done/$total] ${outcome.module}: $status")
+    }
+    val failed = outcomes.filter { it.error != null }
+    val fetched = outcomes.count { it.summary?.fromCache == false }
+    println(
+        "Prefetched ${outcomes.size} module(s): $fetched fetched, " +
+            "${outcomes.size - fetched - failed.size} already current, ${failed.size} failed.",
+    )
+    failed.forEach { println("  ${it.module}: ${it.error}") }
+    return failed.size
+}
+
 private fun fail(message: String): Nothing {
     System.err.println("Error: $message\n\n$USAGE")
     exitProcess(2)
@@ -213,6 +267,10 @@ fun main(args: Array<String>) {
         compileCommand = options.compileCommand,
         convertedDir = options.convertedDir?.let { convertedDir(it, formsDir) },
     )
+    options.prefetch?.let { prefetch ->
+        val failed = runBlocking { McpServerFactory.create(config).use { runPrefetch(it.service, prefetch) } }
+        exitProcess(if (failed == 0) 0 else 1)
+    }
     runBlocking {
         McpServerFactory.create(config).use { handle ->
             when (options.transport) {

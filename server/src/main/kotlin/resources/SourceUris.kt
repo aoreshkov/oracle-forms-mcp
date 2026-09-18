@@ -62,6 +62,15 @@ public fun sourceUri(key: ModuleKey, refFile: String): String? {
 }
 
 /**
+ * The module a source URI names — its authority segment, as written (`ORDERS.fmb`) — or `null`
+ * when [uri] is not an `oracleforms://` URI. Whether that module exists is the caller's question.
+ */
+public fun sourceUriModule(uri: String): String? =
+    uri.trim().removePrefix("oracleforms://").takeIf { it != uri.trim() }
+        ?.substringBefore('/')
+        ?.takeIf { it.isNotBlank() }
+
+/**
  * The cache-relative path a source URI names, or `null` when [uri] is not one.
  *
  * [convertedFile] is the module's own converted path from its index: the `converted` URI carries

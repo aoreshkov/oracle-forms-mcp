@@ -10,7 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 fun Server.registerSearchModulesTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "search_modules",
         description = "Search every cached module at once — the cross-module counterpart of " +
             "search_source, for the questions one module cannot answer: which forms call a given " +

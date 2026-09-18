@@ -5,7 +5,7 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerGetObjectXmlTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "get_object_xml",
         description = "The raw XML fragment of one named object, sliced from the converted file — " +
             "the escape hatch for every property the structured tools don't surface. objectType " +

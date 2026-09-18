@@ -77,6 +77,7 @@ import app.oreshkov.oracleformsmcp.server.resources.moduleConvertedUri
 import app.oreshkov.oracleformsmcp.server.resources.sourceMimeType
 import app.oreshkov.oracleformsmcp.server.resources.sourceRefPath
 import app.oreshkov.oracleformsmcp.server.resources.sourceUri
+import app.oreshkov.oracleformsmcp.server.resources.sourceUriModule
 import co.touchlab.kermit.Logger
 import java.io.IOException
 import java.nio.file.Files
@@ -94,6 +95,7 @@ import kotlin.io.path.isRegularFile
 import kotlin.io.path.readLines
 import kotlin.io.path.useLines
 import kotlin.streams.asSequence
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -106,6 +108,12 @@ import kotlinx.coroutines.withContext
 
 /** A coarse [FormsService.fetchModule] phase: [step] of [totalSteps], human-readable [message]. */
 data class FetchProgress(val step: Int, val totalSteps: Int, val message: String)
+
+/**
+ * One module's result in a [FormsService.prefetch] run: the summary it was fetched with, or the
+ * message it failed with — never both.
+ */
+data class PrefetchOutcome(val module: ModuleKey, val summary: FetchModuleSummary?, val error: String?)
 
 /**
  * `list_modules` page size when the caller names none, and the ceiling it is clamped to. Shared
@@ -201,6 +209,26 @@ class FormsService(
     }
 
     /**
+     * The module a `read_source` call reads: [module] when given, else the one its source [uri]
+     * names — every search hit and every result's `source.uri` carries its module in the URI, so
+     * pasting one back must not also need the module repeated. Both given and disagreeing is an
+     * error rather than a silent choice between them.
+     */
+    suspend fun resolveSourceModule(module: String?, uri: String?): ModuleKey {
+        val fromUri = uri?.let(::sourceUriModule)?.let { resolveModule(it) }
+        val given = module?.let { resolveModule(it) }
+        return when {
+            given != null && fromUri != null && given != fromUri -> throw IllegalArgumentException(
+                "module '$module' and uri '$uri' name different modules ($given and $fromUri). " +
+                    "Pass the uri alone — it names its module.",
+            )
+            else -> given ?: fromUri ?: throw IllegalArgumentException(
+                "Pass 'module' with 'file', or a 'uri' (a result's source.uri, which names its module).",
+            )
+        }
+    }
+
+    /**
      * Scans the forms directory and reports one filtered, capped page of module cache statuses.
      *
      * A real forms directory holds thousands of modules, so an unfiltered, unbounded answer is
@@ -287,6 +315,44 @@ class FormsService(
         // the very race this closes. A caller that arrives during a cold fetch of the same module
         // waits, then gets that fetch's result with `fromCache = true` instead of redoing the work.
         fetchLocks.computeIfAbsent(key) { Mutex() }.withLock { fetchModuleLocked(key, onProgress) }
+
+    /**
+     * Fetches every module in the forms directory whose name matches [pattern] (and whose type is
+     * [type]), one at a time, reporting each outcome to [onModule] as it lands. This is the CLI's
+     * `--prefetch` mode, not a tool: a real directory holds thousands of modules, and converting
+     * them inside one MCP call would outlive any client's timeout and churn the bounded
+     * `resources/list`. Run ahead of a session, it is what makes `search_modules` cover the
+     * directory instead of reporting it `skippedNotCached`.
+     *
+     * Each module goes through [fetchModule], so a warm, current entry costs a fingerprint check
+     * and a rerun resumes where a stopped one left off. A module that fails is recorded and the run
+     * goes on — one unconvertible form must not strand the other three thousand.
+     *
+     * @param pattern the `list_modules` name filter: case-insensitive substring, or a regex with
+     *   [regex]; `null` takes every module
+     */
+    suspend fun prefetch(
+        pattern: String? = null,
+        regex: Boolean = false,
+        type: ModuleType? = null,
+        onModule: suspend (done: Int, total: Int, outcome: PrefetchOutcome) -> Unit = { _, _, _ -> },
+    ): List<PrefetchOutcome> {
+        val nameMatcher = pattern?.let { moduleNameMatcher(it, regex) }
+        val keys = scanner.scan().map { it.key }
+            .filter { (nameMatcher == null || nameMatcher(it.name)) && (type == null || it.type == type) }
+            .sortedBy { it.toString() }
+        return keys.mapIndexed { i, key ->
+            val outcome = try {
+                PrefetchOutcome(key, fetchModule(key), null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                PrefetchOutcome(key, null, e.message ?: e.toString())
+            }
+            onModule(i + 1, keys.size, outcome)
+            outcome
+        }
+    }
 
     private suspend fun fetchModuleLocked(
         key: ModuleKey,
@@ -657,6 +723,9 @@ class FormsService(
      * [resolve] follows that pointer, but only into modules that are **already cached**: fetching
      * one would run a conversion, and this read is annotated `readOnlyHint`. When the walk cannot
      * finish, the pointer and the hint are returned unchanged rather than an error.
+     *
+     * [level] narrows by [TriggerLevel] — the vocabulary `list_triggers` filters by and this result
+     * reports, so a caller that has just read it can pass it back.
      */
     suspend fun getTrigger(
         key: ModuleKey,
@@ -665,9 +734,10 @@ class FormsService(
         item: String?,
         ownerPath: String? = null,
         resolve: Boolean = false,
+        level: TriggerLevel? = null,
     ): TriggerSource {
         val index = index(key)
-        val trigger = resolveTrigger(index, name, ownerPath, block, item)
+        val trigger = resolveTrigger(index, name, ownerPath, block, item, level)
         val ref = trigger.textRef
             ?: throw IllegalStateException("Trigger '$name' has no recorded PL/SQL body")
         val own = readRef(key, ref)
@@ -693,17 +763,20 @@ class FormsService(
             source = followed?.let { locationOf(it.module, it.ref) } ?: locationOf(index.key, ref),
             inherited = inherited,
             resolvedFrom = followed?.module,
-            hint = if (inherited == null || followed != null) null else inheritedHint(
-                subject = "Trigger '${trigger.name}'" +
-                    (triggerOwner(trigger)?.let { " on '$it'" } ?: " at form level"),
-                ref = inherited,
-                parentKey = inheritedModuleKey(inherited),
-                nextCall = { parent ->
-                    "get_trigger(module=\"$parent\", name=\"${trigger.name}\"" +
-                        (suggestedOwnerPath(inherited)?.let { ", ownerPath=\"$it\")" } ?: ")")
-                },
-                resolveAttempted = resolve,
-                resolvable = true,
+            hint = joinHints(
+                if (inherited == null || followed != null) null else inheritedHint(
+                    subject = "Trigger '${trigger.name}'" +
+                        (triggerOwner(trigger)?.let { " on '$it'" } ?: " at form level"),
+                    ref = inherited,
+                    parentKey = inheritedModuleKey(inherited),
+                    nextCall = { parent ->
+                        "get_trigger(module=\"$parent\", name=\"${trigger.name}\"" +
+                            (suggestedOwnerPath(inherited)?.let { ", ownerPath=\"$it\")" } ?: ")")
+                    },
+                    resolveAttempted = resolve,
+                    resolvable = true,
+                ),
+                if ((followed?.text ?: own).isBlank()) null else unreadLibraryHint(index),
             ),
             annotations = elementAnnotations(
                 index,
@@ -774,16 +847,19 @@ class FormsService(
             source = followed?.let { locationOf(it.module, it.ref) } ?: locationOf(index.key, ref),
             inherited = inherited,
             resolvedFrom = followed?.module,
-            hint = if (inherited == null || followed != null) null else inheritedHint(
-                subject = "Program unit '${unit.name}'",
-                ref = inherited,
-                parentKey = inheritedModuleKey(inherited),
-                nextCall = { parent ->
-                    "get_program_unit(module=\"$parent\", name=\"${unit.name}\", " +
-                        "unitType=\"${unit.unitType.name}\")"
-                },
-                resolveAttempted = resolve,
-                resolvable = true,
+            hint = joinHints(
+                if (inherited == null || followed != null) null else inheritedHint(
+                    subject = "Program unit '${unit.name}'",
+                    ref = inherited,
+                    parentKey = inheritedModuleKey(inherited),
+                    nextCall = { parent ->
+                        "get_program_unit(module=\"$parent\", name=\"${unit.name}\", " +
+                            "unitType=\"${unit.unitType.name}\")"
+                    },
+                    resolveAttempted = resolve,
+                    resolvable = true,
+                ),
+                if ((followed?.text ?: own).isBlank()) null else unreadLibraryHint(index),
             ),
             annotations = elementAnnotations(index, programUnitId(index.key, unit)),
         )
@@ -1792,6 +1868,13 @@ class FormsService(
                         "fetch_module adds one to the search.",
                 )
             }
+            if (notCached > MANY_UNCACHED_MODULES) {
+                add(
+                    "Fetching that many one call at a time is impractical: the server's operator " +
+                        "can warm the whole directory ahead of a session by running it once with " +
+                        "--prefetch.",
+                )
+            }
             unreadLibraries?.fetchable?.takeIf { it.isNotEmpty() }?.let { fetchable ->
                 val shown = fetchable.take(MAX_NAMED_LIBRARIES).joinToString(", ")
                 val more = fetchable.size - MAX_NAMED_LIBRARIES
@@ -2222,21 +2305,62 @@ class FormsService(
      * same list instance, when [names] selects nothing. A name may carry its block as a prefix
      * (`ORDERS.CUSTOMER_ID`), the way items are written in PL/SQL. A name the block does not have
      * fails the call with the block's item names, rather than quietly returning fewer rows.
+     *
+     * The failure still answers what it can: a name that is one of the block's data-source columns
+     * — the usual reason an item filter misses, since a column no item supplies is exactly what a
+     * caller is chasing — is reported as that column, with its type, so the error carries the fact
+     * rather than leaving it to be dug out of the item list.
      */
-    private fun selectItems(key: ModuleKey, block: BlockInfo, names: List<String>?): List<ItemInfo> {
+    private suspend fun selectItems(key: ModuleKey, block: BlockInfo, names: List<String>?): List<ItemInfo> {
         val wanted = names.orEmpty()
             .map { name -> name.trim().removePrefix(":").let { stripBlockPrefix(it, block.name) }.uppercase() }
             .filter { it.isNotEmpty() }
         if (wanted.isEmpty()) return block.items
         val present = block.items.mapTo(HashSet()) { it.name.uppercase() }
         val unknown = wanted.filter { it !in present }.distinct()
-        require(unknown.isEmpty()) {
+        if (unknown.isNotEmpty()) {
             val shown = block.items.take(MAX_OVERVIEW_NAMES).joinToString(", ") { it.name }
             val more = (block.items.size - MAX_OVERVIEW_NAMES).takeIf { it > 0 }?.let { " … and $it more" }.orEmpty()
-            "No item ${unknown.joinToString(", ") { "'$it'" }} in block '${block.name}' of $key. Items: $shown$more"
+            throw IllegalArgumentException(
+                "No item ${unknown.joinToString(", ") { "'$it'" }} in block '${block.name}' of $key." +
+                    columnsNamed(key, block, unknown).orEmpty() + " Items: $shown$more",
+            )
         }
         val set = wanted.toSet()
         return block.items.filter { it.name.uppercase() in set }
+    }
+
+    /**
+     * What [names] are among [block]'s data-source columns, as sentences for the item-filter error,
+     * or `null` when none is. Whether an item supplies the column is decided the way
+     * `mandatoryColumnsWithoutItem` decides it, so the two never disagree.
+     */
+    private suspend fun columnsNamed(key: ModuleKey, block: BlockInfo, names: List<String>): String? {
+        val ref = block.sourceRef ?: return null
+        if (block.dataSourceColumnCount == 0) return null
+        val columns = DataSourceColumnReader.read(readRef(key, ref)).associateBy { it.name.uppercase() }
+        val suppliers = block.items.groupBy { (it.columnName?.substringAfterLast('.') ?: it.name).uppercase() }
+        val sentences = names.mapNotNull { name ->
+            val column = columns[name] ?: return@mapNotNull null
+            val supplier = suppliers[name]?.firstOrNull()
+            " '${column.name}' is a data-source column${columnType(column)?.let { " ($it)" }.orEmpty()} " +
+                (supplier?.let { "supplied by item '${it.name}'." } ?: "supplied by no item.") +
+                (if (column.mandatory) " It is mandatory." else "")
+        }
+        if (sentences.isEmpty()) return null
+        return sentences.joinToString("") +
+            " get_block(module=\"$key\", block=\"${block.name}\", columns=true) lists every column."
+    }
+
+    /** `VARCHAR2(1)`, `NUMBER(10,2)` — a column's type as SQL writes it, or `null` when unrecorded. */
+    private fun columnType(column: DataSourceColumnInfo): String? {
+        val type = column.dataType?.takeIf { it.isNotBlank() } ?: return null
+        return when {
+            column.precision > 0 && column.scale > 0 -> "$type(${column.precision},${column.scale})"
+            column.precision > 0 -> "$type(${column.precision})"
+            column.length > 0 -> "$type(${column.length})"
+            else -> type
+        }
     }
 
     private fun stripBlockPrefix(name: String, block: String): String {
@@ -2553,7 +2677,8 @@ class FormsService(
      * name, so the token never collides with a block named FORM), a block name matches the block's
      * own and its items' triggers with an exact block-level match taking precedence, and
      * `block.item` matches exactly. The legacy [block]/[item] filters keep get_trigger's original
-     * arguments working. Misses and residual ambiguity say what to pass instead.
+     * arguments working, and [level] narrows by the level a result reports. Misses and residual
+     * ambiguity say what to pass instead.
      */
     private fun resolveTrigger(
         index: ModuleIndex,
@@ -2561,10 +2686,12 @@ class FormsService(
         ownerPath: String?,
         block: String? = null,
         item: String? = null,
+        level: TriggerLevel? = null,
     ): TriggerInfo {
         val wantsFormLevel = ownerPath?.equals(FORM_LEVEL_OWNER, ignoreCase = true) == true
         val matches = index.triggers.filter {
             it.name.equals(name, ignoreCase = true) &&
+                (level == null || it.level == level) &&
                 (block == null || it.blockName.equals(block, ignoreCase = true)) &&
                 (item == null || it.itemName.equals(item, ignoreCase = true)) &&
                 when {
@@ -2579,13 +2706,15 @@ class FormsService(
             matches.isEmpty() -> throw IllegalArgumentException(
                 "No trigger '$name' in ${index.key}" +
                     (ownerPath?.let { " under '$it'" } ?: block?.let { " for block '$it'" } ?: "") +
+                    (level?.let { " at ${it.name.lowercase()} level" } ?: "") +
                     ". Call list_triggers to see what exists.",
             )
             else -> matches.singleOrNull { ownerPath != null && ownerPath.equals(triggerOwner(it), ignoreCase = true) }
                 ?: throw IllegalArgumentException(
                     "Trigger '$name' exists at several scopes in ${index.key}: " +
                         matches.joinToString(", ") { ownerToken(it) } +
-                        ". Pass ownerPath with one of these to disambiguate.",
+                        ". Pass ownerPath with one of these to disambiguate" +
+                        (if (level == null) " (level=form|block|item narrows by level)." else "."),
                 )
         }
     }
@@ -2794,6 +2923,47 @@ class FormsService(
         return needed.filterNot { it in scanned }.toSet()
     }
 
+    /** Independent hint sentences as one hint, or `null` when there are none. */
+    private fun joinHints(vararg hints: String?): String? = hints.filterNotNull().joinToString(" ").ifEmpty { null }
+
+    /**
+     * The library half of `fetch_module`'s hint, repeated where a body is actually read. A warning
+     * given once at fetch time is long gone by the time a trigger calls a routine the module does
+     * not define — and that routine's behaviour is *undetermined*, not known, until its library is
+     * read. `null` when every attached library is cached (the common, cheap case: no directory
+     * scan), so the sentence appears only while the gap is real.
+     *
+     * Deliberately not an identifier scan of the body: without a table of Forms built-ins that
+     * would name `Show_Window` and `Set_Item_Property` as unresolvable on nearly every body.
+     */
+    private suspend fun unreadLibraryHint(index: ModuleIndex): String? {
+        val attached = index.attachedLibraries.map { it.name }
+        if (attached.isEmpty()) return null
+        val cached = cache.list().toSet()
+        if (attached.all { ModuleKey.of(it.trim(), ModuleType.LIBRARY) in cached }) return null
+        val unread = unreadLibraries(attached, scanner.scan().mapTo(HashSet()) { it.key }, cached)
+        val parts = buildList {
+            if (unread.fetchable.isNotEmpty()) {
+                val shown = unread.fetchable.take(MAX_NAMED_LIBRARIES)
+                add(
+                    shown.joinToString(", ") + " (attached, not fetched: " +
+                        shown.joinToString(", ") { "fetch_module(module=\"$it\")" } + ")",
+                )
+            }
+            if (unread.absent.isNotEmpty()) {
+                add(unread.absent.take(MAX_NAMED_LIBRARIES).joinToString(", ") + " (attached, not in the forms directory)")
+            }
+        }
+        if (parts.isEmpty()) return null
+        // "Until it is read" is an instruction; for a library the directory does not hold there is
+        // nothing to do, and the sentence must not read as though there were.
+        val readable = if (unread.fetchable.isNotEmpty()) "until it is read," else "nothing here can read it, so"
+        return "A routine this body calls that ${index.key.name} does not define may live in " +
+            parts.joinToString(" or ") + " — $readable treat what such a call does as " +
+            "undetermined, not known." +
+            (converter.conversionCaveat(ModuleType.LIBRARY)?.takeIf { unread.fetchable.isNotEmpty() }?.let { " $it" } ?: "")
+    }
+
     /**
      * This summary with the `fetch_module` hint: the attached libraries not fetched yet, each as
      * the call that fetches it, and the ones that are not in the forms directory at all — stated
@@ -2851,6 +3021,9 @@ class FormsService(
 
     private companion object {
         const val MAX_SEARCH_RESULTS = 200
+
+        /** Past this many un-fetched modules, the search hint names `--prefetch` over `fetch_module`. */
+        const val MANY_UNCACHED_MODULES = 20
         const val FETCH_STEPS = 3
 
         /** Phases of a re-index: the conversion phase of [FETCH_STEPS] is the one it skips. */

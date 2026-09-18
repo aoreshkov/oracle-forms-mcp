@@ -5,7 +5,7 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerGetBlockTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "get_block",
         description = "One block: base table, its DML properties, its trigger names, its master-detail " +
             "relations, and every item. The block's own 'dml' answers what the block queries and " +
@@ -52,7 +52,9 @@ fun Server.registerGetBlockTool(service: FormsService) {
                 ),
                 "items" to stringListProp(
                     "Only these items, case-insensitive, e.g. ['CUSTOMER_ID', 'ORDERS.STATUS']; omit for " +
-                        "every item. An unknown name fails with the block's item names. 'itemTotal' still " +
+                        "every item. An unknown name fails with the block's item names, and says so " +
+                        "when the name is a base-table column (with its type, and the item that " +
+                        "supplies it, if any). 'itemTotal' still " +
                         "counts the whole block; 'columns' still set against all of its items.",
                 ),
             ),

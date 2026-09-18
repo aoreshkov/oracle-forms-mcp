@@ -6,7 +6,7 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerSearchAnnotationsTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "search_annotations",
         description = "Search the meta-information stored for one module. Filter notes by free " +
             "text, by annotation 'kind' (note/tag/summary/classification), or by exact 'tag' " +

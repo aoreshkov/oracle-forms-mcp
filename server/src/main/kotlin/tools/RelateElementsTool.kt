@@ -7,12 +7,15 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerRelateElementsTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "relate_elements",
         description = "Record a directed relationship between two elements of the same fetched " +
             "module — e.g. a trigger 'calls' a program unit, an LOV 'feeds' an item, a unit is " +
             "'deprecated-by' another. Stored in active voice (from → to). Both elements must " +
             "exist. Use fromOwner/toOwner to disambiguate scopes.",
+        example = "relate_elements(module=\"ORDERS.fmb\", fromKind=\"trigger\", " +
+            "fromName=\"WHEN-BUTTON-PRESSED\", fromOwner=\"B1.PB_OK\", toKind=\"program_unit\", " +
+            "toName=\"CALC_TOTAL\", relType=\"calls\")",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "fromKind" to enumPropOf<ElementKind>("Kind of the source element"),

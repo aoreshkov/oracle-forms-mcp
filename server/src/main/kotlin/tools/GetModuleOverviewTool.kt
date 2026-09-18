@@ -5,7 +5,7 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerGetModuleOverviewTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "get_module_overview",
         description = "Overview of a fetched module: Forms version plus the names of every " +
             "section — blocks, program units, attached libraries, LOVs, record groups, windows, " +

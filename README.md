@@ -94,13 +94,18 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 | `list_blocks` | Blocks with base table, item count, trigger count |
 | `get_block` | One block: items with type, property class, prompt and trigger names, and its master-detail relations (`verbosity=detailed` adds data type, column, canvas, size, visible/required/LOV and the DML properties resolved through each item's property class; `columns=true` adds the base table's columns and the ones no item supplies); flags subclassed blocks/items |
 | `list_triggers` | Triggers with level/scope; filter by block, item, or level (`verbosity=detailed` adds a PL/SQL preview) |
-| `get_trigger` | One trigger's decoded PL/SQL body; `resolve` follows a subclassing pointer into a cached parent module |
+| `get_trigger` | One trigger's decoded PL/SQL body (same-named triggers told apart by `ownerPath` or `level`); `resolve` follows a subclassing pointer into a cached parent module |
 | `list_program_units` | Procedures, functions, package specs/bodies with line counts |
 | `get_program_unit` | One program unit's PL/SQL (disambiguate spec/body via `unitType`); `resolve` as for `get_trigger` |
 | `search_source` | Line search over one fetched module: extracted PL/SQL (`plsql`), the raw XML (`xml`), or both; paginated via `offset`/`nextOffset` |
 | `search_modules` | The same search across **every cached module** — cross-form calls, shared `:GLOBAL`s, subclassing pointers; reports the modules it could not reach; paged via an opaque `cursor` |
-| `read_source` | A line range of a cached file, by `uri` or `file` — the converted XML or an extracted PL/SQL sidecar |
+| `read_source` | A line range of a cached file, by `uri` (which names its module) or `module` + `file` — the converted XML or an extracted PL/SQL sidecar |
 | `get_object_xml` | The raw XML fragment of any named object — the escape hatch |
+
+Every tool checks its arguments against its own input schema before running. An argument it does
+not have is never silently dropped: the call fails with every problem listed at once (unknown
+arguments with the name most likely meant, missing ones with their permitted values, values outside
+an enum), plus an example call where the tool has one.
 
 ### Where an object's meaning lives
 
@@ -232,6 +237,16 @@ assumption:
   "cachedModules": 12, "scannedModules": 12, "skippedNotCached": 3090, "skippedStale": 1,
   "hint": "3090 matching module(s) are not cached and were not searched — list_modules(status=\"not_cached\") names them, and fetch_module adds one to the search. 1 cached module(s) changed on disk …"
 }
+```
+
+To make a whole directory searchable, warm the cache before the session instead of one
+`fetch_module` at a time: `--prefetch` runs the server once as a batch job that converts and
+indexes every matching module, one line per module on stderr, then exits (with 1 if any failed).
+Modules already current cost a fingerprint check, so a rerun picks up where a stopped one left off.
+
+```
+server --forms-dir /srv/forms --prefetch-all
+server --forms-dir /srv/forms --prefetch ORDER --prefetch-type form
 ```
 
 Both bounds are enforced and resumable: `maxResults` hits per page, and a ceiling on how many
@@ -416,6 +431,9 @@ the container user can write.
 --cache-dir <path>          Cache override (default: OS cache dir + /oracle-forms-mcp)
 --annotations-dir <path>    Durable annotation store (default: <cache dir>/annotations)
 --conversion-timeout <sec>  Kill a stuck conversion (default: 120)
+--prefetch <pattern>        Fetch every module whose name contains <pattern>, then exit
+--prefetch-all              Fetch every module in the forms directory, then exit
+--prefetch-type <type>      Limit --prefetch to form, menu, library or object_library
 ```
 
 The converter options can also be set as environment variables, for clients that configure a

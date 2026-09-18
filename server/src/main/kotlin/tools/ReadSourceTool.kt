@@ -5,7 +5,7 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerReadSourceTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "read_source",
         description = "A line range of one of a module's cached files — the converted XML, or an " +
             "extracted PL/SQL sidecar. Every result that points at a file carries a 'source' with " +
@@ -16,7 +16,12 @@ fun Server.registerReadSourceTool(service: FormsService) {
             "that continues — 'totalLines' tells you where the file ends. Lines of converted XML " +
             "hold one whole object each and can run to thousands of characters, so read XML a few " +
             "dozen lines at a time, and prefer search_source(scope=\"xml\") to find an attribute.",
+        example = "read_source(uri=\"oracleforms://ORDERS.fmb/plsql/triggers/ORDERS.KEY-COMMIT.sql\", " +
+            "startLine=50, endLine=95)",
         inputSchema = moduleSchema(
+            moduleDescription = "Module name, as for the other tools. Optional with 'uri', which " +
+                "names its module; required with 'file'.",
+            moduleRequired = false,
             extraProps = mapOf(
                 "uri" to stringProp(
                     "Resource URI of the file, as returned in 'source.uri', e.g. " +
@@ -38,9 +43,10 @@ fun Server.registerReadSourceTool(service: FormsService) {
     ) { request ->
         guarded {
             val args = request.args()
+            val uri = args.stringArg("uri")
             val result = service.readSource(
-                key = service.resolveModule(args.moduleArg()),
-                target = args.stringArg("uri") ?: args.stringArg("file")
+                key = service.resolveSourceModule(args.stringArg("module"), uri),
+                target = uri ?: args.stringArg("file")
                     ?: throw IllegalArgumentException(
                         "Pass 'uri' (a result's source.uri) or 'file' (its source.file) to say " +
                             "which file to read.",

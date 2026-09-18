@@ -5,7 +5,7 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerSearchSourceTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "search_source",
         description = "Search a fetched module line by line. Scope 'plsql' (default) searches the " +
             "extracted trigger/program-unit/menu-command PL/SQL (and .pld library source); 'xml' " +

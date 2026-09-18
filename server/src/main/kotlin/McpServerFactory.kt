@@ -12,6 +12,7 @@ import app.oreshkov.oracleformsmcp.server.resources.ModuleIndexResources
 import app.oreshkov.oracleformsmcp.server.resources.registerModuleAnnotationsTemplate
 import app.oreshkov.oracleformsmcp.server.resources.registerModuleIndexTemplate
 import app.oreshkov.oracleformsmcp.server.resources.registerSourceTemplates
+import app.oreshkov.oracleformsmcp.server.tools.ToolErrorTally
 import app.oreshkov.oracleformsmcp.server.tools.registerAnnotateElementTool
 import app.oreshkov.oracleformsmcp.server.tools.registerFetchModuleTool
 import app.oreshkov.oracleformsmcp.server.tools.registerGetBlockTool
@@ -30,6 +31,7 @@ import app.oreshkov.oracleformsmcp.server.tools.registerRemoveAnnotationTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchAnnotationsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchModulesTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchSourceTool
+import co.touchlab.kermit.Logger
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.types.EmptyJsonObject
@@ -140,6 +142,9 @@ class McpServerHandle(
     private val logForwarderScope: CoroutineScope,
 ) : Closeable {
     override fun close() {
+        // What the session's failed calls were, in one line: the metric that says which tool's
+        // description or error text needs work (see ToolErrorTally).
+        ToolErrorTally.summary()?.let { summary -> Logger.withTag("ToolErrors").i { summary } }
         logForwarderScope.cancel()
         routeKermitToSlf4j() // drop the forwarder writer for the closed server
     }

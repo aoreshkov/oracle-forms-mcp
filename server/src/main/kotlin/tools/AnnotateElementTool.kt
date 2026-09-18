@@ -20,12 +20,17 @@ internal val ANNOTATION_WRITE: ToolAnnotations = ToolAnnotations(
 )
 
 fun Server.registerAnnotateElementTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "annotate_element",
-        description = "Persist a note, summary, tag, or classification about one element of a " +
-            "fetched module — durable meta-information that later sessions see when they read the " +
-            "same element. The element must exist (call fetch_module first). Use ownerPath to " +
-            "disambiguate same-named elements at different scopes.",
+        description = "Persist one annotation about one element of a fetched module — durable " +
+            "meta-information that later sessions see when they read the same element. Two " +
+            "different enums: 'elementKind' says which Forms object is annotated (trigger, " +
+            "program_unit, item, ...), 'kind' says what sort of annotation it is (note, summary, " +
+            "tag, classification), and 'body' carries its text. The element must exist (call " +
+            "fetch_module first). Use ownerPath to disambiguate same-named elements at different " +
+            "scopes.",
+        example = "annotate_element(module=\"ORDERS.fmb\", elementKind=\"program_unit\", " +
+            "name=\"CALC_TOTAL\", kind=\"summary\", body=\"Sums line amounts; commits via Forms_Ddl.\")",
         inputSchema = moduleSchema(
             extraProps = mapOf(
                 "elementKind" to enumPropOf<ElementKind>("The kind of element to annotate"),

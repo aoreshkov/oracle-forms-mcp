@@ -6,7 +6,7 @@ import app.oreshkov.oracleformsmcp.server.FormsService
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 
 fun Server.registerGetElementAnnotationsTool(service: FormsService) {
-    addTool(
+    addCheckedTool(
         name = "get_element_annotations",
         description = "The notes, tags, summaries, classifications, and relations stored about one " +
             "element (from earlier annotate_element / relate_elements calls). Each entry is flagged " +
