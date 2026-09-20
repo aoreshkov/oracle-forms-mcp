@@ -628,6 +628,31 @@ tags, and relations you recorded intact.
 - `.pld` files may be written in the client NLS charset; the parser reads UTF-8 with a
   windows-1252 fallback (set `NLS_LANG` accordingly if you see mojibake).
 
+## Privacy Policy
+
+Oracle Forms MCP runs entirely on your machine and collects nothing.
+
+- **Data collection.** None. The server has no telemetry, analytics, crash reporting, or accounts,
+  and it makes no network requests of its own.
+- **What it reads and stores.** It reads the modules in the `--forms-dir` you name and writes
+  derived files — converted text forms, decoded PL/SQL, and `index.json` — to the local
+  [cache](#cache) (or `--converted-dir`). Annotations you or your assistant record are written to
+  the local annotations store. All of these stay on your disk, and you can delete them at any time.
+- **Where content goes.** Module content leaves the server only as responses to the MCP client you
+  connected it to. What that client does with it — including sending it to a model provider — is
+  governed by that client's own privacy policy, not this one. The `http` transport listens on
+  localhost only unless you bind it elsewhere yourself.
+- **Third-party sharing.** None. The one exception to "no network" is the Claude Code plugin's
+  launcher: it asks the GitHub API for the latest release at most once a day and downloads the
+  release zip and its checksum from GitHub Releases. Those requests go to GitHub, under
+  [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement),
+  and carry nothing from your modules. Pin `server_version` or use `OFMCP_SERVER_HOME` to avoid
+  them.
+- **Retention.** Cached and annotation files persist until you delete them; the software keeps
+  nothing anywhere else.
+- **Contact.** Questions go to [GitHub issues](https://github.com/aoreshkov/oracle-forms-mcp/issues);
+  security reports follow [SECURITY.md](SECURITY.md).
+
 ## Development
 
 ```

@@ -16,6 +16,7 @@
   "homepage": "https://github.com/aoreshkov/oracle-forms-mcp",
   "documentation": "https://github.com/aoreshkov/oracle-forms-mcp#readme",
   "support": "https://github.com/aoreshkov/oracle-forms-mcp/issues",
+  "privacy_policies": ["https://github.com/aoreshkov/oracle-forms-mcp#privacy-policy"],
   "license": "Apache-2.0",
   "keywords": ["oracle", "forms", "fmb", "plsql", "legacy", "modernization"],
   "icons": [
