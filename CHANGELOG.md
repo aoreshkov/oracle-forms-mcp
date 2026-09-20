@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The HTTP transport drains on shutdown instead of cutting.** A container is always stopped by
+  signal, and `start(wait = true)` had no shutdown hook at all: a tool call that was mid-response
+  when SIGTERM arrived lost it, and the client saw a truncated body rather than a result. The
+  engine now stops on a 3 s grace / 10 s timeout budget — the timeout matching Docker's own
+  default before it escalates to SIGKILL. A running conversion is deliberately not waited for: it
+  may hold its call for `--conversion-timeout` (120 s by default), and the cache writes-then-
+  renames, so one killed partway leaves no half-written entry behind.
+- **Ktor 3.5.1 → 3.6.0**, ahead of the MCP SDK's own transitive pin, for the CIO server fixes the
+  HTTP transport sits on: UTF-8 text responses were 5-7x slower than they needed to be
+  (KTOR-9704), a request handler could leak when an idle timeout cancelled a claimed response
+  (KTOR-9761), and the `ktor-http` hot path allocated per symbol (KTOR-9778).
+
 ## [0.13.0] - 2026-09-18
 
 ### Added
