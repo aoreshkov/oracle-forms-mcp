@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-13
+
+### Added
+- **A privacy policy.** The README now says what the server does with module content: no
+  telemetry, everything it derives stays on disk, content leaves only as MCP responses, and the
+  plugin launcher's GitHub release check is the one outbound request. The MCPB manifest links to
+  it through `privacy_policies`.
+
 ### Changed
 - **The HTTP transport drains on shutdown instead of cutting.** A container is always stopped by
   signal, and `start(wait = true)` had no shutdown hook at all: a tool call that was mid-response
@@ -572,7 +580,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.10.0...v0.11.0
