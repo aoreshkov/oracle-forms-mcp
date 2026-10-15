@@ -10,6 +10,8 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.isRegularFile
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * [ModuleConverter] shelling out to a site-supplied command instead of Oracle's `frmf2xml` —
@@ -70,7 +72,12 @@ public class CustomCommandModuleConverter internal constructor(
             null
         }
 
-    override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String {
+    // The copy and the output scans are blocking file IO, which the server's handler dispatcher
+    // (Dispatchers.Default) must not be tied up with.
+    override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String =
+        withContext(Dispatchers.IO) { convertOnIo(key, sourcePath, targetDir) }
+
+    private suspend fun convertOnIo(key: ModuleKey, sourcePath: String, targetDir: String): String {
         val source = Path.of(sourcePath)
         val target = Path.of(targetDir).createDirectories()
         // Already-converted input (directory had only the text form) needs a plain copy.

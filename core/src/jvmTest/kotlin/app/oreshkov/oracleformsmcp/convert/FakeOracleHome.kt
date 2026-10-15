@@ -47,10 +47,21 @@ object FakeOracleHome {
         stubTool(
             oracleHome,
             name,
-            batchLines = listOf("copy /Y \"$source\" \"%CD%\\$targetName\" >nul"),
+            batchLines = freshCopyBatch("$source", "%CD%\\$targetName"),
             shellLines = listOf("cp \"$source\" \"\$PWD/$targetName\""),
         )
     }
+
+    /**
+     * Batch lines copying [source] to [destination] the way a converter writes its output: with a
+     * fresh mtime. `copy` keeps the source's mtime where `cp` does not, and output older than the
+     * run is rejected as a leftover — so a plain `copy` of a fixture made seconds earlier passes only
+     * inside the 2s grace. `copy /b f+,, f` is cmd's touch.
+     */
+    fun freshCopyBatch(source: String, destination: String): List<String> = listOf(
+        "copy /Y \"$source\" \"$destination\" >nul",
+        "copy /b \"$destination\"+,, \"$destination\" >nul",
+    )
 
     /** A stub that prints [message] and exits with code 1 producing nothing. */
     fun failingTool(oracleHome: Path, name: String, message: String) {
@@ -64,11 +75,16 @@ object FakeOracleHome {
 
     /** A stub that sleeps for [seconds] (long enough to trip a short timeout). */
     fun sleepingTool(oracleHome: Path, name: String, seconds: Int) {
-        stubTool(
-            oracleHome,
-            name,
-            batchLines = listOf("ping -n ${seconds + 1} 127.0.0.1 >nul"),
-            shellLines = listOf("sleep $seconds"),
-        )
+        stubTool(oracleHome, name, sleepingBatch(seconds), sleepingShell(seconds))
     }
+
+    /**
+     * Lines that wait [seconds] in a **child** process (`ping`, `sleep`) holding the stub's output
+     * pipe — the shape of a hung converter under its wrapper script. Killing only the stub leaves
+     * the child, and the pipe, alive.
+     */
+    fun sleepingBatch(seconds: Int): List<String> = listOf("ping -n ${seconds + 1} 127.0.0.1 >nul")
+
+    /** The Unix counterpart of [sleepingBatch]. */
+    fun sleepingShell(seconds: Int): List<String> = listOf("sleep $seconds")
 }

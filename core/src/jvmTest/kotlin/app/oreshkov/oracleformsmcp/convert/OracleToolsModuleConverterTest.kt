@@ -21,6 +21,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.measureTime
 import kotlinx.coroutines.test.runTest
 
 class OracleToolsModuleConverterTest {
@@ -114,16 +115,80 @@ class OracleToolsModuleConverterTest {
         assertTrue(error.message!!.contains("FRM-99999: boom"))
     }
 
+    /**
+     * The tool's real work runs in a child of its wrapper script and holds the output pipe, so the
+     * call must return within seconds of the timeout — not when the child finally exits. The real
+     * time limit on `runTest` turns a regression into a failure rather than a hung build.
+     */
     @Test
-    fun hangingToolIsKilledOnTimeout() = runTest {
-        FakeOracleHome.sleepingTool(oracleHome, "frmf2xml", seconds = 20)
+    fun hangingToolIsKilledOnTimeout() = runTest(timeout = 45.seconds) {
+        FakeOracleHome.sleepingTool(oracleHome, "frmf2xml", seconds = 60)
         val binary = fakeBinary("ORDERS.fmb")
 
-        assertFailsWith<ConversionTimeoutException> {
-            converter(timeoutSeconds = 1).convert(
-                ModuleKey.of("orders", ModuleType.FORM), binary.toString(), targetDir.toString(),
+        val elapsed = measureTime {
+            assertFailsWith<ConversionTimeoutException> {
+                converter(timeoutSeconds = 1).convert(
+                    ModuleKey.of("orders", ModuleType.FORM), binary.toString(), targetDir.toString(),
+                )
+            }
+        }
+
+        assertTrue(elapsed < 15.seconds, "returned after $elapsed")
+    }
+
+    /** What keeps the `.pld` out of the forms directory is `Output_File=`; this stub honours nothing else. */
+    @Test
+    fun convertsLibraryToTheGivenOutputFile() = runTest {
+        val fixture = copyFixture("utils.pld", temp)
+        FakeOracleHome.stubTool(
+            oracleHome,
+            "frmcmp_batch",
+            // cmd splits `Output_File=path` at the `=` unless the argument was quoted for a space.
+            batchLines = listOf(
+                "set \"out=\"",
+                ":next",
+                "if \"%~1\"==\"\" goto done",
+                "set \"arg=%~1\"",
+                "if /I \"%arg:~0,12%\"==\"Output_File=\" set \"out=%arg:~12%\"",
+                "if /I \"%arg%\"==\"Output_File\" set \"out=%~2\"",
+                "shift",
+                "goto next",
+                ":done",
+                "if not defined out exit /b 0",
+            ) + FakeOracleHome.freshCopyBatch("$fixture", "%out%"),
+            shellLines = listOf(
+                "for a in \"\$@\"; do",
+                "  case \"\$a\" in Output_File=*) cp \"$fixture\" \"\${a#Output_File=}\" ;; esac",
+                "done",
+            ),
+        )
+
+        val output = converter().convert(
+            ModuleKey.of("utils", ModuleType.LIBRARY), fakeBinary("UTILS.pll").toString(), targetDir.toString(),
+        )
+
+        assertEquals(targetDir.resolve("utils.pld").toAbsolutePath(), Path.of(output))
+        assertTrue(Path.of(output).readText().contains("PROCEDURE log_message"))
+    }
+
+    /** A `.pld` left by an earlier run is not this run's output, whatever the exit code says. */
+    @Test
+    fun rejectsALeftoverLibraryDumpFromAnEarlierRun() = runTest {
+        FakeOracleHome.failingTool(oracleHome, "frmcmp_batch", "PDE-PLI018: boom")
+        targetDir.createDirectories()
+        targetDir.resolve("utils.pld").apply {
+            writeText("PROCEDURE stale IS BEGIN NULL; END;")
+            setLastModifiedTime(FileTime.from(Instant.now().minusSeconds(60)))
+        }
+
+        val error = assertFailsWith<ConversionFailedException> {
+            converter().convert(
+                ModuleKey.of("utils", ModuleType.LIBRARY), fakeBinary("UTILS.pll").toString(), targetDir.toString(),
             )
         }
+
+        assertTrue("no output file" in error.message!!, error.message)
+        assertTrue("PDE-PLI018: boom" in error.message!!, error.message)
     }
 
     @Test

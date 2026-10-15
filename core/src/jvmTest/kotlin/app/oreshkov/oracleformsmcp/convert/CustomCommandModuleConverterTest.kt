@@ -23,6 +23,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.measureTime
 import kotlinx.coroutines.test.runTest
 
 class CustomCommandModuleConverterTest {
@@ -61,7 +62,7 @@ class CustomCommandModuleConverterTest {
     private fun copyingScript(fixture: Path, outputName: String): Path = FakeOracleHome.stubScript(
         scriptDir,
         "convert",
-        batchLines = listOf("copy /Y \"$fixture\" \"%CD%\\$outputName\" >nul"),
+        batchLines = FakeOracleHome.freshCopyBatch("$fixture", "%CD%\\$outputName"),
         shellLines = listOf("cp \"$fixture\" \"\$PWD/$outputName\""),
     )
 
@@ -70,10 +71,8 @@ class CustomCommandModuleConverterTest {
         FakeOracleHome.stubScript(
             dir,
             "convert",
-            batchLines = listOf(
-                "echo %* >\"%CD%\\args.txt\"",
-                "copy /Y \"$fixture\" \"%CD%\\orders_fmb.xml\" >nul",
-            ),
+            batchLines = listOf("echo %* >\"%CD%\\args.txt\"") +
+                FakeOracleHome.freshCopyBatch("$fixture", "%CD%\\orders_fmb.xml"),
             shellLines = listOf(
                 "echo \"\$@\" >\"\$PWD/args.txt\"",
                 "cp \"$fixture\" \"\$PWD/orders_fmb.xml\"",
@@ -251,7 +250,7 @@ class CustomCommandModuleConverterTest {
             scriptDir,
             "compile",
             // Writes only to the path it is given — never to its working directory.
-            batchLines = listOf("echo %* >\"$record\"", "copy /Y \"$fixture\" \"%~2\" >nul"),
+            batchLines = listOf("echo %* >\"$record\"") + FakeOracleHome.freshCopyBatch("$fixture", "%~2"),
             shellLines = listOf("echo \"\$@\" >\"$record\"", "cp \"$fixture\" \"\$2\""),
         )
         val module = fakeBinary("UTILS.pll")
@@ -276,7 +275,7 @@ class CustomCommandModuleConverterTest {
         val script = FakeOracleHome.stubScript(
             scriptDir,
             "compile",
-            batchLines = listOf("copy /Y \"$fixture\" \"%~dp1UTILS.pld\" >nul"),
+            batchLines = FakeOracleHome.freshCopyBatch("$fixture", "%~dp1UTILS.pld"),
             shellLines = listOf("cp \"$fixture\" \"\$(dirname \"\$1\")/UTILS.pld\""),
         )
 
@@ -310,18 +309,66 @@ class CustomCommandModuleConverterTest {
         assertFalse("fall back to ORACLE_HOME" in error.message!!, error.message)
     }
 
+    /**
+     * A custom command is a wrapper by nature (a script, wine, docker), and the child doing the work
+     * holds the output pipe: the call has to return within seconds of the timeout, not when that
+     * child exits. The real time limit on `runTest` turns a regression into a failure, not a hang.
+     */
     @Test
-    fun killsACommandThatOverrunsTheTimeout() = runTest {
+    fun killsACommandThatOverrunsTheTimeout() = runTest(timeout = 45.seconds) {
         val script = FakeOracleHome.stubScript(
             scriptDir,
             "convert",
-            batchLines = listOf("ping -n 20 127.0.0.1 >nul"),
-            shellLines = listOf("sleep 19"),
+            FakeOracleHome.sleepingBatch(60),
+            FakeOracleHome.sleepingShell(60),
         )
 
-        assertFailsWith<ConversionTimeoutException> {
-            convertOrders(converter(script, timeoutSeconds = 1))
+        val elapsed = measureTime {
+            assertFailsWith<ConversionTimeoutException> {
+                convertOrders(converter(script, timeoutSeconds = 1))
+            }
         }
+
+        assertTrue(elapsed < 15.seconds, "returned after $elapsed")
+    }
+
+    /** A file an earlier run left behind is not this run's output, even under the canonical name. */
+    @Test
+    fun rejectsALeftoverOutputFromAnEarlierRun() = runTest {
+        targetDir.createDirectories()
+        copyFixture("orders_fmb.xml", targetDir).setLastModifiedTime(FileTime.from(Instant.now().minusSeconds(60)))
+        val script = FakeOracleHome.stubScript(
+            scriptDir,
+            "convert",
+            batchLines = listOf("echo nothing to do", "exit /b 0"),
+            shellLines = listOf("echo nothing to do", "exit 0"),
+        )
+
+        val error = assertFailsWith<ConversionFailedException> { convertOrders(converter(script)) }
+
+        assertTrue("no output file" in error.message!!, error.message)
+    }
+
+    /**
+     * A converter that copies with the source's mtime (`copy`, `cp -p`) cannot be told apart from
+     * one that left an old file behind — both read as having produced nothing, and the message must
+     * say so rather than serve the file.
+     */
+    @Test
+    fun rejectsOutputCopiedWithAnOldMtime() = runTest {
+        val aged = copyFixture("orders_fmb.xml", temp)
+        aged.setLastModifiedTime(FileTime.from(Instant.now().minusSeconds(60)))
+        val script = FakeOracleHome.stubScript(
+            scriptDir,
+            "convert",
+            batchLines = listOf("copy /Y \"$aged\" \"%CD%\\orders_fmb.xml\" >nul"),
+            shellLines = listOf("cp -p \"$aged\" \"\$PWD/orders_fmb.xml\""),
+        )
+
+        val error = assertFailsWith<ConversionFailedException> { convertOrders(converter(script)) }
+
+        assertTrue("no output file" in error.message!!, error.message)
+        assertTrue(targetDir.resolve("orders_fmb.xml").exists())
     }
 
     /** A directory holding only the text form needs no converter at all. */
