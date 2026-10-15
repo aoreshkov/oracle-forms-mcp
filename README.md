@@ -471,9 +471,10 @@ subdirectory of the forms directory is fine, since it is scanned non-recursively
 **This is the directory the converter writes into**, not somewhere files are moved to afterwards:
 the converter runs with it as its working directory, so a wrapper that writes to a fixed location
 can simply be pointed at it. Output is attributed to a module by Oracle's naming first
-(`orders_fmb.xml`), falling back to "the newest matching file written after the run started" for
-converters that name their output freely; conversions sharing the directory are serialised so that
-fallback cannot mix two modules up. Whatever name the converter chose, the file is renamed to the
+(`orders_fmb.xml`), falling back to "the newest matching file this run wrote" for converters that
+name their output freely. A file that was already there when the run started — another module's
+text form, a killed run's partial output — never counts, and conversions sharing the directory are
+serialised, rename included, so two modules cannot be mixed up. Whatever name the converter chose, the file is renamed to the
 canonical one, and the index records it by a stable `converted/<name>` path either way — so an
 index stays valid whether or not this option is set.
 

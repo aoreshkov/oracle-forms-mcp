@@ -78,6 +78,55 @@ class OracleToolsModuleConverterTest {
         assertTrue(Path.of(output).readText().contains("FormModule"))
     }
 
+    /**
+     * The module converted a moment ago left its file in the shared directory, inside the mtime
+     * slack. A run that wrote nothing must fail rather than take it.
+     */
+    @Test
+    fun doesNotTakeASiblingModulesOutputWhenFrmf2xmlWritesNothing() = runTest {
+        FakeOracleHome.failingTool(oracleHome, "frmf2xml", "FRM-99999: boom")
+        targetDir.createDirectories()
+        copyFixture("dupes_fmb.xml", targetDir).setLastModifiedTime(FileTime.from(Instant.now()))
+
+        val error = assertFailsWith<ConversionFailedException> {
+            converter().convert(
+                ModuleKey.of("orders", ModuleType.FORM), fakeBinary("ORDERS.fmb").toString(), targetDir.toString(),
+            )
+        }
+
+        assertTrue("no output file" in error.message!!, error.message)
+    }
+
+    /** ...nor one this run wrote itself, when it is named as another module's text form. */
+    @Test
+    fun doesNotTakeAFileFrmf2xmlWroteUnderAnotherModulesName() = runTest {
+        FakeOracleHome.copyingTool(oracleHome, "frmf2xml", copyFixture("dupes_fmb.xml", temp), "dupes_fmb.xml")
+
+        val error = assertFailsWith<ConversionFailedException> {
+            converter().convert(
+                ModuleKey.of("orders", ModuleType.FORM), fakeBinary("ORDERS.fmb").toString(), targetDir.toString(),
+            )
+        }
+
+        assertTrue("another module's text form" in error.message!!, error.message)
+    }
+
+    /** ...and the same for a library: another library's fresh `.pld` is not this run's dump. */
+    @Test
+    fun doesNotTakeASiblingLibraryDumpWhenFrmcmpWritesNothing() = runTest {
+        FakeOracleHome.failingTool(oracleHome, "frmcmp_batch", "PDE-PLI018: boom")
+        targetDir.createDirectories()
+        targetDir.resolve("misc.pld").writeText("PROCEDURE other IS BEGIN NULL; END;")
+
+        val error = assertFailsWith<ConversionFailedException> {
+            converter().convert(
+                ModuleKey.of("utils", ModuleType.LIBRARY), fakeBinary("UTILS.pll").toString(), targetDir.toString(),
+            )
+        }
+
+        assertTrue("no output file" in error.message!!, error.message)
+    }
+
     @Test
     fun convertsLibraryViaFrmcmp() = runTest {
         val fixture = copyFixture("utils.pld", temp)
