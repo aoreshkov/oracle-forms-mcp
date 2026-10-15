@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The HTTP transport now listens on `127.0.0.1` only, as its log line and documentation
+  already said.** It used to bind every interface, and it has no authentication, so any client on
+  the network could call every tool, including `fetch_module`, which runs the configured converter,
+  and the annotation writes. The Host/Origin check did not stop this, because a client outside a
+  browser can send `Host: 127.0.0.1` itself. The new `--host` option (or `OFMCP_HTTP_HOST`) binds
+  another address, and the server logs a warning at startup when that address is not loopback.
+  The startup log now reports the address and port the engine actually bound. **A container
+  running the HTTP transport needs `--host 0.0.0.0`**, published on the host's loopback:
+  `docker run -p 127.0.0.1:3000:3000 … --transport http --host 0.0.0.0`.
+
 ### Fixed
 - **The conversion timeout now stops the conversion.** Every converter runs under a wrapper — a
   `.bat` under cmd.exe, a shell script, wine, docker — and on timeout only the wrapper was killed.

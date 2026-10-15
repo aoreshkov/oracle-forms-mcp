@@ -141,4 +141,21 @@ class CliOptionsTest {
         val options = parse("--forms-dir", "/srv/forms", "--converted-dir", "", env = env::get)
         assertEquals(Path.of("/srv/forms-xml"), options.convertedDir)
     }
+
+    @Test
+    fun theHttpHostIsLoopbackUnlessTheFlagOrTheEnvironmentSaysOtherwise() {
+        assertEquals("127.0.0.1", parse("/srv/forms").host)
+        assertEquals("0.0.0.0", parse("/srv/forms", "--host", "0.0.0.0").host)
+        assertEquals("0.0.0.0", parse("/srv/forms", env = mapOf(ENV_HTTP_HOST to "0.0.0.0")::get).host)
+        assertEquals(
+            "10.0.0.5",
+            parse("/srv/forms", "--host", "10.0.0.5", env = mapOf(ENV_HTTP_HOST to "0.0.0.0")::get).host,
+            "a flag wins over its variable",
+        )
+        assertEquals(
+            "127.0.0.1",
+            parse("/srv/forms", env = mapOf(ENV_HTTP_HOST to "\${user_config.http_host}")::get).host,
+            "an unfilled launcher template is unset, not an address",
+        )
+    }
 }
