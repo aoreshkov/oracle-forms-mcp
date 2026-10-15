@@ -51,6 +51,8 @@ internal object PldParser {
                 name = header.name.uppercase(),
                 unitType = ProgramUnitType.fromForms(header.kind.replace(Regex("\\s+"), " ")),
                 lineCount = endLine - header.line + 1,
+                // A unit's range starts at its own header, which is code by definition.
+                firstLine = firstCodeLine(lines[header.line - 1]),
                 textRef = SourceRef(pldPath, header.line, endLine),
             )
         }

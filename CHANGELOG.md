@@ -71,6 +71,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The `.mcpb` bundle lists every tool.** Its manifest omitted `read_source` and `search_modules`,
   so the desktop install dialog showed 16 of the 18 tools. A test now compares the manifest with the
   tools the server registers.
+- **The module index and annotations resources are bounded, and say so when they are cut.** Both
+  returned their whole object, so a generated form's index (over a megabyte) or a long-annotated
+  module overflowed the client, which trimmed it to JSON that looked complete. An index too large
+  for one read is now served as its section counts, with `truncated`, its full size, and the tools
+  that page through it. The annotations resource caps its notes and relations, counts what it
+  holds (`totalNotes`, `totalRelations`, `truncated`), and names `search_annotations` to narrow
+  them. `search_annotations` is now also capped by size, not only by row count, and says how to
+  reach the rest in a new `hint`. A single note too long to serve is left out rather than hiding
+  every note after it; `get_element_annotations` still returns it.
+- **A resource read that cuts a line part-way says so.** It used to offer the next line as "the
+  rest", which dropped the remainder of the cut one, and on a one-line converted file named a line
+  that does not exist. It now says the line was cut, names `get_object_xml` and `search_source`,
+  and offers a continuation only when there are lines after it.
+- **`list_program_units` no longer lists an inherited unit as an empty one.** Each row now carries
+  `bodySource`, as `list_triggers` rows do, and a unit with no code of its own counts zero lines.
+  The index now records a unit's first line, as it does a trigger's, so cached modules are
+  reported `STALE` (`INDEX_OUTDATED`) once; `fetch_module` re-parses them without re-converting.
+- **The `explain_module` prompt no longer presents inherited bodies as empty, and is bounded.** A
+  subclassed trigger or program unit is shown as where its code lives, with the call that reads it
+  there (the same one the tool hints name), and the prompt tells the model what that means. Blocks, their items, program units, attached
+  libraries and menus are now capped like the triggers were, each with a line naming the tool that
+  lists the rest.
+- **`get_module_overview`'s detailed windows and canvases are capped** like its name lists, and a
+  cut sets `truncated`.
 
 ## [0.13.1] - 2026-10-13
 

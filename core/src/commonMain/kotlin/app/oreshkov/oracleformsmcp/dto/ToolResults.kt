@@ -234,7 +234,8 @@ public data class ModuleOverview(
  * the block that fills it. Both were reachable only through `get_object_xml`, one call per object.
  *
  * A sub-object rather than richer `windows`/`canvases` fields: those stay name lists, so nothing
- * a caller already reads changes shape.
+ * a caller already reads changes shape. Each list is capped like the name sections, and a cut
+ * sets the overview's `truncated`.
  */
 @Serializable
 @SerialName("ModuleDetail")
@@ -471,13 +472,17 @@ public data class TriggerSource(
     val annotations: ElementAnnotations = ElementAnnotations(),
 )
 
-/** One row of `list_program_units`. */
+/**
+ * One row of `list_program_units`. [bodySource] does what it does on [TriggerSummary]: a
+ * subclassed unit stores no code here, and without it the row reads as a unit that does nothing.
+ */
 @Serializable
 @SerialName("ProgramUnitSummary")
 public data class ProgramUnitSummary(
     val name: String,
     val unitType: ProgramUnitType,
     val lineCount: Int = 0,
+    val bodySource: BodySource = BodySource.OWN,
 )
 
 /** `list_program_units`. [total] counts every unit; [truncated] says the rows were cut at the cap. */
@@ -717,7 +722,7 @@ public data class AnnotationRemoved(
 
 /**
  * `search_annotations` — matching notes and relations across one module. [truncated] says either
- * list was cut at the cap; narrow with `text`, `kind` or `tag` to see the rest.
+ * list was cut, by row count or by size, and [hint] then says how to reach the rest.
  */
 @Serializable
 @SerialName("AnnotationSearchResults")
@@ -726,15 +731,57 @@ public data class AnnotationSearchResults(
     val totalNotes: Int = 0,
     val totalRelations: Int = 0,
     val truncated: Boolean = false,
+    val hint: String? = null,
     val notes: List<AnnotationView> = emptyList(),
     val relations: List<RelationView> = emptyList(),
 )
 
-/** The full annotation set for a module, exposed as the `oracleforms://{module}/annotations` resource. */
+/**
+ * A module's annotation set, exposed as the `oracleforms://{module}/annotations` resource.
+ *
+ * Bounded like every other list: the store grows with no limit, and a resource read carries bytes
+ * and nothing else. So [totalNotes]/[totalRelations] count everything stored, [truncated] says
+ * either list was cut, and [hint] names `search_annotations`, which narrows the set.
+ */
 @Serializable
 @SerialName("ModuleAnnotationsView")
 public data class ModuleAnnotationsView(
     val module: ModuleKey,
+    val totalNotes: Int = 0,
+    val totalRelations: Int = 0,
+    val truncated: Boolean = false,
+    val hint: String? = null,
     val notes: List<AnnotationView> = emptyList(),
     val relations: List<RelationView> = emptyList(),
+)
+
+/**
+ * What the `oracleforms://{module}/index` resource serves in place of a module index too large
+ * for one read: what the module holds, by count, and the calls that page through it.
+ *
+ * Never a prefix of the index. A client that trims an over-long read leaves JSON that looks
+ * complete, so the cut is stated inside the text instead — [truncated] and [hint] — and
+ * [indexChars] says how large the whole index is.
+ */
+@Serializable
+@SerialName("ModuleIndexDigest")
+public data class ModuleIndexDigest(
+    val module: ModuleKey,
+    val formsVersion: String? = null,
+    val truncated: Boolean = true,
+    val indexChars: Int = 0,
+    val blockCount: Int = 0,
+    val itemCount: Int = 0,
+    val triggerCount: Int = 0,
+    val programUnitCount: Int = 0,
+    val attachedLibraryCount: Int = 0,
+    val lovCount: Int = 0,
+    val recordGroupCount: Int = 0,
+    val windowCount: Int = 0,
+    val canvasCount: Int = 0,
+    val alertCount: Int = 0,
+    val parameterCount: Int = 0,
+    val menuCount: Int = 0,
+    val objectRefCount: Int = 0,
+    val hint: String? = null,
 )

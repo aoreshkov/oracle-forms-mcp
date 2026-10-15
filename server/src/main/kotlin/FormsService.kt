@@ -23,6 +23,7 @@ import app.oreshkov.oracleformsmcp.dto.FetchModuleSummary
 import app.oreshkov.oracleformsmcp.dto.ModuleAnnotationsView
 import app.oreshkov.oracleformsmcp.dto.MasterRelation
 import app.oreshkov.oracleformsmcp.dto.ModuleDetail
+import app.oreshkov.oracleformsmcp.dto.ModuleIndexDigest
 import app.oreshkov.oracleformsmcp.dto.ModuleList
 import app.oreshkov.oracleformsmcp.dto.ModuleOverview
 import app.oreshkov.oracleformsmcp.dto.ModuleSearchHit
@@ -464,6 +465,8 @@ class FormsService(
         val editors = cap(index.editors)
         val menus = cap(index.menus.map { it.name })
         val objectLibraryTabs = cap(index.objectLibraryTabs.map { it.name })
+        // The objects behind two of those lists, under the same cap and folded into the same flag.
+        val detail = if (detailed) ModuleDetail(windows = cap(index.windows), canvases = cap(index.canvases)) else null
         return ModuleOverview(
             module = index.key,
             formsVersion = index.formsVersion,
@@ -483,11 +486,7 @@ class FormsService(
             editors = editors,
             menus = menus,
             objectLibraryTabs = objectLibraryTabs,
-            detail = if (detailed) {
-                ModuleDetail(windows = index.windows, canvases = index.canvases)
-            } else {
-                null
-            },
+            detail = detail,
             annotations = elementAnnotations(index, ElementId(index.key, ElementKind.MODULE, index.key.name)),
         )
     }
@@ -772,10 +771,7 @@ class FormsService(
                         (triggerOwner(trigger)?.let { " on '$it'" } ?: " at form level"),
                     ref = inherited,
                     parentKey = inheritedModuleKey(inherited),
-                    nextCall = { parent ->
-                        "get_trigger(module=\"$parent\", name=\"${trigger.name}\"" +
-                            (suggestedOwnerPath(inherited)?.let { ", ownerPath=\"$it\")" } ?: ")")
-                    },
+                    nextCall = { parent -> parentTriggerCall(parent, trigger.name, inherited) },
                     resolveAttempted = resolve,
                     resolvable = true,
                 ),
@@ -790,11 +786,17 @@ class FormsService(
 
     suspend fun listProgramUnits(key: ModuleKey): ProgramUnitList {
         val index = index(key)
-        val (units, truncated) = capRows(
-            index.programUnits.map {
-                ProgramUnitSummary(name = it.name, unitType = it.unitType, lineCount = it.lineCount)
-            },
-        )
+        val (shown, truncated) = capRows(index.programUnits)
+        val units = shown.map { unit ->
+            val bodySource = bodySourceOf(unit)
+            ProgramUnitSummary(
+                name = unit.name,
+                unitType = unit.unitType,
+                // As in list_triggers: a body with no code is zero lines, not the stored minimum of one.
+                lineCount = if (bodySource == BodySource.OWN) unit.lineCount else 0,
+                bodySource = bodySource,
+            )
+        }
         return ProgramUnitList(
             module = index.key,
             total = index.programUnits.size,
@@ -802,6 +804,16 @@ class FormsService(
             units = units,
         )
     }
+
+    /**
+     * What a stored body is, from the index alone: its first line is the first line of code, so a
+     * blank one means the body holds none — the same test `get_trigger`/`get_program_unit` make
+     * against the text, without reading it.
+     */
+    internal fun bodySourceOf(trigger: TriggerInfo): BodySource = bodySourceOf(trigger.firstLine, trigger.inherited)
+
+    /** [bodySourceOf] for a program unit. */
+    internal fun bodySourceOf(unit: ProgramUnitInfo): BodySource = bodySourceOf(unit.firstLine, unit.inherited)
 
     /** One program unit's PL/SQL; subclassing and [resolve] behave exactly as in [getTrigger]. */
     suspend fun getProgramUnit(
@@ -855,10 +867,7 @@ class FormsService(
                     subject = "Program unit '${unit.name}'",
                     ref = inherited,
                     parentKey = inheritedModuleKey(inherited),
-                    nextCall = { parent ->
-                        "get_program_unit(module=\"$parent\", name=\"${unit.name}\", " +
-                            "unitType=\"${unit.unitType.name}\")"
-                    },
+                    nextCall = { parent -> parentProgramUnitCall(parent, unit) },
                     resolveAttempted = resolve,
                     resolvable = true,
                 ),
@@ -1321,14 +1330,63 @@ class FormsService(
     suspend fun readSourceResource(key: ModuleKey, target: String): String {
         val slice = readSource(key, target, maxLines = MAX_SOURCE_LINES)
         if (!slice.truncated) return slice.text
-        val next = slice.nextStartLine ?: (slice.source.endLine + 1)
-        val note = "truncated at line ${slice.source.endLine} of ${slice.totalLines}; " +
-            "call read_source(module=\"$key\", uri=\"${slice.source.uri}\", startLine=$next) for the rest"
+        val last = slice.source.endLine
+        // A line cut part-way has no "rest" at the next line: continuing there drops the remainder
+        // of this one, and on a one-line file names a line that does not exist.
+        val cut = if (slice.lineCut) {
+            "line $last of ${slice.totalLines} was cut part-way, because it alone is longer than one " +
+                "read. A line of converted XML is one whole object: read it with get_object_xml, or " +
+                "find the attribute you need with search_source(module=\"$key\", scope=\"xml\")"
+        } else {
+            "truncated at line $last of ${slice.totalLines}"
+        }
+        val next = slice.nextStartLine?.let {
+            "; call read_source(module=\"$key\", uri=\"${slice.source.uri}\", startLine=$it) for " +
+                if (slice.lineCut) "the lines after it" else "the rest"
+        }.orEmpty()
+        val note = cut + next
         return slice.text + if (sourceMimeType(slice.source.file) == "application/xml") {
             "\n<!-- $note -->"
         } else {
             "\n-- $note"
         }
+    }
+
+    /**
+     * A module's index as resource content: the whole [ModuleIndex] JSON when it fits one read,
+     * otherwise a [ModuleIndexDigest] that says it was cut and names the calls that page the rest.
+     * Never a prefix of the index — trimmed JSON reads as a complete, smaller module.
+     */
+    suspend fun moduleIndexResource(key: ModuleKey): String {
+        val index = index(key)
+        val whole = resultJson.encodeToString(index)
+        // Measured as it travels: the JSON goes out as a string inside a JSON-RPC message, and an
+        // index is mostly quoted keys and values, each quote of which then costs two characters.
+        val travelled = jsonEscapedLength(whole)
+        if (travelled <= MAX_RESULT_CHARS) return whole
+        val digest = ModuleIndexDigest(
+            module = index.key,
+            formsVersion = index.formsVersion,
+            indexChars = travelled,
+            blockCount = index.blocks.size,
+            itemCount = index.blocks.sumOf { it.items.size },
+            triggerCount = index.triggers.size,
+            programUnitCount = index.programUnits.size,
+            attachedLibraryCount = index.attachedLibraries.size,
+            lovCount = index.lovs.size,
+            recordGroupCount = index.recordGroups.size,
+            windowCount = index.windows.size,
+            canvasCount = index.canvases.size,
+            alertCount = index.alerts.size,
+            parameterCount = index.parameters.size,
+            menuCount = index.menus.size,
+            objectRefCount = index.objectRefs.size,
+            hint = "The index of $key is $travelled characters, more than one read holds, so only " +
+                "its counts are served here. Page through it with get_module_overview(module=\"$key\") " +
+                "for every section's names, list_blocks/get_block for blocks and items, list_triggers, " +
+                "and list_program_units.",
+        )
+        return resultJson.encodeToString(digest)
     }
 
     /** Every module with a cached index (feeds the MCP resources). */
@@ -1447,15 +1505,15 @@ class FormsService(
                     it.to?.name?.lowercase()?.contains(query) == true
             }
         }
-        val (pagedNotes, notesCut) = capRows(noteHits)
-        val (pagedRelations, relationsCut) = capRows(relationHits)
+        val page = capAnnotations(noteHits, relationHits)
         return AnnotationSearchResults(
             module = key,
             totalNotes = noteHits.size,
             totalRelations = relationHits.size,
-            truncated = notesCut || relationsCut,
-            notes = pagedNotes,
-            relations = pagedRelations,
+            truncated = page.truncated,
+            hint = if (page.truncated) annotationsCutHint(key, page, noteHits.size, relationHits.size) else null,
+            notes = page.notes,
+            relations = page.relations,
         )
     }
 
@@ -1463,12 +1521,57 @@ class FormsService(
     suspend fun removeAnnotation(key: ModuleKey, id: String): AnnotationRemoved =
         AnnotationRemoved(module = key, id = id, removed = annotationStore.remove(key, id))
 
-    /** The whole annotation set for a module, for the `oracleforms://{module}/annotations` resource. */
+    /**
+     * A module's annotation set, for the `oracleforms://{module}/annotations` resource — whole
+     * when it fits one read, otherwise cut with the totals and the call that narrows it.
+     */
     suspend fun moduleAnnotations(key: ModuleKey): ModuleAnnotationsView {
         val cached = cache.get(key)
         val (notes, relations) = storeViews(key, cached?.let { Path.of(it.sourceFile) })
-        return ModuleAnnotationsView(module = key, notes = notes, relations = relations)
+        val page = capAnnotations(notes, relations)
+        return ModuleAnnotationsView(
+            module = key,
+            totalNotes = notes.size,
+            totalRelations = relations.size,
+            truncated = page.truncated,
+            hint = if (page.truncated) annotationsCutHint(key, page, notes.size, relations.size) else null,
+            notes = page.notes,
+            relations = page.relations,
+        )
     }
+
+    private class AnnotationPage(
+        val notes: List<AnnotationView>,
+        val relations: List<RelationView>,
+        val truncated: Boolean,
+    )
+
+    /**
+     * Caps an annotation result twice, by rows and by the result's character budget, because the
+     * store bounds neither how many notes a module has nor how long one is. Notes are spent first,
+     * and the share they may take leaves room for the relations, which are short.
+     */
+    private fun capAnnotations(notes: List<AnnotationView>, relations: List<RelationView>): AnnotationPage {
+        val (noteRows, notesOverCap) = capRows(notes)
+        val (relationRows, relationsOverCap) = capRows(relations)
+        val budget = RowBudget(MAX_RESULT_CHARS - RESULT_OVERHEAD_CHARS)
+        val noteShare = if (relationRows.isEmpty()) Int.MAX_VALUE else budget.share(ANNOTATION_NOTES_BUDGET_SHARE)
+        // fit, not take: a note's length is unbounded, and one too long to serve must not hide the rest.
+        val (keptNotes, notesCut) = budget.fit(noteRows, AnnotationView.serializer(), noteShare)
+        val (keptRelations, relationsCut) = budget.fit(relationRows, RelationView.serializer())
+        return AnnotationPage(
+            notes = keptNotes,
+            relations = keptRelations,
+            truncated = notesOverCap || relationsOverCap || notesCut || relationsCut,
+        )
+    }
+
+    /** What a cut annotation result says: what it holds against what matched, and how to reach the rest. */
+    private fun annotationsCutHint(key: ModuleKey, page: AnnotationPage, totalNotes: Int, totalRelations: Int): String =
+        "Showing ${page.notes.size} of $totalNotes notes and ${page.relations.size} of $totalRelations " +
+            "relations: the rest do not fit one read. Narrow them with search_annotations(module=\"$key\") " +
+            "and 'text', 'kind' or 'tag', or read one element's with get_element_annotations — the way to " +
+            "a note too long to list at all."
 
     /**
      * The cached index for [key], with the staleness contract every read tool relies on:
@@ -1587,18 +1690,18 @@ class FormsService(
         if (rows.size <= MAX_LIST_ROWS) rows to false else rows.take(MAX_LIST_ROWS) to true
 
     /**
-     * [capRows] for the name-only sections of `get_module_overview`: caps each section and
-     * remembers whether any of them was cut, so the overview carries one honest [truncated] flag
-     * instead of one per section.
+     * [capRows] for the sections of `get_module_overview`: caps each section and remembers whether
+     * any of them was cut, so the overview carries one honest [truncated] flag instead of one per
+     * section.
      */
     private class NameSectionCap {
         var truncated: Boolean = false
             private set
 
-        operator fun invoke(names: List<String>): List<String> {
-            if (names.size <= MAX_OVERVIEW_NAMES) return names
+        operator fun <T> invoke(rows: List<T>): List<T> {
+            if (rows.size <= MAX_OVERVIEW_NAMES) return rows
             truncated = true
-            return names.take(MAX_OVERVIEW_NAMES)
+            return rows.take(MAX_OVERVIEW_NAMES)
         }
     }
 
@@ -2575,6 +2678,28 @@ class FormsService(
      * form). A pointer with only `ParentModule` is a bare name, so it resolves only when exactly
      * one cached module wears it.
      */
+    /**
+     * The call that reads [trigger]'s inherited body where it is defined, in that module's own
+     * names — or `null` when the trigger is not subclassed or its module cannot be pinned down.
+     */
+    internal suspend fun inheritedTriggerCall(trigger: TriggerInfo): String? {
+        val ref = trigger.inherited ?: return null
+        return inheritedModuleKey(ref)?.let { parentTriggerCall(it, trigger.name, ref) }
+    }
+
+    /** [inheritedTriggerCall] for a program unit. */
+    internal suspend fun inheritedProgramUnitCall(unit: ProgramUnitInfo): String? {
+        val ref = unit.inherited ?: return null
+        return inheritedModuleKey(ref)?.let { parentProgramUnitCall(it, unit) }
+    }
+
+    private fun parentTriggerCall(parent: ModuleKey, name: String, ref: InheritanceRef): String =
+        "get_trigger(module=\"$parent\", name=\"$name\"" +
+            (suggestedOwnerPath(ref)?.let { ", ownerPath=\"$it\")" } ?: ")")
+
+    private fun parentProgramUnitCall(parent: ModuleKey, unit: ProgramUnitInfo): String =
+        "get_program_unit(module=\"$parent\", name=\"${unit.name}\", unitType=\"${unit.unitType.name}\")"
+
     private suspend fun inheritedModuleKey(ref: InheritanceRef): ModuleKey? {
         ref.file
             ?.substringAfterLast('/')?.substringAfterLast('\\')
@@ -3073,6 +3198,9 @@ class FormsService(
          * them that does not fit is cut and continued like any other.
          */
         const val SEARCH_FILE_BUDGET_SHARE = 30
+
+        /** Percent of an annotation result's budget its notes may take, leaving the rest for relations. */
+        const val ANNOTATION_NOTES_BUDGET_SHARE = 80
 
         /** How many un-fetched attached libraries a `search_modules` or `fetch_module` hint names before counting. */
         const val MAX_NAMED_LIBRARIES = 5

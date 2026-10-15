@@ -31,6 +31,9 @@ public enum class ProgramUnitType {
  * sidecar under `plsql/program-units`; for `.pll` libraries it is a line range into the `.pld`
  * dump itself (which is already plain PL/SQL).
  *
+ * [firstLine] is the body's first non-blank line, trimmed — as on [TriggerInfo], it is how a
+ * listing tells a unit with code from one without, from the index alone.
+ *
  * [inherited] is set when the unit is subclassed, in which case the body here is empty and the
  * code lives in the parent module.
  */
@@ -40,6 +43,7 @@ public data class ProgramUnitInfo(
     val name: String,
     val unitType: ProgramUnitType = ProgramUnitType.UNKNOWN,
     val lineCount: Int = 0,
+    val firstLine: String = "",
     val inherited: InheritanceRef? = null,
     val textEncoding: TextEncoding = TextEncoding.ORIGINAL,
     val textRef: SourceRef? = null,

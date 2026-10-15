@@ -130,6 +130,7 @@ class FormsXmlParserTest {
         // Decoded entities: &quot; became a real double quote in the sidecar.
         val calcTotal = readRef(assertNotNull(units.first().textRef))
         assertTrue(calcTotal.contains("-- \"total\" calculation"))
+        assertEquals("PROCEDURE calc_total(p_id NUMBER) IS", units.first().firstLine)
     }
 
     @Test
@@ -379,6 +380,8 @@ class FormsXmlParserTest {
         assertEquals("TOOLBAR", ref.module)
         assertEquals("BAR_REFRESH", ref.name)
         assertEquals("", readRef(assertNotNull(unit.textRef)))
+        // No code here, recorded in the index so a listing can say so without reading the body.
+        assertEquals("", unit.firstLine)
     }
 
     @Test

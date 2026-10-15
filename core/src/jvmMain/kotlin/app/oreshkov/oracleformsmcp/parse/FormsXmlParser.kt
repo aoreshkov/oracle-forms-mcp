@@ -240,6 +240,7 @@ internal object FormsXmlParser {
                                     name = unitName,
                                     unitType = unitType,
                                     lineCount = lineCountOf(text),
+                                    firstLine = firstCodeLine(text),
                                     inherited = inherited,
                                     textEncoding = body.encoding,
                                     textRef = textRef,

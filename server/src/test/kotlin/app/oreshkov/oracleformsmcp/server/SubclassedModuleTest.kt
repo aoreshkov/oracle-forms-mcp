@@ -10,6 +10,7 @@ import app.oreshkov.oracleformsmcp.parse.FormsModuleParser
 import app.oreshkov.oracleformsmcp.scan.FormsDirectoryScannerImpl
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.writeText
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -192,6 +193,41 @@ class SubclassedModuleTest {
         assertEquals(BodySource.RESOLVED, resolved.bodySource)
         assertEquals(toolbarKey, resolved.resolvedFrom)
         assertTrue(resolved.text.contains("Synchronize"))
+    }
+
+    /**
+     * The listing is where a reader decides which units are worth opening, so it makes the same
+     * distinction `get_program_unit` does — a subclassed unit is not a unit that does nothing.
+     */
+    @Test
+    fun listProgramUnitsTellsAnInheritedUnitFromAnEmptyOne() = runTest {
+        service.fetchModule(pickerKey)
+        val units = service.listProgramUnits(pickerKey).units.associateBy { it.name }
+        assertEquals(BodySource.INHERITED, units.getValue("BAR_REFRESH").bodySource)
+        assertEquals(0, units.getValue("BAR_REFRESH").lineCount)
+        assertEquals(BodySource.INHERITED, units.getValue("SHOW_INFO").bodySource)
+
+        service.fetchModule(toolbarKey)
+        val own = service.listProgramUnits(toolbarKey).units.single()
+        assertEquals(BodySource.OWN, own.bodySource)
+        assertEquals(4, own.lineCount)
+
+        formsDir.resolve("stub_fmb.xml").writeText(
+            """
+            |<?xml version="1.0" encoding="UTF-8"?>
+            |<Module version="12.2.1.19.0" xmlns="http://xmlns.oracle.com/Forms">
+            |  <FormModule Name="STUB">
+            |    <ProgramUnit Name="NOTHING_YET" ProgramUnitType="Procedure"/>
+            |  </FormModule>
+            |</Module>
+            |
+            """.trimMargin(),
+        )
+        val stubKey = ModuleKey.of("stub", ModuleType.FORM)
+        service.fetchModule(stubKey)
+        val stub = service.listProgramUnits(stubKey).units.single()
+        assertEquals(BodySource.EMPTY, stub.bodySource)
+        assertEquals(0, stub.lineCount)
     }
 
     /**

@@ -69,4 +69,12 @@ class PldParserTest {
         assertEquals(5, units[0].lineCount) // header + BEGIN + 2 body lines + END;
         assertEquals(4, units[1].lineCount)
     }
+
+    /** A unit starts at its header, so its first line is code — what listings test for "has a body". */
+    @Test
+    fun everyUnitRecordsItsHeaderAsItsFirstLine() {
+        val units = parseFixture().programUnits
+        units.forEach { assertTrue(it.firstLine.isNotBlank(), "${it.name} ${it.unitType}") }
+        assertTrue(units[0].firstLine.startsWith("PROCEDURE log_message"), units[0].firstLine)
+    }
 }
