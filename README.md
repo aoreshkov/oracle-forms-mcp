@@ -392,6 +392,13 @@ HTTP transport:
 server --forms-dir C:\forms --transport http --port 3000   # endpoint: http://127.0.0.1:3000/mcp
 ```
 
+The HTTP transport listens on `127.0.0.1` only. It has no authentication of its own, so the bind
+address decides who can call every tool, including `fetch_module`, which runs your converter, and
+the annotation writes. `--host` (or `OFMCP_HTTP_HOST`) binds it elsewhere, and the server logs a
+warning at startup whenever that address is not loopback. The Host/Origin check stops a browser
+from being used against the server through DNS rebinding. It does not stop a client on the network
+that sends `Host: 127.0.0.1` itself.
+
 ### Docker (copy-mode only)
 
 A container image is published to `ghcr.io/aoreshkov/oracle-forms-mcp`. Oracle's `frmf2xml` /
@@ -418,6 +425,18 @@ A host **bind mount** does not — Docker never chowns the target — so run `ch
 once on the host first, or redirect the writes with `--cache-dir` / `--annotations-dir` onto a path
 the container user can write.
 
+**Running the HTTP transport in a container.** Inside the container, loopback is the container's
+own, so the server has to listen on `0.0.0.0` there. Publish the port on the *host's* loopback so
+that it stays unreachable from the network:
+
+```
+docker run -p 127.0.0.1:3000:3000 -v /path/to/forms:/forms ghcr.io/aoreshkov/oracle-forms-mcp \
+  --forms-dir /forms --transport http --host 0.0.0.0 --port 3000   # http://127.0.0.1:3000/mcp
+```
+
+A plain `-p 3000:3000` publishes the port on every interface of the host, which exposes every
+tool to anyone who can reach it.
+
 ### Options
 
 ```
@@ -426,6 +445,7 @@ the container user can write.
 --compile-command <cmd>     Separate converter command for .pll libraries (0.11.0+)
 --converted-dir <path>      Directory the converted XML/.pld is written into (default: the cache)
 --transport stdio|http      Transport (default: stdio)
+--host <address>            HTTP bind address (default: 127.0.0.1; pass 0.0.0.0 inside a container)
 --port <int>                HTTP port (default: 3000)
 --allowed-host / --allowed-origin   Extra HTTP hosts/origins (localhost-only by default)
 --cache-dir <path>          Cache override (default: OS cache dir + /oracle-forms-mcp)
@@ -436,15 +456,16 @@ the container user can write.
 --prefetch-type <type>      Limit --prefetch to form, menu, library or object_library
 ```
 
-The converter options can also be set as environment variables, for clients that configure a
-server with variables rather than arguments (`docker run -e`, the `env` block of an MCP config).
-A flag always wins over its variable:
+The converter options and the HTTP bind address can also be set as environment variables, for
+clients that configure a server with variables rather than arguments (`docker run -e`, the `env`
+block of an MCP config). A flag always wins over its variable:
 
 | Flag | Variable |
 | --- | --- |
 | `--convert-command` | `OFMCP_CONVERT_COMMAND` |
 | `--compile-command` | `OFMCP_COMPILE_COMMAND` |
 | `--converted-dir` | `OFMCP_CONVERTED_DIR` |
+| `--host` | `OFMCP_HTTP_HOST` |
 
 `--convert-command` and `--converted-dir` are also exposed as configuration in the
 [Claude Code plugin](plugins/oracle-forms/README.md) (`/plugin` → Oracle Forms), and all three in
@@ -642,7 +663,7 @@ Oracle Forms MCP runs entirely on your machine and collects nothing.
 - **Where content goes.** Module content leaves the server only as responses to the MCP client you
   connected it to. What that client does with it — including sending it to a model provider — is
   governed by that client's own privacy policy, not this one. The `http` transport listens on
-  localhost only unless you bind it elsewhere yourself.
+  `127.0.0.1` only unless you bind it elsewhere with `--host`.
 - **Third-party sharing.** None. The one exception to "no network" is the Claude Code plugin's
   launcher: it asks the GitHub API for the latest release at most once a day and downloads the
   release zip and its checksum from GitHub Releases. Those requests go to GitHub, under

@@ -1,6 +1,8 @@
 package app.oreshkov.oracleformsmcp.server
 
 import app.oreshkov.oracleformsmcp.model.ModuleType
+import app.oreshkov.oracleformsmcp.server.transport.DEFAULT_HTTP_HOST
+import app.oreshkov.oracleformsmcp.server.transport.bindAddress
 import app.oreshkov.oracleformsmcp.server.transport.runHttpServer
 import app.oreshkov.oracleformsmcp.server.transport.runStdioServer
 import java.nio.file.Path
@@ -47,6 +49,11 @@ private val USAGE = """
                                   as its working directory. Created if missing.
                                   Default: inside each module's own cache entry.
       --transport stdio|http      Transport to run (default: stdio)
+      --host <address>            Address the http transport listens on (default: $DEFAULT_HTTP_HOST,
+                                  this machine only). The transport has no authentication, so
+                                  anything else lets every client that can reach the port call
+                                  every tool; inside a container use 0.0.0.0 and publish the port
+                                  on the host's loopback (-p 127.0.0.1:3000:3000)
       --port <int>                Port for the http transport (default: $DEFAULT_PORT)
       --allowed-host <host>       Extra Host header the http transport accepts; repeatable
                                   (default: localhost only, via DNS-rebinding protection)
@@ -69,10 +76,11 @@ private val USAGE = """
       $ENV_CONVERT_COMMAND       Same as --convert-command
       $ENV_COMPILE_COMMAND       Same as --compile-command
       $ENV_CONVERTED_DIR         Same as --converted-dir
+      $ENV_HTTP_HOST             Same as --host
 
     Examples:
       server C:\forms
-      server --forms-dir /srv/forms --transport http --port 3000   # http://127.0.0.1:3000/mcp
+      server --forms-dir /srv/forms --transport http --port 3000   # http://127.0.0.1:3000/mcp, this machine only
       server --forms-dir C:\forms --convert-command C:\tools\fmb2xml.bat --converted-dir C:\forms-xml
       server --forms-dir /srv/forms --convert-command "/opt/forms/convert.sh --xml {}"
       server --forms-dir /srv/forms --prefetch-all                 # warm the whole cache, then exit
@@ -85,10 +93,15 @@ internal const val ENV_CONVERT_COMMAND: String = "OFMCP_CONVERT_COMMAND"
 internal const val ENV_COMPILE_COMMAND: String = "OFMCP_COMPILE_COMMAND"
 internal const val ENV_CONVERTED_DIR: String = "OFMCP_CONVERTED_DIR"
 
+/** The http bind address, for container runtimes that pass configuration as variables. */
+internal const val ENV_HTTP_HOST: String = "OFMCP_HTTP_HOST"
+
 internal enum class TransportKind { STDIO, HTTP }
 
 internal data class CliOptions(
     val transport: TransportKind = TransportKind.STDIO,
+    /** The http bind address: the `--host` flag, else [ENV_HTTP_HOST], else loopback. */
+    val host: String = DEFAULT_HTTP_HOST,
     val port: Int = DEFAULT_PORT,
     val allowedHosts: List<String> = emptyList(),
     val allowedOrigins: List<String> = emptyList(),
@@ -126,6 +139,7 @@ internal fun configured(value: String?): String? =
  */
 internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::getenv): CliOptions {
     var options = CliOptions()
+    var hostFlag: String? = null
     var i = 0
 
     fun value(flag: String): String {
@@ -149,6 +163,8 @@ internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::g
                     ?: fail("Invalid --port (expected 1-65535)")
                 options = options.copy(port = port)
             }
+            "--host" -> hostFlag = value(arg).trim().takeIf { it.isNotEmpty() }
+                ?: fail("Invalid --host (expected an address, e.g. 127.0.0.1 or 0.0.0.0)")
             "--allowed-host" -> options =
                 options.copy(allowedHosts = options.allowedHosts + value(arg))
             "--allowed-origin" -> options =
@@ -194,6 +210,7 @@ internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::g
         convertCommand = options.convertCommand ?: configured(env(ENV_CONVERT_COMMAND)),
         compileCommand = options.compileCommand ?: configured(env(ENV_COMPILE_COMMAND)),
         convertedDir = options.convertedDir ?: configured(env(ENV_CONVERTED_DIR))?.let(Path::of),
+        host = hostFlag ?: configured(env(ENV_HTTP_HOST)) ?: DEFAULT_HTTP_HOST,
     )
 }
 
@@ -257,6 +274,18 @@ fun main(args: Array<String>) {
         ?: fail("Missing the forms directory (pass --forms-dir <path> or a positional argument)")
     if (!formsDir.isDirectory()) fail("Forms directory does not exist or is not a directory: $formsDir")
 
+    // Resolved before anything starts, so a --host that names nothing is a usage error, not a
+    // stack trace from inside the engine.
+    val httpAddress = if (options.transport == TransportKind.HTTP) {
+        try {
+            bindAddress(options.host)
+        } catch (e: IllegalArgumentException) {
+            fail(e.message ?: "Invalid --host")
+        }
+    } else {
+        null
+    }
+
     val cacheDir = options.cacheDir ?: ServerConfig(formsDir).cacheDir
     val config = ServerConfig(
         formsDir = formsDir.toAbsolutePath().normalize(),
@@ -277,6 +306,7 @@ fun main(args: Array<String>) {
                 TransportKind.STDIO -> runStdioServer(handle.server)
                 TransportKind.HTTP -> runHttpServer(
                     server = handle.server,
+                    address = checkNotNull(httpAddress),
                     port = options.port,
                     allowedHosts = options.allowedHosts,
                     allowedOrigins = options.allowedOrigins,

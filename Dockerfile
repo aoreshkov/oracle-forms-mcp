@@ -61,5 +61,9 @@ ENTRYPOINT ["/app/bin/server"]
 #   chown 10001 /host/converted
 #   docker run -i -v /host/converted:/converted -v /path/to/forms:/forms \
 #     ghcr.io/aoreshkov/oracle-forms-mcp --forms-dir /forms --converted-dir /converted
-# stdio is the default transport; override with: --transport http --port 3000
+# stdio is the default transport. For http, listen on 0.0.0.0 inside the container (its loopback is
+# its own) and publish the port on the HOST's loopback only. The server has no authentication, so a
+# plain -p 3000:3000 exposes every tool to anyone who can reach the host:
+#   docker run -p 127.0.0.1:3000:3000 -v /path/to/forms:/forms ghcr.io/aoreshkov/oracle-forms-mcp \
+#     --forms-dir /forms --transport http --host 0.0.0.0 --port 3000
 CMD ["--help"]
