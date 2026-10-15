@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The conversion timeout now stops the conversion.** Every converter runs under a wrapper — a
+  `.bat` under cmd.exe, a shell script, wine, docker — and on timeout only the wrapper was killed.
+  Its child, the process doing the work, kept the output pipe open, and the call waited for it to
+  exit, however long that took, while holding the module's fetch lock (and, with
+  `--converted-dir`, the lock every other conversion waits on). A timeout now kills the whole
+  process tree, and output still held open after the process ended is read for at most 5 s more.
+- **A leftover library dump is reported, not thrown as an internal error.** On the
+  `ORACLE_HOME` library path, a `.pld` left by an earlier run reached an untyped "predates the
+  conversion run" failure with no exit code or tool output. It is now the usual "produced no output
+  file" error, carrying both.
+- **Conversion file IO no longer runs on the request dispatcher.** The copy of a converted file
+  and the output-directory scans moved to `Dispatchers.IO`, so concurrent fetches cannot tie up
+  the CPU-sized pool tool handlers run on.
+
 ## [0.13.1] - 2026-10-13
 
 ### Added

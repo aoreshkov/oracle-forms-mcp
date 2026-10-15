@@ -49,30 +49,33 @@ internal object ConversionOutput {
                     "Output tail:\n${result.output}",
             )
         }
-        val output = findOutput()
-        if (output == null || !output.isRegularFile() || output.fileSize() == 0L) {
+        val found = findOutput()?.takeIf { it.isRegularFile() && it.fileSize() > 0L }
+        // A file older than the run is a leftover of an earlier one, not this run's output — the
+        // finders already skip those, so this is the last line, not the only one.
+        val output = found?.takeIf { isFresh(it, startedAt) }
+        if (output == null) {
+            val leftover = found?.let { " $it predates this run: it is a leftover of an earlier one." }.orEmpty()
             val why = hint()?.let { " $it" }.orEmpty()
             throw ConversionFailedException(
                 "Converting $key with $toolName produced no output file " +
-                    "(exit code ${result.exitCode}).$why Output tail:\n${result.output}",
+                    "(exit code ${result.exitCode}).$leftover$why Output tail:\n${result.output}",
             )
         }
         if (result.exitCode != 0) {
             log.w { "$toolName exited with ${result.exitCode} for $key but produced $output; using it" }
         }
-        // `startedAt` guards against picking up a leftover of a previous failed run.
-        check(output.getLastModifiedTime().toMillis() >= startedAt - STALE_GRACE_MILLIS) {
-            "Converted file $output predates the conversion run"
-        }
         return output
     }
+
+    /** Whether [file] is a regular file written at or after [startedAt], within the mtime slack. */
+    fun isFresh(file: Path, startedAt: Long): Boolean =
+        file.isRegularFile() && file.getLastModifiedTime().toMillis() >= startedAt - STALE_GRACE_MILLIS
 
     /** Newest regular file in [dir] whose name satisfies [predicate], written at or after [startedAt]. */
     fun newestMatching(dir: Path, startedAt: Long, predicate: (String) -> Boolean): Path? =
         dir.takeIf { it.exists() }
             ?.listDirectoryEntries()
-            ?.filter { it.isRegularFile() && predicate(it.name) }
-            ?.filter { it.getLastModifiedTime().toMillis() >= startedAt - STALE_GRACE_MILLIS }
+            ?.filter { predicate(it.name) && isFresh(it, startedAt) }
             ?.maxByOrNull { it.getLastModifiedTime().toMillis() }
 
     /**

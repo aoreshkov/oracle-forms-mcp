@@ -11,6 +11,8 @@ import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * [ModuleConverter] shelling out to the Oracle Forms tools under `<ORACLE_HOME>/bin`:
@@ -34,18 +36,21 @@ public class OracleToolsModuleConverter(
 
     override fun convertsBinary(type: ModuleType): Boolean = true
 
-    override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String {
-        val source = Path.of(sourcePath)
-        val target = Path.of(targetDir).createDirectories()
-        // Already-converted input (directory had only the text form) needs a plain copy.
-        if (ConvertedFiles.isConverted(source)) {
-            return ConvertedFiles.copyInto(source, target).toString()
+    // The copy and the output scans are blocking file IO, which the server's handler dispatcher
+    // (Dispatchers.Default) must not be tied up with.
+    override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String =
+        withContext(Dispatchers.IO) {
+            val source = Path.of(sourcePath)
+            val target = Path.of(targetDir).createDirectories()
+            // Already-converted input (directory had only the text form) needs a plain copy.
+            if (ConvertedFiles.isConverted(source)) {
+                return@withContext ConvertedFiles.copyInto(source, target).toString()
+            }
+            when (key.type) {
+                ModuleType.LIBRARY -> convertLibrary(key, source, target)
+                else -> convertToXml(key, source, target)
+            }.toAbsolutePath().toString()
         }
-        return when (key.type) {
-            ModuleType.LIBRARY -> convertLibrary(key, source, target)
-            else -> convertToXml(key, source, target)
-        }.toAbsolutePath().toString()
-    }
 
     private suspend fun convertToXml(key: ModuleKey, source: Path, target: Path): Path {
         val tool = resolveTool("frmf2xml")
@@ -86,7 +91,7 @@ public class OracleToolsModuleConverter(
             // Output_File is what keeps the .pld out of the forms directory: without it frmcmp
             // writes next to the *module*, whatever its cwd. Some versions are reported to write
             // into the cwd even when it is given, hence the fallback.
-            outputFile.takeIf { it.isRegularFile() && it.fileSize() > 0 }
+            outputFile.takeIf { ConversionOutput.isFresh(it, startedAt) && it.fileSize() > 0 }
                 ?: newestMatching(target, startedAt) { it.endsWith(".pld", ignoreCase = true) }
         }
     }
