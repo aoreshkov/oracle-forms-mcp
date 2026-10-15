@@ -271,7 +271,5 @@ The committed `.claude/` config is shareable (public repo); only `settings.local
   `/hooks`.
 - **Path-scoped rules** auto-load when you edit matching sources: `.claude/rules/core.md`
   (`core/src/**`) and `.claude/rules/server.md` (`server/src/**`).
-- **Skills:** `/release <version>` (bump the two guarded files + changelog, pre-flight, tag),
-  `/review-currency [focus]` (expert-panel currency audit → `docs/reviews/`).
-- **Agents:** six read-only `*-currency` reviewers (the review-currency panel) plus
-  `verify-build` (second-opinion Gradle build/test).
+- **Skill:** `/release <version>` (bump the two guarded files + changelog, pre-flight, tag).
+- **Code review** comes from the `review-kit` plugin, not from config committed here.
