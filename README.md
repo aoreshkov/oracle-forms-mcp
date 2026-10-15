@@ -445,7 +445,7 @@ tool to anyone who can reach it.
 --compile-command <cmd>     Separate converter command for .pll libraries (0.11.0+)
 --converted-dir <path>      Directory the converted XML/.pld is written into (default: the cache)
 --transport stdio|http      Transport (default: stdio)
---host <address>            HTTP bind address (default: 127.0.0.1; 0.0.0.0 inside a container)
+--host <address>            HTTP bind address (default: 127.0.0.1; pass 0.0.0.0 inside a container)
 --port <int>                HTTP port (default: 3000)
 --allowed-host / --allowed-origin   Extra HTTP hosts/origins (localhost-only by default)
 --cache-dir <path>          Cache override (default: OS cache dir + /oracle-forms-mcp)

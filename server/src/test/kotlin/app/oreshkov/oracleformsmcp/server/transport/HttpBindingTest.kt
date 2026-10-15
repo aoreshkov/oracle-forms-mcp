@@ -5,12 +5,13 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
-import java.net.ConnectException
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketException
 import java.net.SocketTimeoutException
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -33,25 +34,35 @@ class HttpBindingTest {
         options = ServerOptions(capabilities = ServerCapabilities()),
     )
 
-    /** An address of this machine that a LAN client could connect to, or `null` when it has none. */
-    private fun nonLoopbackAddress(): InetAddress? =
-        NetworkInterface.networkInterfaces().toList()
+    /**
+     * An address of this machine that the probe demonstrably reaches, or `null` when there is none.
+     *
+     * "Not reached" only means something when the same probe *does* reach a listener that is
+     * there: a firewall that silently drops packets, or a VPN or virtual adapter with no route,
+     * would otherwise make the loopback-only assertion pass whatever the engine bound. So each
+     * candidate is checked first against a plain socket on the wildcard address.
+     */
+    private fun probeableLanAddress(): InetAddress? {
+        val candidates = NetworkInterface.networkInterfaces().toList()
             .filter { it.isUp && !it.isLoopback }
             .flatMap { it.inetAddresses.toList() }
-            .firstOrNull { it is Inet4Address && !it.isLoopbackAddress && !it.isLinkLocalAddress }
+            .filter { it is Inet4Address && !it.isLoopbackAddress && !it.isLinkLocalAddress }
+        return ServerSocket(0, 50, InetAddress.getByName("0.0.0.0")).use { control ->
+            candidates.firstOrNull { connects(it, control.localPort) }
+        }
+    }
 
     /**
-     * Whether a TCP connection is accepted. A refusal can arrive as a timeout: Windows retries a
-     * refused connect for about 2 s before reporting it. A timeout is also what a firewall that
-     * drops packets would produce, which is why the wildcard test exists — it shows that a real
-     * listener on the same address *is* reached, so "not reached" here is not the probe being blind.
+     * Whether a TCP connection is accepted. A refusal can arrive as a timeout — Windows retries a
+     * refused connect for about 2 s before reporting it — or as any other socket error (no route).
+     * [probeableLanAddress] is what keeps a `false` here from being the probe being blind.
      */
     private fun connects(address: InetAddress, port: Int): Boolean =
         Socket().use { socket ->
             try {
                 socket.connect(InetSocketAddress(address, port), 5_000)
                 true
-            } catch (_: ConnectException) {
+            } catch (_: SocketException) {
                 false
             } catch (_: SocketTimeoutException) {
                 false
@@ -70,8 +81,8 @@ class HttpBindingTest {
 
     @Test
     fun `by default the listener is reachable on loopback and nowhere else`() {
-        val lan = nonLoopbackAddress()
-        assumeTrue("this machine has no non-loopback IPv4 address to probe", lan != null)
+        val lan = probeableLanAddress()
+        assumeTrue("no non-loopback IPv4 address of this machine is reachable to probe", lan != null)
 
         running(httpEngine(mcpServer(), port = 0)) { port ->
             assertTrue(connects(InetAddress.getByName("127.0.0.1"), port), "not reachable on loopback")
@@ -82,8 +93,8 @@ class HttpBindingTest {
     /** The other half: without it, a host argument that never reaches the engine would pass above. */
     @Test
     fun `an explicit wildcard host is reachable from the network`() {
-        val lan = nonLoopbackAddress()
-        assumeTrue("this machine has no non-loopback IPv4 address to probe", lan != null)
+        val lan = probeableLanAddress()
+        assumeTrue("no non-loopback IPv4 address of this machine is reachable to probe", lan != null)
 
         running(httpEngine(mcpServer(), port = 0, host = "0.0.0.0")) { port ->
             assertTrue(connects(lan!!, port), "not reachable on $lan although bound to 0.0.0.0")

@@ -8,7 +8,9 @@ import io.ktor.server.engine.addShutdownHook
 import io.ktor.server.engine.embeddedServer
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
+import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.UnknownHostException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.launch
@@ -63,9 +65,12 @@ internal fun EmbeddedServer<*, *>.stopGracefully() {
 }
 
 /**
- * Runs [server] over the MCP Streamable HTTP transport on [host]:[port] and blocks until shutdown.
+ * Runs [server] over the MCP Streamable HTTP transport on [address]:[port] and blocks until shutdown.
  *
- * The transport has **no authentication**, so [host] decides who may call every tool — including
+ * [address] is resolved once, by [bindAddress], and bound as its literal, so the loopback decision,
+ * the bind and the log all describe the same address — a name the engine resolved again could differ.
+ *
+ * The transport has **no authentication**, so [address] decides who may call every tool — including
  * `fetch_module`, which runs the configured converter, and the annotation writes. It defaults to
  * loopback ([DEFAULT_HTTP_HOST]); any other address is logged as a warning at startup, because the
  * Host/Origin check below stops a browser being used against the server (DNS rebinding) and nothing
@@ -88,32 +93,23 @@ internal fun EmbeddedServer<*, *>.stopGracefully() {
 fun runHttpServer(
     server: Server,
     port: Int,
-    host: String = DEFAULT_HTTP_HOST,
+    address: InetAddress = bindAddress(DEFAULT_HTTP_HOST),
     allowedHosts: List<String> = emptyList(),
     allowedOrigins: List<String> = emptyList(),
 ) {
     val log = Logger.withTag("HttpTransport")
     if (allowedHosts.isNotEmpty()) log.i { "Additionally accepting Host: $allowedHosts" }
     if (allowedOrigins.isNotEmpty()) log.i { "Additionally accepting Origin: $allowedOrigins" }
-    if (!isLoopbackHost(host)) {
-        log.w {
-            "HTTP transport bound to $host, which is not a loopback address, and it has no " +
-                "authentication: any client that can reach this port can call every tool, including " +
-                "fetch_module (which runs the configured converter) and the annotation writes. The " +
-                "Host/Origin check only stops DNS rebinding from a browser. Bind to $DEFAULT_HTTP_HOST " +
-                "unless something in front restricts who can connect — a container port published " +
-                "on the host's loopback only (-p 127.0.0.1:3000:3000), a firewall, or an " +
-                "authenticating proxy."
-        }
-    }
-    val engine = httpEngine(server, port, host, allowedHosts, allowedOrigins)
-    // The connector is only known once it is bound — the port especially, which may be 0 — so the
-    // endpoint is logged from what the engine resolved, not from the arguments. Ktor's own
+    val engine = httpEngine(server, port, address.hostAddress, allowedHosts, allowedOrigins)
+    // The port is only known once it is bound (it may be 0), so everything that names the listener
+    // is logged from what the engine resolved — after the bind, never before it. Ktor's own
     // "Responding at" line is read the same way, off the application's scope.
     engine.monitor.subscribe(ApplicationStarted) { application ->
         application.launch {
             engine.engine.resolvedConnectors().forEach {
-                log.i { "MCP Streamable HTTP endpoint on ${endpointUrl(it.host, it.port)} (bound to ${it.host}:${it.port})" }
+                val bound = "${address.hostAddress}:${it.port}"
+                log.i { "MCP Streamable HTTP endpoint on ${endpointUrl(address, it.port)} (bound to $bound)" }
+                bindWarnings(address, it.port, allowedHosts).forEach { warning -> log.w { warning } }
             }
         }
     }
@@ -153,24 +149,50 @@ internal fun allowList(defaults: List<String>, extra: List<String>): List<String
     if (extra.isEmpty()) null else defaults + extra
 
 /**
- * Whether [host] reaches only this machine. A name that resolves to several addresses counts only
- * when every one of them is loopback, and one that does not resolve at all does not count — the
- * warning it would suppress is the safe side to err on.
+ * The address `--host` names, resolved the way the engine would have resolved it (the first
+ * address), but once. A name that does not resolve fails here, naming the option, rather than as
+ * an `UnresolvedAddressException` from inside the engine.
  */
-internal fun isLoopbackHost(host: String): Boolean =
-    runCatching { InetAddress.getAllByName(host).all { it.isLoopbackAddress } }.getOrDefault(false)
+internal fun bindAddress(host: String): InetAddress =
+    try {
+        InetAddress.getByName(host)
+    } catch (e: UnknownHostException) {
+        throw IllegalArgumentException("--host '$host' does not resolve to an address", e)
+    }
 
 /**
- * The URL to give a client for a listener on [host]:[port]. A wildcard bind (`0.0.0.0`, `::`) is
- * no address to connect *to*, so it is shown as loopback, which it includes; an IPv6 literal is
- * bracketed as a URL requires.
+ * What the operator must be told about a listener on [address]:[port], logged after the bind.
+ *
+ * Off loopback, the transport's lack of authentication is the point: anyone who can reach the
+ * port can call every tool. And a specific non-loopback address that is not also in
+ * [allowedHosts] is one the Host check rejects, so the endpoint just logged would not answer a
+ * client that used it.
  */
-internal fun endpointUrl(host: String, port: Int): String {
-    val wildcard = runCatching { InetAddress.getByName(host).isAnyLocalAddress }.getOrDefault(false)
+internal fun bindWarnings(address: InetAddress, port: Int, allowedHosts: List<String>): List<String> {
+    if (address.isLoopbackAddress) return emptyList()
+    val exposed = "HTTP transport listening on ${address.hostAddress}:$port, which is not a loopback " +
+        "address, and it has no authentication: any client that can reach this port can call every " +
+        "tool, including fetch_module (which runs the configured converter) and the annotation writes. " +
+        "The Host/Origin check only stops DNS rebinding from a browser. Bind to $DEFAULT_HTTP_HOST " +
+        "unless something in front restricts who can connect — a container port published on the " +
+        "host's loopback only (-p 127.0.0.1:$port:$port), a firewall, or an authenticating proxy."
+    val literal = address.hostAddress
+    if (address.isAnyLocalAddress || allowedHosts.any { it.equals(literal, ignoreCase = true) }) return listOf(exposed)
+    val rejected = "Requests addressed to $literal are rejected by the Host check until it is allowed: " +
+        "add --allowed-host $literal for clients to use ${endpointUrl(address, port)}."
+    return listOf(exposed, rejected)
+}
+
+/**
+ * The URL to give a client for a listener on [address]:[port]. A wildcard bind (`0.0.0.0`, `::`)
+ * is no address to connect *to*, so it is shown as loopback, which it includes; an IPv6 address is
+ * bracketed, with its zone ID's `%` encoded as `%25` (RFC 6874), as a URL requires.
+ */
+internal fun endpointUrl(address: InetAddress, port: Int): String {
     val urlHost = when {
-        wildcard -> DEFAULT_HTTP_HOST
-        ':' in host && !host.startsWith("[") -> "[$host]"
-        else -> host
+        address.isAnyLocalAddress -> DEFAULT_HTTP_HOST
+        address is Inet6Address -> "[${address.hostAddress.replace("%", "%25")}]"
+        else -> address.hostAddress
     }
     return "http://$urlHost:$port/mcp"
 }

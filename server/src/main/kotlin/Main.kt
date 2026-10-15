@@ -2,6 +2,7 @@ package app.oreshkov.oracleformsmcp.server
 
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.server.transport.DEFAULT_HTTP_HOST
+import app.oreshkov.oracleformsmcp.server.transport.bindAddress
 import app.oreshkov.oracleformsmcp.server.transport.runHttpServer
 import app.oreshkov.oracleformsmcp.server.transport.runStdioServer
 import java.nio.file.Path
@@ -99,8 +100,8 @@ internal enum class TransportKind { STDIO, HTTP }
 
 internal data class CliOptions(
     val transport: TransportKind = TransportKind.STDIO,
-    /** `null` until [parseArgs] resolves it: the flag, else [ENV_HTTP_HOST], else [DEFAULT_HTTP_HOST]. */
-    val host: String? = null,
+    /** The http bind address: the `--host` flag, else [ENV_HTTP_HOST], else loopback. */
+    val host: String = DEFAULT_HTTP_HOST,
     val port: Int = DEFAULT_PORT,
     val allowedHosts: List<String> = emptyList(),
     val allowedOrigins: List<String> = emptyList(),
@@ -138,6 +139,7 @@ internal fun configured(value: String?): String? =
  */
 internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::getenv): CliOptions {
     var options = CliOptions()
+    var hostFlag: String? = null
     var i = 0
 
     fun value(flag: String): String {
@@ -161,11 +163,8 @@ internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::g
                     ?: fail("Invalid --port (expected 1-65535)")
                 options = options.copy(port = port)
             }
-            "--host" -> {
-                val host = value(arg).trim().takeIf { it.isNotEmpty() }
-                    ?: fail("Invalid --host (expected an address, e.g. 127.0.0.1 or 0.0.0.0)")
-                options = options.copy(host = host)
-            }
+            "--host" -> hostFlag = value(arg).trim().takeIf { it.isNotEmpty() }
+                ?: fail("Invalid --host (expected an address, e.g. 127.0.0.1 or 0.0.0.0)")
             "--allowed-host" -> options =
                 options.copy(allowedHosts = options.allowedHosts + value(arg))
             "--allowed-origin" -> options =
@@ -211,7 +210,7 @@ internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::g
         convertCommand = options.convertCommand ?: configured(env(ENV_CONVERT_COMMAND)),
         compileCommand = options.compileCommand ?: configured(env(ENV_COMPILE_COMMAND)),
         convertedDir = options.convertedDir ?: configured(env(ENV_CONVERTED_DIR))?.let(Path::of),
-        host = options.host ?: configured(env(ENV_HTTP_HOST)) ?: DEFAULT_HTTP_HOST,
+        host = hostFlag ?: configured(env(ENV_HTTP_HOST)) ?: DEFAULT_HTTP_HOST,
     )
 }
 
@@ -275,6 +274,18 @@ fun main(args: Array<String>) {
         ?: fail("Missing the forms directory (pass --forms-dir <path> or a positional argument)")
     if (!formsDir.isDirectory()) fail("Forms directory does not exist or is not a directory: $formsDir")
 
+    // Resolved before anything starts, so a --host that names nothing is a usage error, not a
+    // stack trace from inside the engine.
+    val httpAddress = if (options.transport == TransportKind.HTTP) {
+        try {
+            bindAddress(options.host)
+        } catch (e: IllegalArgumentException) {
+            fail(e.message ?: "Invalid --host")
+        }
+    } else {
+        null
+    }
+
     val cacheDir = options.cacheDir ?: ServerConfig(formsDir).cacheDir
     val config = ServerConfig(
         formsDir = formsDir.toAbsolutePath().normalize(),
@@ -295,7 +306,7 @@ fun main(args: Array<String>) {
                 TransportKind.STDIO -> runStdioServer(handle.server)
                 TransportKind.HTTP -> runHttpServer(
                     server = handle.server,
-                    host = options.host ?: DEFAULT_HTTP_HOST,
+                    address = checkNotNull(httpAddress),
                     port = options.port,
                     allowedHosts = options.allowedHosts,
                     allowedOrigins = options.allowedOrigins,
