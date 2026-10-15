@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ORACLE_HOME` library path, a `.pld` left by an earlier run reached an untyped "predates the
   conversion run" failure with no exit code or tool output. It is now the usual "produced no output
   file" error, carrying both.
+- **Annotation writes no longer tear the file or overwrite a damaged one.** A write truncated the
+  module's annotations file and rewrote it in place, so a `get_element_annotations`,
+  `search_annotations` or annotations-resource read running at the same time could see half a file
+  and report the module as having no annotations, and a crash part-way left it that way. Worse, the
+  next `annotate_element`, `relate_elements` or `remove_annotation` read such a file as empty and
+  wrote over it, keeping only the one entry it added. Writes now replace the file atomically, as
+  the module cache already did. A write that finds the file unreadable moves it aside as
+  `<NAME.ext>.json.corrupt-<millis>` and fails with a message saying so, instead of overwriting
+  it. The file now records its format version, and a write refuses to rewrite a file from a newer
+  build, which would drop whatever that build stored. Writes are still serialised only within one
+  server process, so two servers sharing an annotation store can still lose one another's update.
 - **Conversion file IO no longer runs on the request dispatcher.** The copy of a converted file
   and the output-directory scans moved to `Dispatchers.IO`, so concurrent fetches cannot tie up
   the CPU-sized pool tool handlers run on.

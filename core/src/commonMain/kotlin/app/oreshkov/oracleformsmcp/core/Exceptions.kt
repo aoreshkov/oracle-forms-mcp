@@ -51,3 +51,26 @@ public class ConversionTimeoutException(message: String) : ConversionException(m
 
 /** Copy mode found no pre-converted file for the module. */
 public class PreConvertedFileMissingException(message: String) : ConversionException(message)
+
+/**
+ * A write found the module's stored annotations undecodable — damaged, or in a shape this build
+ * cannot read. Annotations are asserted, so nothing can rebuild them: the store moved the file
+ * aside as [keptAs] instead of writing over it, and wrote nothing.
+ */
+public class AnnotationsUnreadableException(key: ModuleKey, keptAs: String) : Exception(
+    "The stored annotations for module '$key' could not be read, so this call changed nothing. " +
+        "The unreadable file was kept as '$keptAs' in the annotation store: tell the user, since " +
+        "its annotations can only be recovered by hand. Until then get_element_annotations reports " +
+        "none for '$key', and the next annotate_element or relate_elements call starts a new set.",
+)
+
+/**
+ * A write found the module's annotations written by a newer build. Rewriting them here would drop
+ * whatever that build stores and this one does not know, so the file is left untouched.
+ */
+public class AnnotationsFormatTooNewException(key: ModuleKey, found: Int, current: Int) : Exception(
+    "The stored annotations for module '$key' were written by a newer build of this server " +
+        "(format v$found, this build writes v$current), so this call changed nothing — rewriting " +
+        "them would lose what that build stored. They are left as they are; upgrade the server to " +
+        "change them.",
+)
