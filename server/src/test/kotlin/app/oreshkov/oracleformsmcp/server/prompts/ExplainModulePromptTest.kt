@@ -59,14 +59,22 @@ class ExplainModulePromptTest {
 
         val text = explainModuleText(service, key)
 
+        // The same call the tool hints name: in the parent's own terms, so it works as written.
         val trigger = lineFor(text, "BAR_LIST.SELECT", "WHEN-BUTTON-PRESSED")
         assertTrue(trigger.contains("inherited from TOOLBAR"), trigger)
-        assertTrue(trigger.contains("get_trigger") && trigger.contains("resolve=true"), trigger)
+        assertTrue(
+            trigger.contains("get_trigger(module=\"TOOLBAR.fmb\", name=\"WHEN-BUTTON-PRESSED\", ownerPath=\"BAR.SELECT\")"),
+            trigger,
+        )
 
         val unit = lineFor(text, "BAR_REFRESH")
         assertTrue(unit.contains("inherited from TOOLBAR"), unit)
-        assertTrue(unit.contains("get_program_unit") && unit.contains("resolve=true"), unit)
+        assertTrue(
+            unit.contains("get_program_unit(module=\"TOOLBAR.fmb\", name=\"BAR_REFRESH\", unitType=\"PROCEDURE\")"),
+            unit,
+        )
         assertFalse(unit.contains("lines)"), "an inherited unit has no line count here: $unit")
+        assertTrue(text.contains("fetch_module"), "says what to do when the parent is not fetched")
 
         // An object-group member names its group, the way the tool hints do.
         assertTrue(lineFor(text, "SHOW_INFO").contains("object group STD"), text)

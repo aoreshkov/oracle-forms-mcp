@@ -161,8 +161,8 @@ const val MAX_MODULE_INDEX_RESOURCES: Int = 50
 
 /**
  * Exposes an MCP resource per *recently fetched* module — reading `oracleforms://NAME.ext/index`
- * returns the [app.oreshkov.oracleformsmcp.model.ModuleIndex] JSON — bounded to the
- * [limit] most recent, oldest evicted first.
+ * returns [FormsService.moduleIndexResource]: the index JSON, or its digest when it is too large
+ * for one read — bounded to the [limit] most recent, oldest evicted first.
  *
  * The bound is the point. `resources/list` has no cursor in the Kotlin SDK, and the client issues
  * it on its own before the model does anything: one resource per cached module turned a warm cache

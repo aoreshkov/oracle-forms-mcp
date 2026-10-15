@@ -722,7 +722,7 @@ public data class AnnotationRemoved(
 
 /**
  * `search_annotations` — matching notes and relations across one module. [truncated] says either
- * list was cut at the cap; narrow with `text`, `kind` or `tag` to see the rest.
+ * list was cut, by row count or by size, and [hint] then says how to reach the rest.
  */
 @Serializable
 @SerialName("AnnotationSearchResults")
@@ -731,6 +731,7 @@ public data class AnnotationSearchResults(
     val totalNotes: Int = 0,
     val totalRelations: Int = 0,
     val truncated: Boolean = false,
+    val hint: String? = null,
     val notes: List<AnnotationView> = emptyList(),
     val relations: List<RelationView> = emptyList(),
 )

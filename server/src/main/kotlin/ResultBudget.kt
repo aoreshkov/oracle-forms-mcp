@@ -49,6 +49,28 @@ internal class RowBudget(private var remaining: Int) {
         return kept to false
     }
 
+    /**
+     * [take] for rows of unbounded size: a row too large for what is left is skipped rather than
+     * ending the list, so one oversized row cannot hide every row after it. Order is kept; the flag
+     * says whether any row was left out.
+     */
+    fun <T> fit(rows: List<T>, serializer: KSerializer<T>, share: Int = remaining): Pair<List<T>, Boolean> {
+        var allowance = minOf(share, remaining)
+        val kept = mutableListOf<T>()
+        var skipped = false
+        for (row in rows) {
+            val cost = resultJson.encodeToString(serializer, row).length + 1 // plus the separating comma
+            if (cost > allowance) {
+                skipped = true
+                continue
+            }
+            allowance -= cost
+            remaining -= cost
+            kept += row
+        }
+        return kept to skipped
+    }
+
     /** [share] as a percentage of what is left, for a section that must not crowd out the rest. */
     fun share(percent: Int): Int = remaining * percent / 100
 }

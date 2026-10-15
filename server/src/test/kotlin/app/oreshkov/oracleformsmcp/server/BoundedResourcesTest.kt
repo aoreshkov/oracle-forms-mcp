@@ -116,6 +116,33 @@ class BoundedResourcesTest {
         assertEquals(200, search.totalNotes)
     }
 
+    /**
+     * A note's length is unbounded, so one note can be larger than a whole read. Stopping at it
+     * would hide every note after it from both the resource and the search tool, whatever filter
+     * is used; it is left out instead, and the hint names the call that serves it.
+     */
+    @Test
+    fun oneNoteTooLongToServeDoesNotHideTheNotesAfterIt() = runTest {
+        copyFixture("orders_fmb.xml")
+        service.fetchModule(ordersKey)
+        service.annotate(ordersKey, ElementKind.MODULE, "ORDERS", null, AnnotationKind.NOTE, "y".repeat(70_000))
+        repeat(3) { service.annotate(ordersKey, ElementKind.MODULE, "ORDERS", null, AnnotationKind.NOTE, "short $it") }
+
+        val view = service.moduleAnnotations(ordersKey)
+        assertEquals(listOf("short 0", "short 1", "short 2"), view.notes.map { it.body })
+        assertTrue(view.truncated)
+        assertTrue(assertNotNull(view.hint).contains("get_element_annotations"), view.hint)
+
+        val search = service.searchAnnotations(ordersKey, text = "short", kind = null, tag = null)
+        assertEquals(3, search.notes.size)
+        assertFalse(search.truncated)
+        assertNull(search.hint)
+
+        val all = service.searchAnnotations(ordersKey, text = null, kind = null, tag = null)
+        assertTrue(all.truncated)
+        assertTrue(assertNotNull(all.hint).contains("Showing 3 of 4 notes"), all.hint)
+    }
+
     @Test
     fun aSmallAnnotationSetIsServedWholeWithoutAHint() = runTest {
         copyFixture("orders_fmb.xml")
@@ -150,6 +177,25 @@ class BoundedResourcesTest {
         assertTrue(text.contains("line 1 of 1 was cut part-way"), text.takeLast(400))
         assertTrue(text.contains("get_object_xml"), text.takeLast(400))
         assertFalse(text.contains("startLine="), "there is no next line to continue at: ${text.takeLast(400)}")
+    }
+
+    /** With lines after the cut one, the continuation is offered — for those lines, not "the rest". */
+    @Test
+    fun aCutFirstLineFollowedByMoreLinesOffersTheLinesAfterIt() = runTest {
+        formsDir.resolve("oneline_fmb.xml").writeText(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Module version=\"12.2.1.19.0\" " +
+                "xmlns=\"http://xmlns.oracle.com/Forms\"><FormModule Name=\"ONELINE\" " +
+                "Title=\"${"q".repeat(60_000)}\">\n</FormModule>\n</Module>\n",
+        )
+        val key = ModuleKey.of("oneline", ModuleType.FORM)
+        service.fetchModule(key)
+
+        val text = service.readSourceResource(key, "oracleforms://ONELINE.fmb/converted")
+
+        val note = text.takeLast(500)
+        assertTrue(note.contains("line 1 of 3 was cut part-way"), note)
+        assertTrue(note.contains("startLine=2) for the lines after it"), note)
+        assertFalse(note.contains("for the rest"), note)
     }
 
     @Test

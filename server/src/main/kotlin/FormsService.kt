@@ -771,10 +771,7 @@ class FormsService(
                         (triggerOwner(trigger)?.let { " on '$it'" } ?: " at form level"),
                     ref = inherited,
                     parentKey = inheritedModuleKey(inherited),
-                    nextCall = { parent ->
-                        "get_trigger(module=\"$parent\", name=\"${trigger.name}\"" +
-                            (suggestedOwnerPath(inherited)?.let { ", ownerPath=\"$it\")" } ?: ")")
-                    },
+                    nextCall = { parent -> parentTriggerCall(parent, trigger.name, inherited) },
                     resolveAttempted = resolve,
                     resolvable = true,
                 ),
@@ -791,7 +788,7 @@ class FormsService(
         val index = index(key)
         val (shown, truncated) = capRows(index.programUnits)
         val units = shown.map { unit ->
-            val bodySource = bodySourceOf(key, unit)
+            val bodySource = bodySourceOf(unit)
             ProgramUnitSummary(
                 name = unit.name,
                 unitType = unit.unitType,
@@ -808,20 +805,15 @@ class FormsService(
         )
     }
 
-    /** What [trigger]'s stored body is, from the index alone: its first line is its first code. */
+    /**
+     * What a stored body is, from the index alone: its first line is the first line of code, so a
+     * blank one means the body holds none — the same test `get_trigger`/`get_program_unit` make
+     * against the text, without reading it.
+     */
     internal fun bodySourceOf(trigger: TriggerInfo): BodySource = bodySourceOf(trigger.firstLine, trigger.inherited)
 
-    /**
-     * What [unit]'s stored body is. The index records no first line for a unit, so this reads the
-     * body — but only when the line count leaves it in doubt: a subclassed unit, or one whose body
-     * is a single line, which is what a body with no code counts as. A library's units all point
-     * into one `.pld`, so reading every unit to list them would read that file once per unit.
-     */
-    internal suspend fun bodySourceOf(key: ModuleKey, unit: ProgramUnitInfo): BodySource {
-        if (unit.inherited == null && unit.lineCount > 1) return BodySource.OWN
-        val own = unit.textRef?.let { readRef(key, it) }.orEmpty()
-        return bodySourceOf(own, unit.inherited)
-    }
+    /** [bodySourceOf] for a program unit. */
+    internal fun bodySourceOf(unit: ProgramUnitInfo): BodySource = bodySourceOf(unit.firstLine, unit.inherited)
 
     /** One program unit's PL/SQL; subclassing and [resolve] behave exactly as in [getTrigger]. */
     suspend fun getProgramUnit(
@@ -875,10 +867,7 @@ class FormsService(
                     subject = "Program unit '${unit.name}'",
                     ref = inherited,
                     parentKey = inheritedModuleKey(inherited),
-                    nextCall = { parent ->
-                        "get_program_unit(module=\"$parent\", name=\"${unit.name}\", " +
-                            "unitType=\"${unit.unitType.name}\")"
-                    },
+                    nextCall = { parent -> parentProgramUnitCall(parent, unit) },
                     resolveAttempted = resolve,
                     resolvable = true,
                 ),
@@ -1352,7 +1341,8 @@ class FormsService(
             "truncated at line $last of ${slice.totalLines}"
         }
         val next = slice.nextStartLine?.let {
-            "; call read_source(module=\"$key\", uri=\"${slice.source.uri}\", startLine=$it) for the rest"
+            "; call read_source(module=\"$key\", uri=\"${slice.source.uri}\", startLine=$it) for " +
+                if (slice.lineCut) "the lines after it" else "the rest"
         }.orEmpty()
         val note = cut + next
         return slice.text + if (sourceMimeType(slice.source.file) == "application/xml") {
@@ -1370,11 +1360,14 @@ class FormsService(
     suspend fun moduleIndexResource(key: ModuleKey): String {
         val index = index(key)
         val whole = resultJson.encodeToString(index)
-        if (whole.length <= MAX_RESULT_CHARS) return whole
+        // Measured as it travels: the JSON goes out as a string inside a JSON-RPC message, and an
+        // index is mostly quoted keys and values, each quote of which then costs two characters.
+        val travelled = jsonEscapedLength(whole)
+        if (travelled <= MAX_RESULT_CHARS) return whole
         val digest = ModuleIndexDigest(
             module = index.key,
             formsVersion = index.formsVersion,
-            indexChars = whole.length,
+            indexChars = travelled,
             blockCount = index.blocks.size,
             itemCount = index.blocks.sumOf { it.items.size },
             triggerCount = index.triggers.size,
@@ -1388,7 +1381,7 @@ class FormsService(
             parameterCount = index.parameters.size,
             menuCount = index.menus.size,
             objectRefCount = index.objectRefs.size,
-            hint = "The index of $key is ${whole.length} characters, more than one read holds, so only " +
+            hint = "The index of $key is $travelled characters, more than one read holds, so only " +
                 "its counts are served here. Page through it with get_module_overview(module=\"$key\") " +
                 "for every section's names, list_blocks/get_block for blocks and items, list_triggers, " +
                 "and list_program_units.",
@@ -1518,6 +1511,7 @@ class FormsService(
             totalNotes = noteHits.size,
             totalRelations = relationHits.size,
             truncated = page.truncated,
+            hint = if (page.truncated) annotationsCutHint(key, page, noteHits.size, relationHits.size) else null,
             notes = page.notes,
             relations = page.relations,
         )
@@ -1540,13 +1534,7 @@ class FormsService(
             totalNotes = notes.size,
             totalRelations = relations.size,
             truncated = page.truncated,
-            hint = if (!page.truncated) {
-                null
-            } else {
-                "Showing ${page.notes.size} of ${notes.size} notes and ${page.relations.size} of " +
-                    "${relations.size} relations: the rest do not fit one read. Call " +
-                    "search_annotations(module=\"$key\") with 'text', 'kind' or 'tag' to narrow them."
-            },
+            hint = if (page.truncated) annotationsCutHint(key, page, notes.size, relations.size) else null,
             notes = page.notes,
             relations = page.relations,
         )
@@ -1568,14 +1556,22 @@ class FormsService(
         val (relationRows, relationsOverCap) = capRows(relations)
         val budget = RowBudget(MAX_RESULT_CHARS - RESULT_OVERHEAD_CHARS)
         val noteShare = if (relationRows.isEmpty()) Int.MAX_VALUE else budget.share(ANNOTATION_NOTES_BUDGET_SHARE)
-        val (keptNotes, notesCut) = budget.take(noteRows, AnnotationView.serializer(), noteShare)
-        val (keptRelations, relationsCut) = budget.take(relationRows, RelationView.serializer())
+        // fit, not take: a note's length is unbounded, and one too long to serve must not hide the rest.
+        val (keptNotes, notesCut) = budget.fit(noteRows, AnnotationView.serializer(), noteShare)
+        val (keptRelations, relationsCut) = budget.fit(relationRows, RelationView.serializer())
         return AnnotationPage(
             notes = keptNotes,
             relations = keptRelations,
             truncated = notesOverCap || relationsOverCap || notesCut || relationsCut,
         )
     }
+
+    /** What a cut annotation result says: what it holds against what matched, and how to reach the rest. */
+    private fun annotationsCutHint(key: ModuleKey, page: AnnotationPage, totalNotes: Int, totalRelations: Int): String =
+        "Showing ${page.notes.size} of $totalNotes notes and ${page.relations.size} of $totalRelations " +
+            "relations: the rest do not fit one read. Narrow them with search_annotations(module=\"$key\") " +
+            "and 'text', 'kind' or 'tag', or read one element's with get_element_annotations — the way to " +
+            "a note too long to list at all."
 
     /**
      * The cached index for [key], with the staleness contract every read tool relies on:
@@ -2682,6 +2678,28 @@ class FormsService(
      * form). A pointer with only `ParentModule` is a bare name, so it resolves only when exactly
      * one cached module wears it.
      */
+    /**
+     * The call that reads [trigger]'s inherited body where it is defined, in that module's own
+     * names — or `null` when the trigger is not subclassed or its module cannot be pinned down.
+     */
+    internal suspend fun inheritedTriggerCall(trigger: TriggerInfo): String? {
+        val ref = trigger.inherited ?: return null
+        return inheritedModuleKey(ref)?.let { parentTriggerCall(it, trigger.name, ref) }
+    }
+
+    /** [inheritedTriggerCall] for a program unit. */
+    internal suspend fun inheritedProgramUnitCall(unit: ProgramUnitInfo): String? {
+        val ref = unit.inherited ?: return null
+        return inheritedModuleKey(ref)?.let { parentProgramUnitCall(it, unit) }
+    }
+
+    private fun parentTriggerCall(parent: ModuleKey, name: String, ref: InheritanceRef): String =
+        "get_trigger(module=\"$parent\", name=\"$name\"" +
+            (suggestedOwnerPath(ref)?.let { ", ownerPath=\"$it\")" } ?: ")")
+
+    private fun parentProgramUnitCall(parent: ModuleKey, unit: ProgramUnitInfo): String =
+        "get_program_unit(module=\"$parent\", name=\"${unit.name}\", unitType=\"${unit.unitType.name}\")"
+
     private suspend fun inheritedModuleKey(ref: InheritanceRef): ModuleKey? {
         ref.file
             ?.substringAfterLast('/')?.substringAfterLast('\\')

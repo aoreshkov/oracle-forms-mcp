@@ -76,7 +76,7 @@ internal suspend fun explainModuleText(service: FormsService, key: ModuleKey): S
                 val scope = listOfNotNull(trigger.blockName, trigger.itemName).joinToString(".")
                     .ifEmpty { "form" }
                 val body = when (service.bodySourceOf(trigger)) {
-                    BodySource.INHERITED -> inheritedFrom(trigger.inherited!!, "get_trigger")
+                    BodySource.INHERITED -> inheritedFrom(trigger.inherited!!, service.inheritedTriggerCall(trigger))
                     BodySource.EMPTY -> "(empty)"
                     else -> trigger.firstLine
                 }
@@ -87,8 +87,8 @@ internal suspend fun explainModuleText(service: FormsService, key: ModuleKey): S
         if (index.programUnits.isNotEmpty()) {
             appendLine("Program units:")
             index.programUnits.take(MAX_PROGRAM_UNITS).forEach { unit ->
-                val body = when (service.bodySourceOf(key, unit)) {
-                    BodySource.INHERITED -> "— " + inheritedFrom(unit.inherited!!, "get_program_unit")
+                val body = when (service.bodySourceOf(unit)) {
+                    BodySource.INHERITED -> "— " + inheritedFrom(unit.inherited!!, service.inheritedProgramUnitCall(unit))
                     BodySource.EMPTY -> "(empty)"
                     else -> "(${unit.lineCount} lines)"
                 }
@@ -121,17 +121,26 @@ internal suspend fun explainModuleText(service: FormsService, key: ModuleKey): S
         and how the pieces fit together. Base the explanation strictly on the
         indexed structure below; use get_trigger/get_program_unit for bodies you
         need to inspect. A body marked "inherited from" is not empty: its code
-        lives in the module named, and the call shown reads it. A list that ends
-        with "omitted" is cut; the tool it names lists the rest:
+        lives in the module named, and the call shown reads it there (call
+        fetch_module for that module first if it is not fetched). A list that
+        ends with "omitted" is cut; the tool it names lists the rest:
     """.trimIndent() + "\n\n" + context
 }
 
-/** Where a subclassed body's code lives, and the call that reads it — in the tool hints' terms. */
-private fun inheritedFrom(ref: InheritanceRef, tool: String): String {
-    val module = ref.module ?: ref.file ?: "a module this XML does not name"
+/**
+ * Where a subclassed body's code lives, and [call] — the one the tool hints name, in the parent
+ * module's own terms — that reads it there. Without a call the parent cannot be pinned down from
+ * this module, and the line says so instead of offering one that cannot work.
+ */
+private fun inheritedFrom(ref: InheritanceRef, call: String?): String {
+    val module = ref.module ?: ref.file
     val where = ref.objectGroup?.let { "object group $it" } ?: ref.ownerPath
-    return "inherited from $module" + (where?.let { " ($it)" } ?: "") +
-        "; the code is there, not here — $tool(resolve=true) reads it"
+    val from = "inherited from ${module ?: "a module this XML does not name"}" + (where?.let { " ($it)" } ?: "")
+    return if (call != null) {
+        "$from; the code is there, not here — $call reads it"
+    } else {
+        "$from; the code is there, not here, and this module does not say where that is"
+    }
 }
 
 /** `" … and K more — <call>"` for a list cut inside one line, or nothing when it was not cut. */
