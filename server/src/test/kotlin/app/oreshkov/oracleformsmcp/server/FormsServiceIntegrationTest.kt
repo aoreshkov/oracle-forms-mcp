@@ -15,7 +15,10 @@ import app.oreshkov.oracleformsmcp.scan.FormsDirectoryScannerImpl
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,6 +27,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -640,6 +647,44 @@ class FormsServiceIntegrationTest {
         assertEquals(listOf("STOCK", "AUDIT", "FORM"), shared.overview(dupesKey).blocks)
     }
 
+    /**
+     * The same, with the fetches overlapping, as concurrent tool calls make them. The converter
+     * takes a while between writing and returning, so overlapping conversions would really overlap:
+     * one run at a time must hold the shared directory, and each must find the previous run's
+     * output already claimed under its canonical name — a rename left until after the lock lets the
+     * next run overwrite `output.xml` first, and one module is then indexed from the other's file.
+     * Repeated because the second half is a race, which a single round can miss.
+     */
+    @Test
+    fun overlappingFetchesIntoASharedConvertedDirConvertAndClaimTheirOutputOneAtATime() = runTest {
+        val keys = listOf(ordersKey, dupesKey, menuKey)
+        repeat(CONTENDED_ROUNDS) { round ->
+            val converter = SlowFreeNamingConverter()
+            val convertedDir = temp.resolve("contended-xml-$round")
+            val shared = FormsService(
+                scanner = FormsDirectoryScannerImpl(formsDir),
+                converter = converter,
+                parser = FormsModuleParser(),
+                cache = OnDiskModuleCache(temp.resolve("cache-contended-$round")),
+                annotationStore = OnDiskAnnotationStore(temp.resolve("annotations-contended-$round")),
+                formsDir = formsDir,
+                convertedDir = convertedDir,
+            )
+
+            keys.map { key -> async(Dispatchers.Default) { shared.fetchModule(key) } }.awaitAll()
+
+            assertEquals(1, converter.maxInFlight.get(), "round $round: conversions overlapped in the shared directory")
+            assertEquals(emptyList(), converter.unclaimedAtStart.toList(), "round $round: a run found the previous run's output unclaimed")
+            assertEquals(
+                listOf("dupes_fmb.xml", "mainmenu_mmb.xml", "orders_fmb.xml"),
+                Files.list(convertedDir).use { it.map { path -> path.fileName.toString() }.sorted().toList() },
+            )
+            assertEquals("ORDERS", shared.getBlock(ordersKey, "ORDERS").block.queryDataSourceName)
+            assertEquals(listOf("STOCK", "AUDIT", "FORM"), shared.overview(dupesKey).blocks)
+            assertEquals("converted/mainmenu_mmb.xml", shared.index(menuKey).convertedFile)
+        }
+    }
+
     @Test
     fun libraryDumpIsServedFromThePldItself() = runTest {
         service.fetchModule(utilsKey)
@@ -661,5 +706,33 @@ class FormsServiceIntegrationTest {
             Files.copy(Path.of(sourcePath), target, StandardCopyOption.REPLACE_EXISTING)
             return target.toString()
         }
+    }
+
+    /**
+     * [FreeNamingConverter] that takes a while to return, and records what it saw: how many runs
+     * were inside it at once, and which runs found an earlier run's `output.xml` still unclaimed.
+     */
+    private class SlowFreeNamingConverter : ModuleConverter {
+        override val description: String = "test converter writing output.xml slowly"
+        private val inFlight = AtomicInteger()
+        val maxInFlight = AtomicInteger()
+        val unclaimedAtStart = ConcurrentLinkedQueue<ModuleKey>()
+
+        override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String {
+            maxInFlight.accumulateAndGet(inFlight.incrementAndGet(), ::maxOf)
+            try {
+                val target = Path.of(targetDir).createDirectories().resolve("output.xml")
+                if (target.exists()) unclaimedAtStart += key
+                Files.copy(Path.of(sourcePath), target, StandardCopyOption.REPLACE_EXISTING)
+                delay(50)
+                return target.toString()
+            } finally {
+                inFlight.decrementAndGet()
+            }
+        }
+    }
+
+    private companion object {
+        const val CONTENDED_ROUNDS = 5
     }
 }

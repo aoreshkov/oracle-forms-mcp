@@ -158,9 +158,9 @@ class FormsService(
      * Conversion runs directly in this directory: the converter is driven with its working
      * directory as its output directory, so a site converter that writes where it is told needs no
      * arguments to find its way here. Output is attributed by canonical name first (see
-     * [ModuleKey.convertedFileName]), with the "newest matching file written after the run started"
-     * heuristic as a fallback for converters that name their output freely — and [sharedOutputLock]
-     * keeps that fallback unambiguous.
+     * [ModuleKey.convertedFileName]), with the "newest matching file this run wrote" heuristic as a
+     * fallback for converters that name their output freely — and [sharedOutputLock] keeps that
+     * fallback unambiguous.
      */
     private val convertedDir: Path? = null,
 ) {
@@ -168,9 +168,11 @@ class FormsService(
 
     /**
      * Serialises conversions when [convertedDir] makes every module share one output directory: the
-     * fallback attribution heuristic ("newest matching file") cannot tell two concurrent runs
-     * apart. Only the converter call is held, not parsing or caching — and the lock is skipped
-     * entirely when each module converts in its own cache directory.
+     * fallback attribution heuristic ("newest file this run wrote") cannot tell two concurrent runs
+     * apart. The converter call is held together with [canonicalizeConverted], because a freely
+     * named output is only safe from the next run once it carries its module's own name. Parsing and
+     * caching are not held — and the lock is skipped entirely when each module converts in its own
+     * cache directory.
      */
     private val sharedOutputLock = Mutex()
 
@@ -380,10 +382,11 @@ class FormsService(
         log.i { "Converting and indexing $key from $source (${converter.description})" }
         val moduleDir = cache.moduleDir(key)
         onProgress(FetchProgress(1, FETCH_STEPS, "Converting $key"))
-        val converted =
+        // In a shared directory the rename belongs inside the lock: until it lands, the output sits
+        // under whatever name the converter chose, which the next module's run may write again.
+        val textForm =
             if (convertedDir == null) convert(key, scanned)
-            else sharedOutputLock.withLock { convert(key, scanned) }
-        val textForm = canonicalizeConverted(key, converted)
+            else sharedOutputLock.withLock { canonicalizeConverted(key, convert(key, scanned)) }
         onProgress(FetchProgress(2, FETCH_STEPS, "Parsing $key"))
         // Parsing a large form is CPU-bound; keep it off the caller's dispatcher.
         val parsed = withContext(Dispatchers.Default) { parser.parse(key, textForm.toString(), moduleDir) }

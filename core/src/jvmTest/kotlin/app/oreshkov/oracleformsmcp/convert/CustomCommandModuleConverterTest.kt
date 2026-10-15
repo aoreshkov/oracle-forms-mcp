@@ -130,6 +130,77 @@ class CustomCommandModuleConverterTest {
         assertTrue(output.readText().contains("FormModule"))
     }
 
+    /**
+     * The other half of sharing one directory: the module converted a moment ago left its file
+     * there, well inside the mtime slack. A run that produced nothing must say so, not take that
+     * file — the server would index it as this module and rename it out from under its owner.
+     */
+    @Test
+    fun doesNotTakeASiblingModulesOutputWhenTheCommandProducesNothing() = runTest {
+        targetDir.createDirectories()
+        val sibling = copyFixture("dupes_fmb.xml", targetDir).apply { setLastModifiedTime(FileTime.from(Instant.now())) }
+        val script = FakeOracleHome.stubScript(
+            scriptDir,
+            "convert",
+            batchLines = listOf("echo nothing to do", "exit /b 0"),
+            shellLines = listOf("echo nothing to do", "exit 0"),
+        )
+
+        val error = assertFailsWith<ConversionFailedException> { convertOrders(converter(script)) }
+
+        assertTrue("no output file" in error.message!!, error.message)
+        assertTrue(sibling.readText().contains("DUPES"))
+    }
+
+    /**
+     * Written by this run is not enough: a wrapper that re-exported a dependency (`dupes_fmb.xml`)
+     * on the way to failing for its own module wrote a file named as *that* module's text form.
+     */
+    @Test
+    fun doesNotTakeAFileThisRunWroteUnderAnotherModulesName() = runTest {
+        val script = copyingScript(copyFixture("dupes_fmb.xml", temp), "dupes_fmb.xml")
+
+        val error = assertFailsWith<ConversionFailedException> { convertOrders(converter(script)) }
+
+        assertTrue("another module's text form" in error.message!!, error.message)
+        assertTrue("orders_fmb.xml" in error.message!!, error.message)
+        assertTrue(targetDir.resolve("dupes_fmb.xml").readText().contains("DUPES"))
+    }
+
+    /** A freely named file that was there before the run — a killed run's partial output — is not this run's either. */
+    @Test
+    fun doesNotTakeAFreelyNamedFileThatPredatesTheRun() = runTest {
+        targetDir.createDirectories()
+        targetDir.resolve("output.xml").writeText("<Partial/>")
+        val script = FakeOracleHome.stubScript(
+            scriptDir,
+            "convert",
+            batchLines = listOf("echo nothing to do", "exit /b 0"),
+            shellLines = listOf("echo nothing to do", "exit 0"),
+        )
+
+        assertFailsWith<ConversionFailedException> { convertOrders(converter(script)) }
+    }
+
+    /** Within the mtime slack, a module's own previous output is a leftover too — until this run rewrites it. */
+    @Test
+    fun rejectsTheCanonicalFileUntilThisRunRewritesIt() = runTest {
+        targetDir.createDirectories()
+        val previous = targetDir.resolve("orders_fmb.xml").apply { writeText("<Previous/>") }
+        val silent = FakeOracleHome.stubScript(
+            scriptDir,
+            "silent",
+            batchLines = listOf("exit /b 0"),
+            shellLines = listOf("exit 0"),
+        )
+
+        assertFailsWith<ConversionFailedException> { convertOrders(converter(silent)) }
+
+        val output = convertOrders(converter(copyingScript(copyFixture("orders_fmb.xml", temp), "orders_fmb.xml")))
+        assertEquals(previous.toAbsolutePath(), output)
+        assertTrue(output.readText().contains("FormModule"))
+    }
+
     /** A custom converter need not copy frmf2xml's `_fmb` basename mangling. */
     @Test
     fun acceptsOutputThatDoesNotUseTheOracleSuffix() = runTest {

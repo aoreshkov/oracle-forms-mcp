@@ -22,8 +22,8 @@ import kotlinx.coroutines.withContext
  *
  * Tool presence is validated lazily at first conversion, so a server with a stale `ORACLE_HOME`
  * still starts and serves already-cached modules. Forms tools have unreliable exit codes, so
- * success is judged by the output file: it must exist, be non-empty, and be newer than the
- * invocation.
+ * success is judged by the output file: it must exist, be non-empty, and have been written by
+ * this invocation ([OutputRun]).
  */
 public class OracleToolsModuleConverter(
     private val oracleHome: Path,
@@ -54,25 +54,24 @@ public class OracleToolsModuleConverter(
 
     private suspend fun convertToXml(key: ModuleKey, source: Path, target: Path): Path {
         val tool = resolveTool("frmf2xml")
-        val startedAt = System.currentTimeMillis()
+        val run = OutputRun.begin(target)
         val result = ExternalTool.run(
             command = listOf(tool.toString(), source.toAbsolutePath().toString(), "OVERWRITE=YES", "USE_PROPERTY_IDS=NO"),
             workingDir = target,
             timeout = timeout,
             extraEnv = formsPathEnv(formsDir),
         )
-        return checkOutput(key, tool, result, startedAt) {
-            // frmf2xml derives the output name from the input basename, so it normally *is* the
-            // canonical one; casing varies, and only a tool that renamed the output needs the glob.
-            ConversionOutput.canonical(target, key, startedAt)
-                ?: newestMatching(target, startedAt) { it.endsWith(key.type.convertedSuffix, ignoreCase = true) }
+        return checkOutput(key, tool, result, run) {
+            // frmf2xml derives the output name from the input basename, so it *is* the canonical
+            // one, in whatever casing. Any other `*_fmb.xml` names another module's text form.
+            run.canonical(key)
         }
     }
 
     private suspend fun convertLibrary(key: ModuleKey, source: Path, target: Path): Path {
         val tool = resolveTool("frmcmp_batch", "frmcmp")
         val outputFile = target.resolve(source.name.dropLast(4).lowercase() + ".pld")
-        val startedAt = System.currentTimeMillis()
+        val run = OutputRun.begin(target)
         val result = ExternalTool.run(
             command = listOf(
                 tool.toString(),
@@ -87,12 +86,13 @@ public class OracleToolsModuleConverter(
             timeout = timeout,
             extraEnv = formsPathEnv(formsDir),
         )
-        return checkOutput(key, tool, result, startedAt) {
+        return checkOutput(key, tool, result, run) {
             // Output_File is what keeps the .pld out of the forms directory: without it frmcmp
             // writes next to the *module*, whatever its cwd. Some versions are reported to write
-            // into the cwd even when it is given, hence the fallback.
-            outputFile.takeIf { ConversionOutput.isFresh(it, startedAt) && it.fileSize() > 0 }
-                ?: newestMatching(target, startedAt) { it.endsWith(".pld", ignoreCase = true) }
+            // into the cwd even when it is given, hence the fallback — under the module's own name,
+            // as any other `.pld` names another library's dump.
+            outputFile.takeIf { run.produced(it) && it.fileSize() > 0 }
+                ?: run.canonical(key)
         }
     }
 
@@ -119,10 +119,7 @@ public class OracleToolsModuleConverter(
         key: ModuleKey,
         tool: Path,
         result: ExternalTool.Result,
-        startedAt: Long,
+        run: OutputRun,
         findOutput: () -> Path?,
-    ): Path = ConversionOutput.check(key, tool.name, result, startedAt, timeout, findOutput = findOutput)
-
-    private fun newestMatching(dir: Path, startedAt: Long, predicate: (String) -> Boolean): Path? =
-        ConversionOutput.newestMatching(dir, startedAt, predicate)
+    ): Path = ConversionOutput.check(key, tool.name, result, run, timeout, findOutput = findOutput)
 }

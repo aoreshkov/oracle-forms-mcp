@@ -210,13 +210,17 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   `user_config` text fields), so the split has to live in the server. `--converted-dir` **is** that
   cwd: conversion runs directly in `FormsService.convertedDirOf(key)` and
   `canonicalizeConverted` only renames the result to `ModuleKey.convertedFileName` in place. What keeps
-  one shared directory unambiguous is `ConversionOutput.canonical` (tried before the newest-matching
-  heuristic) plus `FormsService.sharedOutputLock`, which serialises conversions whenever
-  `--converted-dir` is set. Both options also read `OFMCP_CONVERT_COMMAND` /
+  one shared directory unambiguous is `OutputRun` — a run's output is only a file it *produced*,
+  canonical name first, and a freely named fallback never one named as another module's text form
+  (`ModuleType.matchConverted`) — plus `FormsService.sharedOutputLock`, which serialises each conversion **together with its
+  `canonicalizeConverted` rename** whenever `--converted-dir` is set: a freely named output is
+  overwritable by the next run until it carries its module's name. Both options also read `OFMCP_CONVERT_COMMAND` /
   `OFMCP_CONVERTED_DIR` (flag wins), and `Main.configured()` treats blank *and* an unsubstituted
-  `${user_config.…}` template as unset — that is how the MCPB/plugin channels pass "not set". Shared output/exit-code handling lives in `ConversionSupport.kt`: an output
-  file older than `startedAt` (minus 2s FAT slack) is rejected as a leftover, so a converter that
-  copies with preserved mtimes (`copy`, `cp -p`) reads as having produced nothing.
+  `${user_config.…}` template as unset — that is how the MCPB/plugin channels pass "not set". Shared output/exit-code handling lives in `ConversionSupport.kt`: a file counts
+  as produced only when it is fresh (not older than `startedAt` minus the 2s FAT slack) **and** new or
+  changed (mtime+size) since the directory listing `OutputRun.begin` takes — freshness alone takes
+  the sibling converted a moment ago. So a converter that copies with preserved mtimes (`copy`,
+  `cp -p`) reads as having produced nothing.
 - `--compile-command` (`OFMCP_COMPILE_COMMAND`) is a second command of the same kind for `.pll`
   only, because `frmf2xml` rejects libraries and a `--convert-command` built on it loses them all.
   `ModuleConverters.forEnvironment` wraps the usual choice in `ByModuleTypeConverter`, so a `.pll`

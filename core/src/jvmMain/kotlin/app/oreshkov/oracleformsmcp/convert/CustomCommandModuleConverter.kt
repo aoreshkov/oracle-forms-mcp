@@ -91,7 +91,7 @@ public class CustomCommandModuleConverter internal constructor(
             outputPath = target.resolve(key.convertedFileName).toAbsolutePath().toString(),
         )
         val toolName = displayName(template.first())
-        val startedAt = System.currentTimeMillis()
+        val run = OutputRun.begin(target)
         val result = try {
             ExternalTool.run(
                 command = argv,
@@ -110,20 +110,16 @@ public class CustomCommandModuleConverter internal constructor(
             )
         }
         val output = ConversionOutput.check(
-            key, toolName, result, startedAt, timeout,
-            hint = { strayOutputHint(key, source, target, startedAt) },
+            key, toolName, result, run, timeout,
+            hint = { strayOutputHint(key, source, target, run.startedAt) },
         ) {
-            // Oracle's own naming (`orders_fmb.xml`) is unambiguous even in a directory shared by
-            // every module, so try it first; fall back to any file of the right format, since a
-            // custom converter is under no obligation to copy frmf2xml's basename mangling and the
-            // parser dispatches on the extension alone.
-            ConversionOutput.canonical(target, key, startedAt)
-                ?: ConversionOutput.newestMatching(target, startedAt) {
-                    it.endsWith(key.type.convertedSuffix, ignoreCase = true)
-                }
-                ?: ConversionOutput.newestMatching(target, startedAt) {
-                    it.endsWith(fallbackExtension(key), ignoreCase = true)
-                }
+            // Oracle's own naming (`orders_fmb.xml`) is unambiguous, so try it first; fall back to
+            // any freely named file of the right format this run wrote, since a custom converter is
+            // under no obligation to copy frmf2xml's basename mangling and the parser dispatches on
+            // the extension alone. Neither ever takes a file the run did not write, nor one named
+            // as another module's text form — a sibling's in a shared `--converted-dir`.
+            run.canonical(key)
+                ?: run.freelyNamed { it.endsWith(fallbackExtension(key), ignoreCase = true) }
         }
         return output.toAbsolutePath().toString()
     }

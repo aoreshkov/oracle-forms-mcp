@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exit, however long that took, while holding the module's fetch lock (and, with
   `--converted-dir`, the lock every other conversion waits on). A timeout now kills the whole
   process tree, and output still held open after the process ended is read for at most 5 s more.
+- **A failed conversion in a shared `--converted-dir` no longer takes another module's file.**
+  When a converter produced nothing, the fallback accepted any matching file written within the
+  2 s mtime slack — typically the module converted just before — so the failed module was indexed
+  from the other module's XML, and that file was renamed away from its owner. A run's output is now
+  only a file the run created or changed: one the directory already held unchanged when the run
+  started never counts, under any name, and a freely named fallback is never a file named as
+  another module's text form (`<name>_fmb.xml`, `<name>.pld`) — the failure names such a file
+  instead. The rename to the canonical name also moved inside the
+  lock that serialises conversions in the shared directory, so the next module's run can no longer
+  overwrite a freely named output before it is claimed.
 - **A leftover library dump is reported, not thrown as an internal error.** On the
   `ORACLE_HOME` library path, a `.pld` left by an earlier run reached an untyped "predates the
   conversion run" failure with no exit code or tool output. It is now the usual "produced no output
