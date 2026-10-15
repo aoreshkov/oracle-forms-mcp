@@ -53,6 +53,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Conversion file IO no longer runs on the request dispatcher.** The copy of a converted file
   and the output-directory scans moved to `Dispatchers.IO`, so concurrent fetches cannot tie up
   the CPU-sized pool tool handlers run on.
+- **The GHCR image is published only from a release that passed.** The image job ran beside the
+  release job, built its own distribution without tests, and pushed `X.Y.Z`, `X.Y` and `latest`
+  even when the version check, the build or the MCPB validation failed. It now waits for the
+  release job and builds the image from the same checksum-verified zip the release publishes.
+- **The Claude Code plugin keeps working when a new release cannot be installed.** With
+  `server_version` left at `latest`, a failed download, a missing `.sha256` (assets still
+  uploading) or a checksum mismatch stopped the plugin, even with an older server already
+  installed. It now runs the newest installed version, says why on stderr, and tries the new
+  release again at the next session start. A pinned version still fails with the reason.
+- **The plugin no longer starts from a half-unpacked server.** A launcher killed while unpacking
+  left a partial copy in the directory that holds the installed versions, under a name that sorted
+  above the real one, and the offline fallback then picked it. Unpacking now happens in a separate
+  `staging` directory, only a directory named as a version counts as installed, and the next
+  install deletes unpacks abandoned for over an hour, including those older launchers left. Plugin
+  version 1.2.1.
+- **The `.mcpb` bundle lists every tool.** Its manifest omitted `read_source` and `search_modules`,
+  so the desktop install dialog showed 16 of the 18 tools. A test now compares the manifest with the
+  tools the server registers.
 
 ## [0.13.1] - 2026-10-13
 

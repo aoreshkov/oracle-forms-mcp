@@ -13,6 +13,10 @@ import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.model.Relation
 import app.oreshkov.oracleformsmcp.model.ScannedModule
+import io.modelcontextprotocol.kotlin.sdk.server.Server
+import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
+import io.modelcontextprotocol.kotlin.sdk.types.Implementation
+import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -149,3 +153,13 @@ internal fun fakeService(
     formsDir = Path.of("."),
     convertedDir = convertedDir,
 )
+
+/** A server carrying exactly the production tool set, registered through [registerAllTools]. */
+internal fun serverWithAllTools(service: FormsService = fakeService()): Server = Server(
+    serverInfo = Implementation(name = "test", version = "0"),
+    options = ServerOptions(
+        capabilities = ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = false)),
+    ),
+) {
+    registerAllTools(service)
+}

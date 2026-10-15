@@ -1,5 +1,6 @@
-# Runtime-only image: the distribution is built by CI (or locally) first with
+# Runtime-only image: the distribution is built locally first with
 #   ./gradlew :server:installDist
+# (the release workflow instead unpacks the published release zip into the same place).
 # The dist is pure JVM (arch-independent), so one COPY serves amd64 and arm64.
 # Tag + digest: the digest pins the exact multi-arch image (Dependabot's docker
 # ecosystem bumps it); the tag documents the intent.

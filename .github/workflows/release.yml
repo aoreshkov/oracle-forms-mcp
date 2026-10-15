@@ -96,6 +96,19 @@ jobs:
           sha256sum "oracle-forms-mcp-server-${VERSION}.zip" \
             > "oracle-forms-mcp-server-${VERSION}.zip.sha256"
 
+      # The docker job builds its image from this exact zip — the one the build above tested and
+      # the release publishes — rather than from a second, untested build of its own. The zip
+      # (not the directory) is what travels: an artifact upload drops the exec bit on bin/server.
+      - name: Hand the distribution to the docker job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: server-dist
+          path: |
+            server/build/install/oracle-forms-mcp-server-*.zip
+            server/build/install/oracle-forms-mcp-server-*.zip.sha256
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Attest build provenance (release artifacts)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -116,6 +129,10 @@ jobs:
   docker:
     name: Docker image (GHCR)
     runs-on: ubuntu-latest
+    # Only after the version guard, `./gradlew build` and the MCPB validation have passed: the
+    # push moves the floating X.Y and latest tags, and a tag is never re-cut, so an image pushed
+    # from a broken release could only be replaced by the next version.
+    needs: [github-release]
     permissions:
       contents: read
       packages: write
@@ -126,19 +143,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - name: Fetch the released distribution
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          distribution: temurin
-          java-version: 21
+          name: server-dist
+          path: ${{ runner.temp }}/server-dist
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-        with:
-          cache-read-only: true
-
-      - name: Build server distribution
-        run: ./gradlew :server:installDist
+      # The Dockerfile copies server/build/install/server, the installDist layout.
+      - name: Unpack the distribution
+        working-directory: ${{ runner.temp }}/server-dist
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sha256sum -c "oracle-forms-mcp-server-${VERSION}.zip.sha256"
+          unzip -q "oracle-forms-mcp-server-${VERSION}.zip"
+          mkdir -p "${GITHUB_WORKSPACE}/server/build/install"
+          mv "oracle-forms-mcp-server-${VERSION}" "${GITHUB_WORKSPACE}/server/build/install/server"
+          test -x "${GITHUB_WORKSPACE}/server/build/install/server/bin/server"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0

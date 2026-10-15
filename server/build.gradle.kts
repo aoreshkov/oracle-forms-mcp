@@ -20,9 +20,11 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
 }
 
-// Classpath fixtures under /fixtures/** come from the canonical demo dir at the repo root.
+// Classpath fixtures under /fixtures/** come from the canonical demo dir at the repo root; the
+// MCPB manifest is copied in too, so a test can compare its tool list with the registered tools.
 tasks.processTestResources {
     from(rootDir.resolve("sample-forms")) { into("fixtures") }
+    from(layout.projectDirectory.file("mcpb/manifest.template.json")) { into("mcpb") }
 }
 
 // Single source of truth for the MCP `Implementation` version: bake `project.version`

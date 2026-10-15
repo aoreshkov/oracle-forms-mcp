@@ -48,6 +48,8 @@ public final class OracleFormsMcpLauncher {
     /** How long a resolved "latest" tag is trusted before the GitHub API is asked again. */
     private static final Duration LATEST_TTL = Duration.ofHours(24);
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(60);
+    /** An unpack directory this old belongs to no running launcher: unpacking takes seconds. */
+    private static final Duration ABANDONED_AFTER = Duration.ofHours(1);
 
     private static final Pattern TAG_NAME = Pattern.compile("\"tag_name\"\\s*:\\s*\"v?([^\"]+)\"");
     /** Leading digit required: a version becomes a directory name, and "." or ".." must not. */
@@ -67,7 +69,7 @@ public final class OracleFormsMcpLauncher {
             // Bootstrap failures are the user's problem to fix, not a bug report: Claude Code shows
             // this server as failed and the reason is whatever we last wrote to stderr. A stack
             // trace would bury it.
-            fail(e.getMessage() + (e.getCause() == null ? "" : " (" + e.getCause() + ")"));
+            fail(describe(e));
             return;
         }
         launch(dist, args);
@@ -80,68 +82,108 @@ public final class OracleFormsMcpLauncher {
     private static Path resolveDistribution() throws Exception {
         Path dataDir = requiredEnv("OFMCP_PLUGIN_DATA");
         Path distRoot = dataDir.resolve("dist");
+        Path stagingRoot = dataDir.resolve("staging");
         String requested = envOrDefault("OFMCP_SERVER_VERSION", "latest");
 
-        String version;
-        if (requested.equals("latest")) {
-            version = latestVersion(dataDir, distRoot);
-        } else {
-            version = requested.startsWith("v") ? requested.substring(1) : requested;
+        if (!requested.equals("latest")) {
+            // A pin is the user's explicit choice: if it cannot be installed, say so rather than
+            // quietly running some other version.
+            String version = requested.startsWith("v") ? requested.substring(1) : requested;
             if (!VERSION.matcher(version).matches()) {
                 throw new IOException("Invalid server version '" + requested
                         + "'. Set it to 'latest' or a released version such as '0.4.0' in /plugin.");
             }
+            Path dist = distRoot.resolve(version);
+            if (!isInstalled(dist)) install(version, dist, stagingRoot);
+            return dist;
+        }
+
+        Path marker = dataDir.resolve("latest-release.txt");
+        String version = cachedLatest(marker);
+        boolean fromApi = version == null;
+        if (fromApi) {
+            try {
+                version = fetchLatest();
+            } catch (IOException | InterruptedException e) {
+                String installed = newestInstalled(distRoot);
+                if (installed == null) {
+                    throw new IOException("Could not reach the GitHub releases API to find the latest"
+                            + " oracle-forms-mcp server, and no version is installed yet. Check the"
+                            + " network, or pin a version in /plugin (Oracle Forms plugin config).", e);
+                }
+                warn("could not check for the latest release (" + e + "); using installed " + installed);
+                return distRoot.resolve(installed);
+            }
         }
 
         Path dist = distRoot.resolve(version);
-        if (Files.isDirectory(dist.resolve("lib"))) return dist;
-
-        install(version, dist);
+        if (!isInstalled(dist)) {
+            try {
+                install(version, dist, stagingRoot);
+            } catch (InterruptedException e) {
+                throw e; // asked to stop, not a failed install
+            } catch (Exception e) {
+                // "latest" asks for the newest server that works, and an older one that is already
+                // here still does: a CDN hiccup, a release whose assets are still uploading, or a
+                // checksum mismatch must not take the plugin down with it. The marker is left alone,
+                // so the next session start tries the install again.
+                String installed = newestInstalled(distRoot);
+                if (installed == null) throw e;
+                warn("could not install the latest release " + version + ": " + describe(e)
+                        + " — using installed " + installed);
+                return distRoot.resolve(installed);
+            }
+        }
+        // Remembered only once it is installed: a marker naming a version that failed to install
+        // would otherwise be trusted for a whole TTL.
+        if (fromApi) {
+            Files.createDirectories(dataDir);
+            Files.writeString(marker, version, StandardCharsets.UTF_8);
+        }
         return dist;
     }
 
     /**
-     * The newest released version, remembered for {@link #LATEST_TTL} so a session start is not a
-     * GitHub API call. Falls back to the newest already-installed version when offline.
+     * The "latest" version resolved within the last {@link #LATEST_TTL}, so a session start is not
+     * a GitHub API call — or null when there is none, or it has expired.
      */
-    private static String latestVersion(Path dataDir, Path distRoot) throws IOException {
-        Path marker = dataDir.resolve("latest-release.txt");
-        if (Files.isRegularFile(marker)) {
-            long age = System.currentTimeMillis() - Files.getLastModifiedTime(marker).toMillis();
-            String cached = Files.readString(marker, StandardCharsets.UTF_8).trim();
-            if (age < LATEST_TTL.toMillis() && VERSION.matcher(cached).matches()) return cached;
-        }
-
-        try {
-            String body = new String(get(
-                    URI.create("https://api.github.com/repos/" + REPO + "/releases/latest")),
-                    StandardCharsets.UTF_8);
-            Matcher m = TAG_NAME.matcher(body);
-            if (!m.find()) throw new IOException("No tag_name in the GitHub releases response");
-            String version = m.group(1);
-            if (!VERSION.matcher(version).matches()) {
-                throw new IOException("Unusable release tag '" + version + "' from the GitHub API");
-            }
-            Files.createDirectories(dataDir);
-            Files.writeString(marker, version, StandardCharsets.UTF_8);
-            return version;
-        } catch (IOException | InterruptedException e) {
-            String installed = newestInstalled(distRoot);
-            if (installed == null) {
-                throw new IOException("Could not reach the GitHub releases API to find the latest"
-                        + " oracle-forms-mcp server, and no version is installed yet. Check the"
-                        + " network, or pin a version in /plugin (Oracle Forms plugin config).", e);
-            }
-            warn("could not check for the latest release (" + e + "); using installed " + installed);
-            return installed;
-        }
+    private static String cachedLatest(Path marker) throws IOException {
+        if (!Files.isRegularFile(marker)) return null;
+        long age = System.currentTimeMillis() - Files.getLastModifiedTime(marker).toMillis();
+        String cached = Files.readString(marker, StandardCharsets.UTF_8).trim();
+        return age < LATEST_TTL.toMillis() && VERSION.matcher(cached).matches() ? cached : null;
     }
 
+    /** The newest released version, asked of the GitHub API. */
+    private static String fetchLatest() throws IOException, InterruptedException {
+        String body = new String(get(
+                URI.create("https://api.github.com/repos/" + REPO + "/releases/latest")),
+                StandardCharsets.UTF_8);
+        Matcher m = TAG_NAME.matcher(body);
+        if (!m.find()) throw new IOException("No tag_name in the GitHub releases response");
+        String version = m.group(1);
+        if (!VERSION.matcher(version).matches()) {
+            throw new IOException("Unusable release tag '" + version + "' from the GitHub API");
+        }
+        return version;
+    }
+
+    private static boolean isInstalled(Path dist) {
+        return Files.isDirectory(dist.resolve("lib"));
+    }
+
+    /**
+     * The newest finished install under {@code distRoot}. Only a directory named as a version
+     * counts: launchers before plugin 1.2.1 unpacked into {@code <version>.incoming<random>} right
+     * beside the installs, and one killed mid-unpack left that behind with a partial lib/ — which
+     * also matches {@link #VERSION}, and outranks the real {@code <version>} when sorted.
+     */
     private static String newestInstalled(Path distRoot) {
         if (!Files.isDirectory(distRoot)) return null;
         try (Stream<Path> entries = Files.list(distRoot)) {
-            return entries.filter(p -> Files.isDirectory(p.resolve("lib")))
+            return entries.filter(OracleFormsMcpLauncher::isInstalled)
                     .map(p -> p.getFileName().toString())
+                    .filter(name -> VERSION.matcher(name).matches() && !name.contains(".incoming"))
                     .max(Comparator.comparing(OracleFormsMcpLauncher::versionKey))
                     .orElse(null);
         } catch (IOException e) {
@@ -162,10 +204,12 @@ public final class OracleFormsMcpLauncher {
 
     /**
      * Downloads the release zip and its published SHA-256, verifies it, and unpacks it. Extraction
-     * goes to a sibling temp directory that is moved into place only once complete, so an
-     * interrupted download can never leave a half-installed tree behind.
+     * goes to a temp directory under {@code stagingRoot} — a sibling of the directory holding the
+     * installs, never inside it — that is moved into place only once complete. A launcher killed
+     * mid-unpack therefore leaves its partial tree where nothing looks for an installed version,
+     * and a later install sweeps it away.
      */
-    private static void install(String version, Path dist) throws Exception {
+    private static void install(String version, Path dist, Path stagingRoot) throws Exception {
         String base = "https://github.com/" + REPO + "/releases/download/v" + version + "/";
         String archive = "oracle-forms-mcp-server-" + version + ".zip";
         warn("installing oracle-forms-mcp server " + version + " into " + dist);
@@ -175,9 +219,9 @@ public final class OracleFormsMcpLauncher {
             expected = get(URI.create(base + archive + ".sha256"));
         } catch (IOException e) {
             throw new IOException("No published checksum for release v" + version + " ("
-                    + archive + ".sha256). Releases before 0.4.0 predate checksum publication:"
-                    + " pin a newer version in /plugin, or install the server manually and point"
-                    + " OFMCP_SERVER_HOME at it.", e);
+                    + archive + ".sha256). A release still uploading its assets has none yet;"
+                    + " one before 0.4.0 never had one, so pin 0.4.0 or later in /plugin, or"
+                    + " install the server manually and point OFMCP_SERVER_HOME at it.", e);
         }
         // sha256sum format: "<hex>  <filename>".
         String want = new String(expected, StandardCharsets.UTF_8).trim().split("\\s+")[0];
@@ -189,8 +233,12 @@ public final class OracleFormsMcpLauncher {
                     + ", got " + got + ". Nothing was installed.");
         }
 
+        // Same filesystem as dist (both under the plugin's data directory), so the move below can
+        // be atomic.
         Files.createDirectories(dist.getParent());
-        Path staging = Files.createTempDirectory(dist.getParent(), version + ".incoming");
+        Files.createDirectories(stagingRoot);
+        sweepAbandonedUnpacks(stagingRoot, dist.getParent());
+        Path staging = Files.createTempDirectory(stagingRoot, version + ".");
         try {
             unpack(zip, staging);
             try {
@@ -201,6 +249,33 @@ public final class OracleFormsMcpLauncher {
             }
         } finally {
             deleteRecursively(staging);
+        }
+    }
+
+    /**
+     * Deletes what a launcher killed mid-unpack left behind: anything under {@code stagingRoot},
+     * and the {@code <version>.incoming*} directories launchers before plugin 1.2.1 unpacked into
+     * beside the installs. Only entries older than {@link #ABANDONED_AFTER}, so a concurrent
+     * session's unpack in progress is left alone. Best effort: a failure here never stops an
+     * install.
+     */
+    private static void sweepAbandonedUnpacks(Path stagingRoot, Path distRoot) {
+        long cutoff = System.currentTimeMillis() - ABANDONED_AFTER.toMillis();
+        List<Path> abandoned = new ArrayList<>();
+        try (Stream<Path> staged = Files.list(stagingRoot);
+             Stream<Path> installs = Files.list(distRoot)) {
+            staged.forEach(abandoned::add);
+            installs.filter(p -> p.getFileName().toString().contains(".incoming"))
+                    .forEach(abandoned::add);
+        } catch (IOException e) {
+            return;
+        }
+        for (Path path : abandoned) {
+            try {
+                if (Files.getLastModifiedTime(path).toMillis() < cutoff) deleteRecursively(path);
+            } catch (IOException e) {
+                warn("could not remove the abandoned unpack " + path + " (" + e + ")");
+            }
         }
     }
 
@@ -330,6 +405,11 @@ public final class OracleFormsMcpLauncher {
     private static String envOrDefault(String name, String fallback) {
         String value = System.getenv(name);
         return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    /** The message, plus the cause that carries the detail (an HTTP status, a refused connection). */
+    private static String describe(Exception e) {
+        return e.getMessage() + (e.getCause() == null ? "" : " (" + e.getCause() + ")");
     }
 
     private static void warn(String message) {
