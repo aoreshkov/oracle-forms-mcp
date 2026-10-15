@@ -55,8 +55,11 @@ A plugin is distributed as a git checkout, so it cannot carry the server's jars.
 4. loads it into the launcher's own JVM, so the stdio pipes Claude Code opened are the pipes the
    MCP protocol speaks over — one process, nothing left orphaned when a session ends.
 
-Later sessions find the unpacked distribution and skip straight to step 4. Everything the launcher
-prints goes to stderr; stdout is the protocol channel.
+Later sessions find the unpacked distribution and skip straight to step 4. With `latest`, a session
+that cannot reach GitHub, or cannot install a newer release it found there, runs the newest version
+already installed and says so on stderr; the next session tries again. A pinned version has no such
+fallback: if it cannot be installed, the server fails to start with the reason. Everything the
+launcher prints goes to stderr; stdout is the protocol channel.
 
 Both the archive and the plugin come from the same repository over HTTPS, so the checksum protects
 against a corrupted or truncated download rather than against a compromised GitHub account. Release

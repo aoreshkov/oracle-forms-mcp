@@ -40,7 +40,7 @@ review, and documentation** — anyone who needs to read Forms logic faster than
 ## See it work
 
 <!-- TODO: record a short asciinema/GIF of a Claude session and embed it here:
-     ![demo](docs/demo.gif)   (drop the file at docs/demo.gif or an assets/ path) -->
+     ![demo](assets/demo.gif) -->
 
 A typical session against the bundled `sample-forms` directory:
 

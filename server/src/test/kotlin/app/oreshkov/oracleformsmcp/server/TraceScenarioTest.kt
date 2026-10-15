@@ -6,24 +6,8 @@ import app.oreshkov.oracleformsmcp.convert.PreConvertedCopyConverter
 import app.oreshkov.oracleformsmcp.parse.FormsModuleParser
 import app.oreshkov.oracleformsmcp.scan.FormsDirectoryScannerImpl
 import app.oreshkov.oracleformsmcp.server.tools.ToolErrorTally
-import app.oreshkov.oracleformsmcp.server.tools.registerAnnotateElementTool
-import app.oreshkov.oracleformsmcp.server.tools.registerFetchModuleTool
-import app.oreshkov.oracleformsmcp.server.tools.registerGetBlockTool
-import app.oreshkov.oracleformsmcp.server.tools.registerGetModuleOverviewTool
-import app.oreshkov.oracleformsmcp.server.tools.registerGetObjectXmlTool
-import app.oreshkov.oracleformsmcp.server.tools.registerGetProgramUnitTool
-import app.oreshkov.oracleformsmcp.server.tools.registerGetTriggerTool
-import app.oreshkov.oracleformsmcp.server.tools.registerListModulesTool
-import app.oreshkov.oracleformsmcp.server.tools.registerListTriggersTool
-import app.oreshkov.oracleformsmcp.server.tools.registerReadSourceTool
-import app.oreshkov.oracleformsmcp.server.tools.registerSearchModulesTool
-import app.oreshkov.oracleformsmcp.server.tools.registerSearchSourceTool
-import io.modelcontextprotocol.kotlin.sdk.server.Server
-import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
-import io.modelcontextprotocol.kotlin.sdk.types.Implementation
-import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import java.nio.file.Files
 import java.nio.file.Path
@@ -87,25 +71,7 @@ class TraceScenarioTest {
     )
 
     /** The tools a client would have; the trace may use any of them and nothing else. */
-    private val server = Server(
-        serverInfo = Implementation(name = "test", version = "0"),
-        options = ServerOptions(
-            capabilities = ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = false)),
-        ),
-    ) {
-        registerListModulesTool(service)
-        registerFetchModuleTool(service)
-        registerGetModuleOverviewTool(service)
-        registerGetBlockTool(service)
-        registerListTriggersTool(service)
-        registerGetTriggerTool(service)
-        registerSearchSourceTool(service)
-        registerSearchModulesTool(service)
-        registerReadSourceTool(service)
-        registerGetObjectXmlTool(service)
-        registerGetProgramUnitTool(service)
-        registerAnnotateElementTool(service)
-    }
+    private val server = serverWithAllTools(service)
 
     private val connection = FakeClientConnection()
 

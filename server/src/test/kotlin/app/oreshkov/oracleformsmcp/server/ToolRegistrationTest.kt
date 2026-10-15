@@ -1,29 +1,7 @@
 package app.oreshkov.oracleformsmcp.server
 
-import app.oreshkov.oracleformsmcp.server.tools.registerAnnotateElementTool
-import app.oreshkov.oracleformsmcp.server.tools.registerFetchModuleTool
-import app.oreshkov.oracleformsmcp.server.tools.registerGetBlockTool
-import app.oreshkov.oracleformsmcp.server.tools.registerGetElementAnnotationsTool
-import app.oreshkov.oracleformsmcp.server.tools.registerGetModuleOverviewTool
-import app.oreshkov.oracleformsmcp.server.tools.registerGetObjectXmlTool
-import app.oreshkov.oracleformsmcp.server.tools.registerGetProgramUnitTool
-import app.oreshkov.oracleformsmcp.server.tools.registerGetTriggerTool
-import app.oreshkov.oracleformsmcp.server.tools.registerListBlocksTool
-import app.oreshkov.oracleformsmcp.server.tools.registerListModulesTool
-import app.oreshkov.oracleformsmcp.server.tools.registerListProgramUnitsTool
-import app.oreshkov.oracleformsmcp.server.tools.registerListTriggersTool
-import app.oreshkov.oracleformsmcp.server.tools.registerReadSourceTool
-import app.oreshkov.oracleformsmcp.server.tools.registerRelateElementsTool
-import app.oreshkov.oracleformsmcp.server.tools.registerRemoveAnnotationTool
-import app.oreshkov.oracleformsmcp.server.tools.registerSearchAnnotationsTool
-import app.oreshkov.oracleformsmcp.server.tools.registerSearchModulesTool
-import app.oreshkov.oracleformsmcp.server.tools.registerSearchSourceTool
-import io.modelcontextprotocol.kotlin.sdk.server.Server
-import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.types.CallToolRequestParams
-import io.modelcontextprotocol.kotlin.sdk.types.Implementation
-import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import kotlin.test.Test
@@ -51,35 +29,6 @@ class ToolRegistrationTest {
     private val writeTools = setOf(
         "fetch_module", "annotate_element", "relate_elements", "remove_annotation",
     )
-
-    private fun serverWithAllTools(): Server {
-        val service = fakeService()
-        return Server(
-            serverInfo = Implementation(name = "test", version = "0"),
-            options = ServerOptions(
-                capabilities = ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = false)),
-            ),
-        ) {
-            registerListModulesTool(service)
-            registerFetchModuleTool(service)
-            registerGetModuleOverviewTool(service)
-            registerListBlocksTool(service)
-            registerGetBlockTool(service)
-            registerListTriggersTool(service)
-            registerGetTriggerTool(service)
-            registerListProgramUnitsTool(service)
-            registerGetProgramUnitTool(service)
-            registerSearchSourceTool(service)
-            registerSearchModulesTool(service)
-            registerReadSourceTool(service)
-            registerGetObjectXmlTool(service)
-            registerAnnotateElementTool(service)
-            registerRelateElementsTool(service)
-            registerGetElementAnnotationsTool(service)
-            registerSearchAnnotationsTool(service)
-            registerRemoveAnnotationTool(service)
-        }
-    }
 
     private fun tools(): Map<String, Tool> = serverWithAllTools().tools.mapValues { it.value.tool }
 

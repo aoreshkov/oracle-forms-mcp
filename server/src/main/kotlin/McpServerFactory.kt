@@ -5,6 +5,7 @@ import app.oreshkov.oracleformsmcp.cache.OnDiskModuleCache
 import app.oreshkov.oracleformsmcp.convert.ModuleConverters
 import app.oreshkov.oracleformsmcp.core.AnnotationStore
 import app.oreshkov.oracleformsmcp.core.ModuleCache
+import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.parse.FormsModuleParser
 import app.oreshkov.oracleformsmcp.scan.FormsDirectoryScannerImpl
 import app.oreshkov.oracleformsmcp.server.prompts.registerExplainModulePrompt
@@ -195,30 +196,11 @@ object McpServerFactory {
             ),
             instructions = SERVER_INSTRUCTIONS,
         ) {
-            registerListModulesTool(service)
-            registerFetchModuleTool(service) { key ->
+            registerAllTools(service) { key ->
                 // Newly indexed modules appear in resources/list without a restart, oldest
                 // registration evicted once the bound is reached.
                 indexResources.register(this, key)
             }
-            registerGetModuleOverviewTool(service)
-            registerListBlocksTool(service)
-            registerGetBlockTool(service)
-            registerListTriggersTool(service)
-            registerGetTriggerTool(service)
-            registerListProgramUnitsTool(service)
-            registerGetProgramUnitTool(service)
-            registerSearchSourceTool(service)
-            registerSearchModulesTool(service)
-            registerReadSourceTool(service)
-            registerGetObjectXmlTool(service)
-            // Annotation layer: the model writes durable meta-information about elements, and the
-            // read tools above surface it inline (see the DTO `annotations` fields).
-            registerAnnotateElementTool(service)
-            registerRelateElementsTool(service)
-            registerGetElementAnnotationsTool(service)
-            registerSearchAnnotationsTool(service)
-            registerRemoveAnnotationTool(service)
             registerExplainModulePrompt(service)
             // Direct addressing of *any* cached index, however large the cache. This — not the
             // bounded static registrations above — is what makes every cached module reachable,
@@ -242,4 +224,35 @@ object McpServerFactory {
             logForwarderScope = logForwarderScope,
         )
     }
+}
+
+/**
+ * Registers every tool the server offers. One list, shared by [McpServerFactory] and the tests that
+ * check the tools' metadata and the MCPB manifest against it — a hand-copied list in a test would
+ * keep passing while the production server drifted from it.
+ */
+internal fun Server.registerAllTools(
+    service: FormsService,
+    onFetched: suspend (ModuleKey) -> Unit = {},
+) {
+    registerListModulesTool(service)
+    registerFetchModuleTool(service, onFetched)
+    registerGetModuleOverviewTool(service)
+    registerListBlocksTool(service)
+    registerGetBlockTool(service)
+    registerListTriggersTool(service)
+    registerGetTriggerTool(service)
+    registerListProgramUnitsTool(service)
+    registerGetProgramUnitTool(service)
+    registerSearchSourceTool(service)
+    registerSearchModulesTool(service)
+    registerReadSourceTool(service)
+    registerGetObjectXmlTool(service)
+    // Annotation layer: the model writes durable meta-information about elements, and the read
+    // tools above surface it inline (see the DTO `annotations` fields).
+    registerAnnotateElementTool(service)
+    registerRelateElementsTool(service)
+    registerGetElementAnnotationsTool(service)
+    registerSearchAnnotationsTool(service)
+    registerRemoveAnnotationTool(service)
 }
