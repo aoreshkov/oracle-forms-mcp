@@ -57,8 +57,24 @@ public data class Relation(
 )
 
 /**
+ * The on-disk format of [ModuleAnnotations] that this build writes.
+ *
+ * Unlike the module index, annotations cannot be rebuilt from source, so a format change cannot be
+ * handled by discarding what no longer decodes: the store has to know which format it is reading
+ * to migrate it, and must refuse to rewrite a file from a newer build, whose fields it would drop.
+ * **Bump this whenever a stored field is renamed, removed, or changes meaning**, and migrate the
+ * older formats on read.
+ *
+ * `0` is the implicit format of every file written before the stamp existed, which is what the
+ * default on [ModuleAnnotations.formatVersion] gives them. History: `1` added the stamp and
+ * changed nothing else, so a `0` file reads as a `1` file.
+ */
+public const val CURRENT_ANNOTATIONS_FORMAT_VERSION: Int = 1
+
+/**
  * The full set of annotations and relations persisted for one module — the on-disk unit the
  * [app.oreshkov.oracleformsmcp.core.AnnotationStore] reads and writes, one file per [ModuleKey].
+ * [formatVersion] is the format the file was written in (see [CURRENT_ANNOTATIONS_FORMAT_VERSION]).
  */
 @Serializable
 @SerialName("ModuleAnnotations")
@@ -66,4 +82,5 @@ public data class ModuleAnnotations(
     val module: ModuleKey,
     val annotations: List<Annotation> = emptyList(),
     val relations: List<Relation> = emptyList(),
+    val formatVersion: Int = 0,
 )
