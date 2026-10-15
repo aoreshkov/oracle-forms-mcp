@@ -35,6 +35,7 @@ fun Server.registerModuleIndexTemplate(service: FormsService) {
         description = "Parsed index of a fetched Forms module: blocks with items, triggers, " +
             "program units, LOVs, record groups, windows, canvases, and the object refs backing " +
             "get_object_xml. The module must have been fetched with fetch_module first. " +
+            "An index too large for one read is served as its counts, with the tools that page it. " +
             "The segment is 'NAME.ext', e.g. 'ORDERS.fmb'.",
         mimeType = "application/json",
     ) { request, variables ->
@@ -45,7 +46,7 @@ fun Server.registerModuleIndexTemplate(service: FormsService) {
         ReadResourceResult(
             contents = listOf(
                 TextResourceContents(
-                    text = toolJson.encodeToString(service.index(key)),
+                    text = service.moduleIndexResource(key),
                     uri = request.uri,
                     mimeType = "application/json",
                 )
@@ -65,7 +66,8 @@ fun Server.registerModuleAnnotationsTemplate(service: FormsService) {
         uriTemplate = MODULE_ANNOTATIONS_URI_TEMPLATE,
         name = "Forms module annotations",
         description = "AI/user-supplied notes, tags, summaries, classifications, and relations " +
-            "stored about a fetched module's elements. The segment is 'NAME.ext', e.g. 'ORDERS.fmb'.",
+            "stored about a fetched module's elements. Capped, with totals; narrow a large set " +
+            "with search_annotations. The segment is 'NAME.ext', e.g. 'ORDERS.fmb'.",
         mimeType = "application/json",
     ) { request, variables ->
         // Template variables are attacker-controlled URI segments and end up in store paths.
@@ -224,7 +226,7 @@ fun Server.addModuleIndexResource(service: FormsService, key: ModuleKey) {
             ReadResourceResult(
                 contents = listOf(
                     TextResourceContents(
-                        text = toolJson.encodeToString(service.index(key)),
+                        text = service.moduleIndexResource(key),
                         uri = request.uri,
                         mimeType = "application/json",
                     )
