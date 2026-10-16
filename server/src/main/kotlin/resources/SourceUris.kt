@@ -52,7 +52,7 @@ public fun modulePlsqlUri(key: ModuleKey, category: String, name: String): Strin
  * as addressable and answers nothing.
  */
 public fun sourceUri(key: ModuleKey, refFile: String): String? {
-    val path = refFile.replace('\\', '/')
+    val path = refPathSpelling(refFile)
     if (path.startsWith(CONVERTED_PREFIX)) return moduleConvertedUri(key)
     if (!path.startsWith(PLSQL_PREFIX)) return null
     val (category, name) = path.removePrefix(PLSQL_PREFIX).split('/').takeIf { it.size == 2 }
@@ -90,6 +90,13 @@ public fun sourceRefPath(key: ModuleKey, uri: String, convertedFile: String): St
 }
 
 /** True when [segment] is safe to use as a path segment; the guard the resource handlers apply. */
+/**
+ * [refFile] spelled the way a `SourceRef` path always is: `/`-separated. A caller on Windows types
+ * `\`, and every reader of a ref — the URI here, the file it resolves to, the location echoed
+ * back — must agree on what that path means, so they all read it through this one function.
+ */
+internal fun refPathSpelling(refFile: String): String = refFile.replace('\\', '/')
+
 internal fun isSafeSegment(segment: String): Boolean = SAFE_SEGMENT.matches(segment)
 
 /**

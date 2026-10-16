@@ -3,23 +3,25 @@ package app.oreshkov.oracleformsmcp.server
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
+import kotlin.io.path.isDirectory
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import org.junit.Assume.assumeTrue
 
 /**
  * `--converted-dir` is written into under the very names the scanner reads pre-converted modules
  * by, so the one directory it must never be is the forms directory — under any lexical spelling of
- * its path. The check normalises, it does not resolve links: a symlink or junction to the forms
- * directory is not caught here.
+ * its path, and through any link to it.
  */
 class ConvertedDirValidationTest {
 
     private val temp: Path = Files.createTempDirectory("converted-dir-validation-test")
     private val formsDir: Path = temp.resolve("forms").createDirectories()
+    private val isWindows = System.getProperty("os.name").startsWith("Windows")
 
     @AfterTest
     fun cleanup() {
@@ -41,6 +43,21 @@ class ConvertedDirValidationTest {
         assertContains(rejected(formsDir.resolve(".")), "must not be the forms directory")
         assertContains(rejected(formsDir.resolve("sub").resolve("..")), "must not be the forms directory")
         assertContains(rejected(temp.resolve("other").resolve("..").resolve("forms")), "must not be the forms directory")
+    }
+
+    /**
+     * A link is another spelling no normalising reveals: the output would still land in the forms
+     * directory, under the names the scanner reads. A symlink where the OS allows one, else (on
+     * Windows without the privilege) a junction, which needs none.
+     */
+    @Test
+    fun aLinkToTheFormsDirectoryIsRejected() {
+        val link = temp.resolve("forms-link")
+        val linked = runCatching { Files.createSymbolicLink(link, formsDir) }.isSuccess ||
+            (isWindows && ProcessBuilder("cmd", "/c", "mklink", "/J", link.toString(), formsDir.toString())
+                .redirectErrorStream(true).start().waitFor() == 0)
+        assumeTrue("this host can create neither a symlink nor a junction", linked && link.isDirectory())
+        assertContains(rejected(link), "must not be the forms directory")
     }
 
     @Test

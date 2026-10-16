@@ -19,6 +19,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -389,6 +390,30 @@ class CrossModuleSearchTest {
             query = ":GLOBAL", scope = "PLSQL", modulePattern = " ", maxResults = 1, cursor = cursor,
         )
         assertEquals(1, explicit.hits.size)
+    }
+
+    /**
+     * `modulePattern` selects modules ignoring case, and so does a plain query under `ignoreCase`,
+     * so re-casing either is the same search — and a model re-cases freely between calls. Refusing
+     * the cursor there would restart a scan that had nothing to restart.
+     */
+    @Test
+    fun aCursorContinuesWhenOnlyTheCaseOfACaseInsensitiveArgumentChanges() = runTest {
+        fetchAll()
+        val first = service.searchModules(query = ":GLOBAL", modulePattern = "pick", maxResults = 1)
+        val cursor = assertNotNull(first.nextCursor, "the pattern must select more than one hit")
+
+        for ((query, pattern) in listOf(":GLOBAL" to "PICK", ":global" to "pick")) {
+            val next = service.searchModules(query = query, modulePattern = pattern, maxResults = 1, cursor = cursor)
+            assertEquals(1, next.hits.size, "$query / $pattern")
+            assertNotEquals(first.hits.single(), next.hits.single(), "$query / $pattern")
+        }
+        // Where case is part of the meaning, re-casing the query is a different search.
+        val exact = service.searchModules(query = ":GLOBAL", ignoreCase = false, maxResults = 1)
+        val exactCursor = assertNotNull(exact.nextCursor, "the query must have more than one exact hit")
+        assertFailsWith<IllegalArgumentException> {
+            service.searchModules(query = ":global", ignoreCase = false, maxResults = 1, cursor = exactCursor)
+        }
     }
 
     @Test

@@ -133,6 +133,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as stale and `fetch_module` says to call it again.
 - **An attached library with no usable name no longer fails `search_modules`** or the library hint
   on `get_trigger` and `get_program_unit`; it is left out, since nothing could fetch it.
+- **A recovered doubly-escaped body no longer keeps `&lt;` and friends as literal text.** Recovery
+  decoded only numeric references, so a converter that escaped twice gave back the line breaks
+  but left `IF a &lt; b`, PL/SQL that does not compile and that no search for `a < b` finds. The
+  five predefined references are now decoded in the same single pass, so `&amp;lt;` comes back as
+  `&lt;`, not `<`. A reference to a surrogate code point is now left as written instead of
+  becoming a lone half-character. Cached modules are re-parsed on their next `fetch_module`.
+- **With `--converted-dir`, `read_source` no longer serves another module's text form.** The
+  directory is shared by every module, and staying inside it was the only check, so
+  `read_source(ORDERS.fmb, file="converted/utils.pld")` returned UTILS' text under ORDERS' name.
+  Only the module's own file is served now, and the error names it. A `converted\…` path typed
+  with backslashes also resolves now, and is echoed back as `converted/…`, instead of failing
+  with "call fetch_module".
+- **`fetch_module` re-converts an entry whose text form is not where the current layout keeps
+  it.** A module fetched before `--converted-dir` was set (or moved) still matched its source, so
+  `fetch_module` answered "already cached" while every read of it said to call `fetch_module`.
+- **`--converted-dir` also refuses a link to the forms directory.** The check compared paths as
+  written, so a symlink, junction or bind mount to the forms directory passed, and conversion
+  output would be written among the files the scanner reads. A directory that cannot be compared
+  with the forms directory is refused too, with the reason.
+- **A `search_modules` cursor survives re-casing what is matched ignoring case.** The module
+  pattern, and a plain query under `ignoreCase`, select the same hits however they are cased,
+  but the cursor was bound to them as typed, so `PICK` after `pick` was refused as a different
+  search. A regex is still bound as written.
+- **A touched but unchanged module is hashed once, not on every read.** A new mtime over the same
+  bytes was confirmed by hashing the whole file, and nothing remembered the result, so every
+  later read of that module hashed it again until it was re-fetched. A mtime too recent to rule
+  out a same-length edit in the same tick is not remembered, so such an edit is still seen.
 
 ## [0.13.1] - 2026-10-13
 
