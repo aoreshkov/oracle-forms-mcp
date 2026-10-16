@@ -129,15 +129,30 @@ internal data class Prefetch(val pattern: String? = null, val type: ModuleType? 
  * user never filled in reaches the process either empty or with its placeholder unsubstituted.
  * Neither is a path, and failing every conversion over it would be a poor trade for an option
  * whose whole point is to be optional.
+ *
+ * Only a value that is *wholly* such a template is dropped: a real one can contain `${` (a shell
+ * wrapper around a converter, `sh -c 'conv "${1}"' _ {}`), and discarding it would fall back to
+ * copy-mode without a word. A dropped template is reported through [warn] naming [option]; a blank
+ * one is not, since blank is how most launchers say "unset" in the first place.
  */
-internal fun configured(value: String?): String? =
-    value?.trim()?.takeIf { it.isNotEmpty() && !it.contains("\${") }
+internal fun configured(value: String?, option: String, warn: (String) -> Unit): String? {
+    val trimmed = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    if (!UNFILLED_TEMPLATE.matches(trimmed)) return trimmed
+    warn("Ignoring $option '$trimmed': an unfilled user-configuration template, so the option is unset.")
+    return null
+}
+
+private val UNFILLED_TEMPLATE = Regex("""\$\{user_config\.[^}]*}""")
 
 /**
  * Tiny hand-rolled parser — a handful of flags don't warrant a dependency. [fail]s on anything
  * unknown. [env] is injected so the environment fallbacks are testable.
  */
-internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::getenv): CliOptions {
+internal fun parseArgs(
+    args: Array<String>,
+    env: (String) -> String? = System::getenv,
+    warn: (String) -> Unit = System.err::println,
+): CliOptions {
     var options = CliOptions()
     var hostFlag: String? = null
     var i = 0
@@ -169,12 +184,12 @@ internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::g
                 options.copy(allowedHosts = options.allowedHosts + value(arg))
             "--allowed-origin" -> options =
                 options.copy(allowedOrigins = options.allowedOrigins + value(arg))
-            "--forms-dir" -> options = options.copy(formsDir = configured(value(arg))?.let(Path::of))
+            "--forms-dir" -> options = options.copy(formsDir = configured(value(arg), arg, warn)?.let(Path::of))
             // An unset optional option (see `configured`) falls back to ORACLE_HOME / the cache
             // instead of failing every conversion.
-            "--convert-command" -> options = options.copy(convertCommand = configured(value(arg)))
-            "--compile-command" -> options = options.copy(compileCommand = configured(value(arg)))
-            "--converted-dir" -> options = options.copy(convertedDir = configured(value(arg))?.let(Path::of))
+            "--convert-command" -> options = options.copy(convertCommand = configured(value(arg), arg, warn))
+            "--compile-command" -> options = options.copy(compileCommand = configured(value(arg), arg, warn))
+            "--converted-dir" -> options = options.copy(convertedDir = configured(value(arg), arg, warn)?.let(Path::of))
             "--cache-dir" -> options = options.copy(cacheDir = Path.of(value(arg)))
             "--annotations-dir" -> options = options.copy(annotationsDir = Path.of(value(arg)))
             "--conversion-timeout" -> {
@@ -199,7 +214,7 @@ internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::g
                 // A single positional argument is the forms directory.
                 if (arg.startsWith("--")) fail("Unknown option '$arg'")
                 if (options.formsDir != null) fail("Unexpected extra argument '$arg'")
-                options = options.copy(formsDir = configured(arg)?.let(Path::of))
+                options = options.copy(formsDir = configured(arg, "the forms directory", warn)?.let(Path::of))
             }
         }
         i++
@@ -207,10 +222,10 @@ internal fun parseArgs(args: Array<String>, env: (String) -> String? = System::g
     // Environment fallbacks for clients that can set variables but not arguments (docker run -e,
     // an MCPB `env` block). A flag always wins.
     return options.copy(
-        convertCommand = options.convertCommand ?: configured(env(ENV_CONVERT_COMMAND)),
-        compileCommand = options.compileCommand ?: configured(env(ENV_COMPILE_COMMAND)),
-        convertedDir = options.convertedDir ?: configured(env(ENV_CONVERTED_DIR))?.let(Path::of),
-        host = hostFlag ?: configured(env(ENV_HTTP_HOST)) ?: DEFAULT_HTTP_HOST,
+        convertCommand = options.convertCommand ?: configured(env(ENV_CONVERT_COMMAND), ENV_CONVERT_COMMAND, warn),
+        compileCommand = options.compileCommand ?: configured(env(ENV_COMPILE_COMMAND), ENV_COMPILE_COMMAND, warn),
+        convertedDir = options.convertedDir ?: configured(env(ENV_CONVERTED_DIR), ENV_CONVERTED_DIR, warn)?.let(Path::of),
+        host = hostFlag ?: configured(env(ENV_HTTP_HOST), ENV_HTTP_HOST, warn) ?: DEFAULT_HTTP_HOST,
     )
 }
 

@@ -4,6 +4,7 @@ import app.oreshkov.oracleformsmcp.annotation.OnDiskAnnotationStore
 import app.oreshkov.oracleformsmcp.cache.OnDiskModuleCache
 import app.oreshkov.oracleformsmcp.convert.PreConvertedCopyConverter
 import app.oreshkov.oracleformsmcp.core.ModuleConverter
+import app.oreshkov.oracleformsmcp.core.ModuleStaleException
 import app.oreshkov.oracleformsmcp.model.AnnotationKind
 import app.oreshkov.oracleformsmcp.model.Author
 import app.oreshkov.oracleformsmcp.model.ElementKind
@@ -17,6 +18,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.appendText
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.test.AfterTest
@@ -342,6 +344,48 @@ class FormsServiceIntegrationTest {
         val hint = assertNotNull(caveatService.fetchModule(ordersKey).hint)
 
         assertTrue(hint.endsWith(" $caveat"), hint)
+    }
+
+    /**
+     * A save that lands while a fetch is converting must not be stamped onto the facts that fetch
+     * produced: they may describe either version, so the fetch fails naming the call that settles
+     * it. The run has already rewritten the entry's sidecars by then, so what it leaves cached must
+     * be its own index, read as stale — never the previous one, which a save that *reverts* the
+     * file would make look current again over sidecars it did not write.
+     */
+    @Test
+    fun aSourceSavedDuringTheFetchIsNotStampedAsFresh() = runTest {
+        val source = formsDir.resolve("orders_fmb.xml")
+        var duringConversion: (() -> Unit)? = null
+        val converter = object : ModuleConverter by PreConvertedCopyConverter() {
+            override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String {
+                val out = PreConvertedCopyConverter().convert(key, sourcePath, targetDir)
+                duringConversion?.invoke()
+                return out
+            }
+        }
+        val racing = FormsService(
+            scanner = FormsDirectoryScannerImpl(formsDir),
+            converter = converter,
+            parser = FormsModuleParser(),
+            cache = OnDiskModuleCache(temp.resolve("cache-race")),
+            annotationStore = OnDiskAnnotationStore(temp.resolve("annotations-race")),
+            formsDir = formsDir,
+        )
+
+        // A saved, then B saved; the fetch of B is under way when A is saved back over it.
+        racing.fetchModule(ordersKey)
+        val versionA = Files.readAllBytes(source)
+        source.appendText("<!-- version B -->")
+        duringConversion = { Files.write(source, versionA) }
+
+        val failure = assertFailsWith<IllegalStateException> { racing.fetchModule(ordersKey) }
+        assertTrue(failure.message!!.contains("fetch_module"), failure.message!!)
+        assertFailsWith<ModuleStaleException> { racing.listBlocks(ordersKey) }
+
+        duringConversion = null
+        assertFalse(racing.fetchModule(ordersKey).fromCache)
+        racing.listBlocks(ordersKey)
     }
 
     /** A module that attaches nothing has no library hint, fetched or not. */

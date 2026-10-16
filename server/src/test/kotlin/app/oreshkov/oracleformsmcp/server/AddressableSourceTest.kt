@@ -8,6 +8,7 @@ import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.parse.FormsModuleParser
 import app.oreshkov.oracleformsmcp.scan.FormsDirectoryScannerImpl
+import app.oreshkov.oracleformsmcp.server.tools.asResourceLink
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.AfterTest
@@ -15,6 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
@@ -136,6 +138,35 @@ class AddressableSourceTest {
             service.readSource(ordersKey, "converted/orders_fmb.xml", startLine = total + 10)
         }
         assertTrue(failure.message!!.contains("$total lines"), failure.message!!)
+    }
+
+    @Test
+    fun anEndLineBeforeTheStartLineIsRejectedNamingBoth() = runTest {
+        service.fetchModule(ordersKey)
+
+        val failure = assertFailsWith<IllegalArgumentException> {
+            service.readSource(ordersKey, "converted/orders_fmb.xml", startLine = 10, endLine = 5)
+        }
+        assertTrue(failure.message!!.contains("endLine 5") && failure.message!!.contains("startLine 10"), failure.message!!)
+    }
+
+    @Test
+    fun anEmptyFileIsServedAsNoLinesWithNoLinkToALineItDoesNotHave() = runTest {
+        service.fetchModule(ordersKey)
+        val sidecar = Files.walk(temp.resolve("cache")).use { paths ->
+            paths.filter { it.fileName.toString() == "ORDERS.ORDER_ID.WHEN-VALIDATE-ITEM.sql" }.findFirst().get()
+        }
+        Files.writeString(sidecar, "")
+
+        val empty = service.readSource(ordersKey, "plsql/triggers/ORDERS.ORDER_ID.WHEN-VALIDATE-ITEM.sql")
+        assertEquals("", empty.text)
+        assertEquals(0, empty.totalLines)
+        assertTrue(empty.source.endLine < empty.source.startLine, "no line was served: ${empty.source}")
+        assertNull(empty.source.asResourceLink(), "a link must not name a line that was not served")
+        val past = assertFailsWith<IllegalArgumentException> {
+            service.readSource(ordersKey, "plsql/triggers/ORDERS.ORDER_ID.WHEN-VALIDATE-ITEM.sql", startLine = 500)
+        }
+        assertTrue(past.message!!.contains("0 lines"), past.message!!)
     }
 
     @Test

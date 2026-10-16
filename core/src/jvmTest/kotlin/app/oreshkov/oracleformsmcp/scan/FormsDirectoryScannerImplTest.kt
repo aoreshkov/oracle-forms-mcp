@@ -56,4 +56,28 @@ class FormsDirectoryScannerImplTest {
             keys,
         )
     }
+
+    @Test
+    fun skipsAFileWhoseStemIsNotAValidModuleName() = runTest {
+        dir.resolve("ORDERS.fmb").writeText("binary")
+        dir.resolve("orders..bak.fmb").writeText("a backup copy")
+        dir.resolve("a..b_fmb.xml").writeText("<Module/>")
+
+        val keys = FormsDirectoryScannerImpl(dir).scan().map { it.key }
+        assertEquals(listOf(ModuleKey.of("orders", ModuleType.FORM)), keys)
+    }
+
+    @Test
+    fun aCaseOnlyCollisionResolvesToTheFirstNameInSortedOrder() = runTest {
+        dir.resolve("ORDERS.fmb").writeText("upper")
+        dir.resolve("orders.fmb").writeText("lower")
+        dir.resolve("Orders.FMB").writeText("mixed")
+        // A case-insensitive file system (the Windows default) holds one file under all three names.
+        if (Files.list(dir).use { it.count() } < 3L) return@runTest
+
+        repeat(3) {
+            val scanned = FormsDirectoryScannerImpl(dir).scan().single()
+            assertEquals("ORDERS.fmb", Path.of(assertNotNull(scanned.binaryPath)).fileName.toString())
+        }
+    }
 }

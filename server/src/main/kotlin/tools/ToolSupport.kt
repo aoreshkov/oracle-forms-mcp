@@ -53,9 +53,11 @@ internal inline fun <reified T> toolResult(value: T, source: SourceLocation? = n
  * client's own resource machinery and not only by reading a path out of the JSON. The spec allows
  * exactly this: a tool MAY return links to resources it can read.
  *
- * A location without a URI (a ref shape no resource covers) yields no link rather than a dead one.
+ * A location without a URI (a ref shape no resource covers) yields no link rather than a dead one,
+ * and so does one that covers no line (an empty file read back), rather than a link to a line the
+ * file does not have.
  */
-internal fun SourceLocation.asResourceLink(): ResourceLink? = uri.takeIf { it.isNotBlank() }?.let {
+internal fun SourceLocation.asResourceLink(): ResourceLink? = uri.takeIf { it.isNotBlank() && endLine >= startLine }?.let {
     ResourceLink(
         name = file.substringAfterLast('/'),
         uri = it,
@@ -222,10 +224,21 @@ internal fun JsonObject.stringListArg(name: String): List<String>? {
 }
 
 internal fun JsonObject.intArg(name: String): Int? =
-    (this[name] as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+    (this[name] as? JsonPrimitive)?.contentOrNull?.let(::parseIntArg)
 
 internal fun JsonObject.booleanArg(name: String): Boolean? =
-    (this[name] as? JsonPrimitive)?.contentOrNull?.toBooleanStrictOrNull()
+    (this[name] as? JsonPrimitive)?.contentOrNull?.let(::parseBooleanArg)
+
+/**
+ * An `integer` argument's value, from a number or a numeric string. `50.0` and `1e3` count, as
+ * JSON Schema counts them; `50.5` does not. `argumentProblems` rejects what this cannot read, so
+ * a handler's `?: default` only ever stands for an absent argument.
+ */
+internal fun parseIntArg(raw: String): Int? =
+    raw.trim().toIntOrNull() ?: raw.trim().toBigDecimalOrNull()?.let { runCatching { it.intValueExact() }.getOrNull() }
+
+/** A `boolean` argument's value, `true`/`false` in any case. */
+internal fun parseBooleanArg(raw: String): Boolean? = raw.trim().lowercase().toBooleanStrictOrNull()
 
 /** A string argument constrained to [values] (case-insensitive); rejects anything else. */
 internal fun JsonObject.enumArg(name: String, values: List<String>): String? {

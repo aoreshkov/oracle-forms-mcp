@@ -45,6 +45,14 @@ public data class ModuleKey(
             ModuleKey(name.trim().uppercase(), type)
 
         /**
+         * Like [of], but returns `null` for a name no module can have — blank, or holding a path
+         * separator, `:` or `..`. For names that come from the file system, where one such file
+         * must not fail the rest.
+         */
+        public fun ofOrNull(name: String, type: ModuleType): ModuleKey? =
+            runCatching { of(name, type) }.getOrNull()
+
+        /**
          * Parses a `name.ext` string such as `orders.fmb`.
          *
          * @throws IllegalArgumentException when there is no `.ext` part or the extension is not

@@ -36,4 +36,12 @@ class ModuleKeyTest {
         assertEquals(form.name, library.name)
         check(form != library)
     }
+
+    @Test
+    fun ofOrNullRejectsWhatOfRejects() {
+        assertEquals(ModuleKey.of("orders", ModuleType.FORM), ModuleKey.ofOrNull("orders", ModuleType.FORM))
+        assertNull(ModuleKey.ofOrNull("orders..bak", ModuleType.FORM))
+        assertNull(ModuleKey.ofOrNull("c:x", ModuleType.FORM))
+        assertNull(ModuleKey.ofOrNull(" ", ModuleType.FORM))
+    }
 }

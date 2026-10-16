@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The startup log now reports the address and port the engine actually bound. **A container
   running the HTTP transport needs `--host 0.0.0.0`**, published on the host's loopback:
   `docker run -p 127.0.0.1:3000:3000 … --transport http --host 0.0.0.0`.
+- **A tool argument of the wrong type is now rejected instead of ignored.** An `integer` or
+  `boolean` value that does not parse fell back to the default without a word: `offset: 50.5`
+  served the first page again, and `resolve: "yes"` did not follow an inherited body. A string
+  argument sent as an array was reported as missing. These now fail in the same single error as
+  unknown and missing arguments, for example `'offset' is '50.5', which is not an integer`.
+  Numeric strings (`"50"`), whole decimals (`50.0`) and booleans in any case (`"True"`) are
+  accepted, and read the same way by the tools.
 
 ### Fixed
 - **The conversion timeout now stops the conversion.** Every converter runs under a wrapper — a
@@ -95,6 +102,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lists the rest.
 - **`get_module_overview`'s detailed windows and canvases are capped** like its name lists, and a
   cut sets `truncated`.
+- **One badly named file no longer breaks the whole forms directory.** A file whose name no module
+  can have, such as the backup `orders..bak.fmb`, made every directory scan fail, and with it
+  `list_modules`, `fetch_module`, `search_modules` and `--prefetch`. It is now skipped with a
+  warning in the log, once per file. On a case-sensitive file system, `ORDERS.fmb` and
+  `orders.fmb` are the same module: the first name in sorted order is used, whatever order the
+  directory lists them in, and the log names both.
+- **`read_source` rejects an `endLine` before `startLine`** with a message naming both, instead of
+  returning nothing with a location for a line it did not serve. An empty file is served as no
+  lines, with no `resource_link`.
+- **`search_modules` reports cached files it could not read.** A file that cannot be decoded was
+  skipped silently and its module still counted as scanned, so a search that never read it looked
+  like one that found nothing there. Such modules now go in `unreadableModules` rather than
+  `scannedModules`, `unreadableFileCount` counts the files and `unreadableFiles` names the first
+  few by module and path, and the `hint` says to treat a name not found in them as undetermined.
+- **A real option value containing `${` is no longer discarded.** Every `--convert-command`,
+  `--compile-command` or `--converted-dir` value containing `${` was treated as an unfilled
+  launcher template, so a shell wrapper such as `sh -c 'conv "${1}"' _ {}` was dropped without a
+  word, conversion fell back to copy mode, and the environment variable won over the flag. Only a
+  value that is wholly a `${user_config.…}` template is now unset, and the log says when one is.
+- **A module saved while it is being fetched is no longer indexed as current.** The source was
+  fingerprinted after conversion and parsing, so a save landing in between stamped the new version
+  onto facts read from the old one, and they were served as current until the next change. The
+  fingerprint is now taken before conversion; if the file changed by the end, the module reads
+  as stale and `fetch_module` says to call it again.
+- **An attached library with no usable name no longer fails `search_modules`** or the library hint
+  on `get_trigger` and `get_program_unit`; it is left out, since nothing could fetch it.
 
 ## [0.13.1] - 2026-10-13
 
