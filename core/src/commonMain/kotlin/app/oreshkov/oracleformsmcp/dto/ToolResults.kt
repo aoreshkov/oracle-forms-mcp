@@ -596,8 +596,10 @@ public data class ModuleSearchHit(
  * of the forms directory reads exactly like one that found nothing, so: [cachedModules] is the
  * searchable universe after `modulePattern`, [scannedModules] what this call actually read, and
  * [skippedNotCached]/[skippedStale] the matching modules that could not be searched because they
- * were never fetched or have changed on disk since they were. [hint] names the call that fixes
- * each of those.
+ * were never fetched or have changed on disk since they were. [unreadableModules] were searched
+ * only in part, because a cached file of theirs could not be read; they are not counted in
+ * [scannedModules], and [unreadableFiles] names the first few of those files by URI. [hint] names
+ * the call that fixes each of those.
  *
  * [truncated] says work remains — either more hits than the result cap or more modules than one
  * call scans — and [nextCursor] is then the opaque token that resumes exactly where this call
@@ -612,6 +614,8 @@ public data class ModuleSearchResults(
     val scannedModules: Int = 0,
     val skippedNotCached: Int = 0,
     val skippedStale: Int = 0,
+    val unreadableModules: Int = 0,
+    val unreadableFiles: List<String> = emptyList(),
     val truncated: Boolean = false,
     val nextCursor: String? = null,
     val hint: String? = null,

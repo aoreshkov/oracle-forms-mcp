@@ -5,6 +5,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -84,5 +86,63 @@ class ToolArgumentsTest {
             put("zzz", "y")
         }
         assertEquals(listOf("unknown argument 'zzz' — this tool has no such argument"), argumentProblems(schema, args))
+    }
+
+    private val typed: ToolSchema = moduleSchema(
+        extraProps = mapOf(
+            "query" to stringProp("Text to find"),
+            "offset" to intProp("Rows to skip"),
+            "resolve" to boolProp("Follow the pointer"),
+        ),
+        extraRequired = listOf("query"),
+    )
+
+    @Test
+    fun aValueThatIsNotTheDeclaredTypeIsReportedNotDefaulted() {
+        val args = buildJsonObject {
+            put("module", "ORDERS")
+            put("query", "x")
+            put("offset", 50.5)
+            put("resolve", "yes")
+        }
+        assertEquals(
+            listOf(
+                "'offset' is '50.5', which is not an integer",
+                "'resolve' is 'yes', which is not a boolean (true or false)",
+            ),
+            argumentProblems(typed, args),
+        )
+    }
+
+    @Test
+    fun aValueThatParsesAsTheDeclaredTypeIsAcceptedAndReadTheSameWay() {
+        val args = buildJsonObject {
+            put("module", "ORDERS")
+            put("query", "x")
+            put("offset", "50")
+            put("resolve", "True")
+        }
+        assertEquals(emptyList(), argumentProblems(typed, args))
+        assertEquals(50, args.intArg("offset"))
+        assertEquals(true, args.booleanArg("resolve"))
+        assertEquals(50, buildJsonObject { put("offset", 50.0) }.intArg("offset"))
+    }
+
+    @Test
+    fun aStringSentAsAnArrayIsAWrongTypeNotAMissingArgument() {
+        val args = buildJsonObject {
+            put("module", "ORDERS")
+            put("query", buildJsonArray { add("x") })
+            put("offset", buildJsonObject { put("n", 1) })
+            put("zzz", "y")
+        }
+        assertEquals(
+            listOf(
+                "unknown argument 'zzz' — this tool has no such argument",
+                "'query' must be a string, not an array",
+                "'offset' must be an integer, not an object",
+            ),
+            argumentProblems(typed, args),
+        )
     }
 }

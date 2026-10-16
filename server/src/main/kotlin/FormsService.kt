@@ -381,6 +381,9 @@ class FormsService(
         }
 
         log.i { "Converting and indexing $key from $source (${converter.description})" }
+        // Taken before the converter reads the file, so a save landing during the fetch can only
+        // make this entry stale — never stamp the new version onto facts read from the old one.
+        val fingerprint = withContext(Dispatchers.IO) { Fingerprints.of(source) }
         val moduleDir = cache.moduleDir(key)
         onProgress(FetchProgress(1, FETCH_STEPS, "Converting $key"))
         // In a shared directory the rename belongs inside the lock: until it lands, the output sits
@@ -391,8 +394,15 @@ class FormsService(
         onProgress(FetchProgress(2, FETCH_STEPS, "Parsing $key"))
         // Parsing a large form is CPU-bound; keep it off the caller's dispatcher.
         val parsed = withContext(Dispatchers.Default) { parser.parse(key, textForm.toString(), moduleDir) }
+        if (!withContext(Dispatchers.IO) { Fingerprints.matches(fingerprint, source) }) {
+            throw IllegalStateException(
+                "$source changed on disk while $key was being fetched, so what was indexed cannot " +
+                    "be tied to either version of it. Nothing was cached. Call fetch_module again " +
+                    "once the file is no longer being written.",
+            )
+        }
         onProgress(FetchProgress(3, FETCH_STEPS, "Caching the index of $key"))
-        val index = parsed.stamped(source)
+        val index = parsed.stamped(source, fingerprint)
         cache.putIndex(index)
         return index.summary(fromCache = false).withLibraryHint(all)
     }
@@ -407,7 +417,8 @@ class FormsService(
      * lands in them, not only in the index JSON.
      *
      * Returns `null` when the converted file is missing — a cache entry someone pruned by hand, or
-     * a relocated `--converted-dir` — leaving the caller to do the full conversion.
+     * a relocated `--converted-dir` — or the source has changed since the caller matched it,
+     * leaving the caller to do the full conversion.
      */
     private suspend fun reindexInPlace(
         key: ModuleKey,
@@ -417,6 +428,11 @@ class FormsService(
     ): FetchModuleSummary? {
         val converted = runCatching { resolveRef(key, cached.convertedFile) }.getOrNull()
         if (converted == null || !converted.exists()) return null
+        // The converted file describes the content the cached fingerprint hashed. Fingerprinted
+        // afresh (so a touched file keeps its fast size+mtime check) and confirmed to be that same
+        // content; a save since the caller's check gets the full conversion instead.
+        val fingerprint = withContext(Dispatchers.IO) { Fingerprints.of(source) }
+        if (fingerprint.sha256 != cached.fingerprint.sha256) return null
         log.i {
             "Re-indexing $key from $converted without converting: cached index " +
                 "v${cached.indexVersion}, current v$CURRENT_INDEX_VERSION"
@@ -425,7 +441,7 @@ class FormsService(
         val moduleDir = cache.moduleDir(key)
         val parsed = withContext(Dispatchers.Default) { parser.parse(key, converted.toString(), moduleDir) }
         onProgress(FetchProgress(2, REINDEX_STEPS, "Caching the index of $key"))
-        val index = parsed.stamped(source)
+        val index = parsed.stamped(source, fingerprint)
         cache.putIndex(index)
         return index.summary(fromCache = false)
     }
@@ -434,10 +450,13 @@ class FormsService(
      * The cache contract stamped onto a freshly parsed index: the file staleness is judged against,
      * and the parser version that wrote it. Both live here rather than in the parser so that every
      * entry this service caches carries them, whichever [ModuleParser] produced it.
+     *
+     * [fingerprint] is taken by the caller *before* the file was read, never here after parsing:
+     * by then the file may already be a later save than the one these facts describe.
      */
-    private fun ModuleIndex.stamped(source: Path): ModuleIndex = copy(
+    private fun ModuleIndex.stamped(source: Path, fingerprint: ModuleFingerprint): ModuleIndex = copy(
         sourceFile = source.toString(),
-        fingerprint = Fingerprints.of(source),
+        fingerprint = fingerprint,
         indexVersion = CURRENT_INDEX_VERSION,
     )
 
@@ -1099,6 +1118,8 @@ class FormsService(
         var scanned = 0 // ...of which these were actually searched
         var staleSkipped = 0
         var vanished = 0
+        var unreadableModules = 0
+        val unreadableFiles = mutableListOf<String>()
         val attached = sortedSetOf<String>()
         var next: ModuleSearchPosition? = null
 
@@ -1120,7 +1141,9 @@ class FormsService(
                 visited++
                 if (outcome == null) { vanished++; continue } // evicted between list() and this read
                 if (outcome.stale) { staleSkipped++; continue }
-                scanned++
+                // Searched in part: its hits are real, but it does not count as scanned.
+                if (outcome.unreadable.isEmpty()) scanned++ else unreadableModules++
+                unreadableFiles += outcome.unreadable
                 outcome.attachedLibraries.mapTo(attached) { it.trim().uppercase() }
                 val skipUsed = if (position + n == firstPosition) resumeSkip else 0
                 val taken = minOf(cap - hits.size, outcome.hits.size)
@@ -1145,11 +1168,14 @@ class FormsService(
             scannedModules = scanned,
             skippedNotCached = notCached + vanished,
             skippedStale = staleSkipped,
+            unreadableModules = unreadableModules,
+            unreadableFiles = unreadableFiles.take(MAX_NAMED_UNREADABLE),
             truncated = next != null,
             nextCursor = next?.let { encodeModuleSearchCursor(fingerprint, it) },
             hint = moduleSearchHint(
                 notCached = notCached + vanished,
                 stale = staleSkipped,
+                unreadableFiles = unreadableFiles,
                 truncated = next != null,
                 namePattern = namePattern,
                 // Libraries the searched modules attach that this search could not see: when a
@@ -1251,8 +1277,12 @@ class FormsService(
                 "Cached file $refPath of $key is missing. Call fetch_module to re-index it.",
             )
         }
-        val lines = withContext(Dispatchers.IO) { file.readLines() }
         val from = (startLine ?: 1).coerceAtLeast(1)
+        require(endLine == null || endLine >= from) {
+            "endLine $endLine is before startLine $from. Pass an endLine at or after startLine, or " +
+                "omit endLine to read to the end of the file."
+        }
+        val lines = withContext(Dispatchers.IO) { file.readLines() }
         require(lines.isEmpty() || from <= lines.size) {
             "startLine $from is past the end of $refPath, which has ${lines.size} lines."
         }
@@ -1833,6 +1863,8 @@ class FormsService(
         val stale: Boolean = false,
         /** The PL/SQL libraries the module attaches, by name — where its called code usually lives. */
         val attachedLibraries: List<String> = emptyList(),
+        /** Searchable files that could not be read, by URI — the module was searched only in part. */
+        val unreadable: List<String> = emptyList(),
     )
 
     /**
@@ -1867,6 +1899,7 @@ class FormsService(
             val hits = mutableListOf<ModuleSearchHit>()
             var seen = 0
             var more = false
+            val unreadable = mutableListOf<String>()
             for ((refPath, file) in searchableFiles(cached, scope)) {
                 val uri = sourceUri(key, refPath)
                 val stopped = try {
@@ -1887,8 +1920,10 @@ class FormsService(
                         false
                     }
                 } catch (e: IOException) {
-                    // One unreadable cached file must not fail a search over every other module.
+                    // One unreadable cached file must not fail a search over every other module,
+                    // but it is a hole in this one: reported, never read as "no match here".
                     log.w(e) { "Skipping unreadable cached file $refPath of $key" }
+                    unreadable += uri ?: "$key/$refPath"
                     false
                 }
                 if (stopped) {
@@ -1896,7 +1931,12 @@ class FormsService(
                     break
                 }
             }
-            ModuleScan(hits, more = more, attachedLibraries = cached.attachedLibraries.map { it.name })
+            ModuleScan(
+                hits,
+                more = more,
+                attachedLibraries = cached.attachedLibraries.map { it.name },
+                unreadable = unreadable,
+            )
         }
     }
 
@@ -1964,6 +2004,7 @@ class FormsService(
         truncated: Boolean,
         namePattern: String?,
         unreadLibraries: UnreadLibraries? = null,
+        unreadableFiles: List<String> = emptyList(),
     ): String? {
         val patternArg = namePattern?.let { ", pattern=\"$it\"" } ?: ""
         val sentences = buildList {
@@ -2007,6 +2048,16 @@ class FormsService(
                         "indexed, or an older build of this server indexed them — and were " +
                         "skipped. list_modules(status=\"stale\"$patternArg) names them with a " +
                         "'staleReason'; call fetch_module on them, then search again.",
+                )
+            }
+            if (unreadableFiles.isNotEmpty()) {
+                val shown = unreadableFiles.take(MAX_NAMED_UNREADABLE).joinToString(", ")
+                val more = unreadableFiles.size - MAX_NAMED_UNREADABLE
+                add(
+                    "${unreadableFiles.size} cached file(s) could not be read and were not searched: " +
+                        shown + (if (more > 0) " and $more more" else "") + ". A match in them " +
+                        "would not appear here, so treat a name not found in their modules as " +
+                        "undetermined, not absent; read_source on one reports why it cannot be read.",
                 )
             }
             if (truncated) {
@@ -2597,7 +2648,7 @@ class FormsService(
         }
         return SourceSlice(
             text = taken.joinToString("\n"),
-            lastLine = maxOf(last, from),
+            lastLine = last, // from - 1 for an empty file: a range that covers no line
             truncated = last < to,
             lineCut = false,
             stoppedAtLineCap = stoppedAtLineCap,
@@ -3204,6 +3255,9 @@ class FormsService(
 
         /** How many un-fetched attached libraries a `search_modules` or `fetch_module` hint names before counting. */
         const val MAX_NAMED_LIBRARIES = 5
+
+        /** How many unreadable cached files a `search_modules` result and hint name before counting. */
+        const val MAX_NAMED_UNREADABLE = 5
 
         /** Marks a `search_modules` cursor as ours, so a token from elsewhere fails cleanly. */
         const val SEARCH_CURSOR_PREFIX = "module-search:v1:"

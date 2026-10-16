@@ -207,6 +207,29 @@ class CrossModuleSearchTest {
      * it would report a hit that is honest about the file and useless about the code. It is
      * skipped and counted, like any other stale module.
      */
+    /**
+     * A cached file that cannot be decoded (a windows-1252 byte in a file read as UTF-8) is a hole
+     * in the search, not an empty part of it: the module is not counted as scanned, and the file
+     * is named so the gap is visible.
+     */
+    @Test
+    fun anUnreadableFileIsNamedAndItsModuleIsNotCountedAsScanned() = runTest {
+        fetchAll()
+        val sidecar = Files.walk(Path.of(cache.moduleDir(picker)).resolve("plsql")).use { paths ->
+            paths.filter { Files.isRegularFile(it) }.sorted().findFirst().get()
+        }
+        Files.write(sidecar, byteArrayOf('a'.code.toByte(), 0xE9.toByte(), '\n'.code.toByte()))
+
+        val result = service.searchModules(query = ":GLOBAL.picked_ref")
+
+        assertEquals(2, result.scannedModules, "PICKER was not wholly read")
+        assertEquals(1, result.unreadableModules)
+        val named = result.unreadableFiles.single()
+        assertTrue(named.startsWith("oracleforms://PICKER.fmb/plsql/") && named.endsWith(sidecar.fileName.toString()), named)
+        val hint = assertNotNull(result.hint)
+        assertTrue(hint.contains("could not be read") && hint.contains(named), hint)
+    }
+
     @Test
     fun aModuleIndexedByAnotherBuildIsSkippedLikeAnyOtherStaleOne() = runTest {
         fetchAll()

@@ -5,6 +5,7 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * The converter options have to survive every channel that configures them: a plain command line,
@@ -132,6 +133,38 @@ class CliOptionsTest {
         assertNull(parse("/srv/forms", env = env::get).compileCommand)
         // Setting it leaves the whole-server converter alone.
         assertNull(parse("/srv/forms", "--compile-command", "/opt/c.sh").convertCommand)
+    }
+
+    /**
+     * Only an unfilled `${user_config.…}` template is unset. A real value can contain `${` — a
+     * shell wrapper around a converter is the usual case — and dropping it would silently fall
+     * back to copy-mode, and let the environment beat a flag.
+     */
+    @Test
+    fun aRealValueContainingADollarBraceIsKept() {
+        val wrapper = "sh -c 'conv \"\${1}\"' _ {}"
+        val env = mapOf(ENV_CONVERT_COMMAND to "/from/env.sh")
+        val options = parse(
+            "/srv/forms",
+            "--convert-command", wrapper,
+            "--converted-dir", "/srv/\${site}/xml",
+            env = env::get,
+        )
+        assertEquals(wrapper, options.convertCommand, "the flag must win over the environment")
+        assertEquals(Path.of("/srv/\${site}/xml"), options.convertedDir)
+    }
+
+    @Test
+    fun aDiscardedTemplateIsReportedAndABlankIsNot() {
+        val warnings = mutableListOf<String>()
+        parseArgs(
+            arrayOf("/srv/forms", "--converted-dir", " \${user_config.converted_dir} ", "--compile-command", ""),
+            env = mapOf(ENV_CONVERT_COMMAND to "\${user_config.convert_command}")::get,
+            warn = { warnings += it },
+        )
+        assertEquals(2, warnings.size, warnings.toString())
+        assertTrue(warnings.any { it.contains("--converted-dir") && it.contains("user_config.converted_dir") }, warnings.toString())
+        assertTrue(warnings.any { it.contains(ENV_CONVERT_COMMAND) }, warnings.toString())
     }
 
     @Test

@@ -29,7 +29,7 @@ import kotlinx.serialization.json.contentOrNull
  *   says servers MUST validate tool inputs, and the SDK's [ToolSchema] cannot carry
  *   `additionalProperties: false`, so nothing else rejects an argument a tool does not have — it
  *   was dropped, and the caller then told to supply what it had already supplied under another
- *   name. Every problem is reported at once (unknown, missing, not one of the permitted values),
+ *   name. Every problem is reported at once (unknown, missing, wrong type, not a permitted value),
  *   each with what the tool accepts instead, because a check that names one problem per call costs
  *   a round trip per problem. See [argumentProblems].
  * - **Every `isError` result is counted** by tool and by the argument names it carried
@@ -77,8 +77,8 @@ internal fun Server.addCheckedTool(
 /**
  * Everything wrong with [args] against [schema], in the order a caller fixes it: arguments the
  * tool does not have (each with the one it most likely meant), required ones that are absent (each
- * with its description and permitted values), and values outside an `enum`. Empty when the call
- * may proceed.
+ * with its description and permitted values), and values that are not the declared type or not in
+ * the `enum`. Empty when the call may proceed.
  *
  * Absent means what the handlers' own parsing means by it — no key, `null`, or a blank string — so
  * this never passes a call the handler would then fail as "missing". Requirements a schema cannot
@@ -101,12 +101,41 @@ internal fun argumentProblems(schema: ToolSchema, args: JsonObject): List<String
             add("missing required argument '$arg'" + (prop?.let { " — ${describe(it)}" } ?: ""))
         }
         args.forEach { (arg, value) ->
-            val allowed = (props[arg] as? JsonObject)?.enumValues() ?: return@forEach
-            val raw = (value as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@forEach
+            val prop = props[arg] as? JsonObject ?: return@forEach
+            if (value.isAbsent()) return@forEach
+            typeProblem(arg, prop, value)?.let { add(it); return@forEach }
+            val allowed = prop.enumValues() ?: return@forEach
+            val raw = (value as JsonPrimitive).content
             if (allowed.none { it.equals(raw, ignoreCase = true) }) {
                 add("'$arg' is '$raw', which is not one of: ${allowed.joinToString(", ")}")
             }
         }
+    }
+}
+
+/**
+ * What is wrong with a present [value] for a property declared `integer`, `boolean` or `string`,
+ * judged by the parsers the handlers use — a value they cannot read would otherwise reach a
+ * handler as "absent" and quietly become the default (`offset: 50.5` serving page one again), or
+ * be reported as missing when it was sent.
+ */
+private fun typeProblem(arg: String, prop: JsonObject, value: JsonElement): String? {
+    val type = (prop["type"] as? JsonPrimitive)?.contentOrNull ?: return null
+    val noun = when (type) {
+        "integer" -> "an integer"
+        "boolean" -> "a boolean"
+        "string" -> "a string"
+        else -> return null
+    }
+    if (value !is JsonPrimitive) {
+        return "'$arg' must be $noun, not ${if (value is JsonArray) "an array" else "an object"}"
+    }
+    return when {
+        type == "integer" && parseIntArg(value.content) == null ->
+            "'$arg' is '${value.content}', which is not an integer"
+        type == "boolean" && parseBooleanArg(value.content) == null ->
+            "'$arg' is '${value.content}', which is not a boolean (true or false)"
+        else -> null
     }
 }
 
