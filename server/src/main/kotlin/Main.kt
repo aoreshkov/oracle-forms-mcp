@@ -5,6 +5,8 @@ import app.oreshkov.oracleformsmcp.server.transport.DEFAULT_HTTP_HOST
 import app.oreshkov.oracleformsmcp.server.transport.bindAddress
 import app.oreshkov.oracleformsmcp.server.transport.runHttpServer
 import app.oreshkov.oracleformsmcp.server.transport.runStdioServer
+import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -235,7 +237,8 @@ internal fun parseArgs(
  * there under names identical to the pre-converted modules the scanner reads from the forms
  * directory, so pointing it at the forms directory would have the server overwrite its own inputs.
  *
- * Equality, not containment: a subdirectory of the forms directory is fine, because the scanner
+ * It is refused however it is reached, by any spelling of its path or through a link to it. That is
+ * equality, not containment: a subdirectory of the forms directory is fine, because the scanner
  * reads the forms directory non-recursively.
  *
  * Throws rather than exiting, so the rule can be tested; `main` turns the throw into a usage error.
@@ -247,13 +250,29 @@ internal fun validateConvertedDir(dir: Path, formsDir: Path): Path {
     require(!resolved.exists() || resolved.isDirectory()) {
         "--converted-dir is set to '$dir' but that is an existing file, not a directory"
     }
-    require(resolved != formsDir.toAbsolutePath().normalize()) {
+    // Lexically first, then as a file: a symlink, junction or bind mount is a spelling no
+    // normalising reveals, and the output would still land among the forms directory's inputs.
+    // A comparison that cannot be made is a refusal, not a pass: that is the case it exists for.
+    val forms = formsDir.toAbsolutePath().normalize()
+    val sameDirectory = resolved == forms || (resolved.exists() && forms.exists() && sameFile(dir, resolved, forms))
+    require(!sameDirectory) {
         "--converted-dir must not be the forms directory ('$dir'). Conversion output is " +
             "written there, named like the pre-converted modules read from the forms " +
             "directory, so the server would overwrite its own inputs. Point it at a separate " +
             "directory (a subdirectory of the forms directory is fine)."
     }
     return resolved
+}
+
+private fun sameFile(dir: Path, resolved: Path, forms: Path): Boolean = try {
+    Files.isSameFile(resolved, forms)
+} catch (e: IOException) {
+    throw IllegalArgumentException(
+        "--converted-dir '$dir' could not be compared with the forms directory ($e), so it " +
+            "cannot be shown not to be the same directory. Point it at a directory this process " +
+            "can read.",
+        e,
+    )
 }
 
 /**

@@ -76,6 +76,7 @@ import app.oreshkov.oracleformsmcp.model.TriggerInfo
 import app.oreshkov.oracleformsmcp.model.TriggerLevel
 import app.oreshkov.oracleformsmcp.parse.DataSourceColumnReader
 import app.oreshkov.oracleformsmcp.server.resources.moduleConvertedUri
+import app.oreshkov.oracleformsmcp.server.resources.refPathSpelling
 import app.oreshkov.oracleformsmcp.server.resources.sourceMimeType
 import app.oreshkov.oracleformsmcp.server.resources.sourceRefPath
 import app.oreshkov.oracleformsmcp.server.resources.sourceUri
@@ -372,11 +373,13 @@ class FormsService(
             if (cached.sourceFile == source.toString() &&
                 Fingerprints.matches(cached.fingerprint, source)
             ) {
-                if (cached.indexVersion == CURRENT_INDEX_VERSION) {
+                val reachable = withContext(Dispatchers.IO) { textFormReachable(key, cached) }
+                if (cached.indexVersion == CURRENT_INDEX_VERSION && reachable) {
                     return cached.summary(fromCache = true).withLibraryHint(all)
                 }
                 // The file is unchanged and only the parser moved on: re-parse, do not re-convert.
-                // Falls through to a full conversion when the converted file is gone.
+                // Falls through to a full conversion when the converted file is gone, or is not
+                // where the current layout keeps it.
                 reindexInPlace(key, cached, source, onProgress)?.let { return it.withLibraryHint(all) }
             }
         }
@@ -1786,17 +1789,43 @@ class FormsService(
      * (which is the module's own cache subdirectory unless [convertedDir] relocated it), everything
      * else against the module's cache directory. Either way the result must stay inside the root it
      * was resolved against.
+     *
+     * A relocated [convertedDir] is shared by every module, so inside it the only file [key] owns
+     * is its own [ModuleKey.convertedFileName]: staying inside the root is not enough there, or one
+     * module's `read_source` serves another's text form under its own name. A name other than that
+     * one is also what an entry written before [convertedDir] was set carries, so the message
+     * covers both — and `fetch_module` does re-convert such an entry ([textFormReachable]).
+     *
+     * [refFile] is a ref as the index writes it, or as [refPathOf] respelled a caller's, so it is
+     * already `/`-separated.
      */
     private fun resolveRef(key: ModuleKey, refFile: String): Path {
         val prefix = "$CONVERTED_DIR/"
+        val converted = refFile.startsWith(prefix)
         val (root, relative) =
-            if (refFile.startsWith(prefix)) convertedDirOf(key) to refFile.removePrefix(prefix)
+            if (converted) convertedDirOf(key) to refFile.removePrefix(prefix)
             else Path.of(cache.moduleDir(key)) to refFile
         val base = root.normalize()
         val file = base.resolve(relative).normalize()
         require(file.startsWith(base)) { "Path escapes the module cache dir: $refFile" }
+        require(!converted || convertedDir == null || file == base.resolve(key.convertedFileName)) {
+            "'$refFile' is not the text form of $key: the converted directory is shared by every " +
+                "module, and $key's file in it is '$prefix${key.convertedFileName}'. To read another " +
+                "module's text form, call read_source for that module. If $key's own results name " +
+                "'$refFile', its cache entry predates the converted directory: call " +
+                "fetch_module(module=\"$key\") to convert it there."
+        }
         return file
     }
+
+    /**
+     * Whether [cached]'s text form is where the current layout puts it. An entry written before
+     * [convertedDir] was set (or moved) keeps a fingerprint that still matches, so without this
+     * check `fetch_module` would answer "already cached" while every read of it says "call
+     * fetch_module" — a loop the caller cannot leave.
+     */
+    private fun textFormReachable(key: ModuleKey, cached: ModuleIndex): Boolean =
+        runCatching { resolveRef(key, cached.convertedFile) }.getOrNull()?.exists() == true
 
     /** Where [key]'s converted text form lives: the configured [convertedDir], else in its cache entry. */
     private fun convertedDirOf(key: ModuleKey): Path =
@@ -1990,8 +2019,12 @@ class FormsService(
         modulePattern: String?,
     ): String {
         // Length-prefixed, so no two argument tuples can hash the same material however the
-        // separator appears inside a query.
-        val material = listOf(query, regex.toString(), ignoreCase.toString(), scope.label, modulePattern ?: "")
+        // separator appears inside a query. What is matched ignoring case is bound ignoring case —
+        // the module pattern always, a plain query under ignoreCase — so re-casing it between calls
+        // continues the scan. A regex is bound as written: its case is part of its meaning (`\W`).
+        val pattern = modulePattern?.lowercase().orEmpty()
+        val boundQuery = if (ignoreCase && !regex) query.lowercase() else query
+        val material = listOf(boundQuery, regex.toString(), ignoreCase.toString(), scope.label, pattern)
             .joinToString("|") { "${it.length}:$it" }
         return MessageDigest.getInstance("SHA-256")
             .digest(material.toByteArray(Charsets.UTF_8))
@@ -2596,7 +2629,7 @@ class FormsService(
     private fun refPathOf(key: ModuleKey, index: ModuleIndex, target: String): String {
         val trimmed = target.trim()
         require(trimmed.isNotEmpty()) { "Pass 'uri' or 'file' naming the source to read." }
-        if (!trimmed.contains("://")) return trimmed
+        if (!trimmed.contains("://")) return refPathSpelling(trimmed)
         return sourceRefPath(key, trimmed, index.convertedFile) ?: throw IllegalArgumentException(
             "'$trimmed' is not a source URI of $key. Source URIs look like " +
                 "'oracleforms://$key/converted' or 'oracleforms://$key/plsql/triggers/NAME.sql', " +

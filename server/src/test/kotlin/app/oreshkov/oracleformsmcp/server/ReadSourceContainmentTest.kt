@@ -16,6 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -121,5 +122,58 @@ class ReadSourceContainmentTest {
         assertRejected(service, outside.toString())
         // The text form itself is still served from there: the guard rejects escapes, not the root.
         assertContains(service.readSource(ordersKey, "converted/orders_fmb.xml", 1, 1).text, "<")
+    }
+
+    /**
+     * A relocated `converted/` is one directory every module shares, so staying inside it is not
+     * enough: the default layout refuses another module's text form, and this one must too, or
+     * UTILS' text is served under ORDERS' name and URI.
+     */
+    @Test
+    fun anotherModulesTextFormInASharedConvertedDirIsRejected() = runTest {
+        val convertedDir = Files.createDirectories(temp.resolve("xml"))
+        val service = service(OnDiskModuleCache(temp.resolve("cache-shared")), convertedDir)
+        service.fetchModule(ordersKey)
+        service.fetchModule(utilsKey)
+
+        for (file in listOf("converted/utils.pld", "converted/./utils.pld", "converted\\utils.pld")) {
+            val failure = assertFailsWith<IllegalArgumentException>(file) { service.readSource(ordersKey, file) }
+            assertContains(failure.message.orEmpty(), "orders_fmb.xml", message = file)
+        }
+        // Its own module still reads it.
+        assertTrue(service.readSource(utilsKey, "converted/utils.pld", 1, 1).text.isNotBlank())
+    }
+
+    /**
+     * A ref is `/`-separated, but a caller on Windows types `\`. Read as a path under the module's
+     * entry, `converted\…` misses a relocated text form and fails with "call fetch_module", which
+     * no re-fetch can fix.
+     */
+    @Test
+    fun aBackslashConvertedPrefixReachesARelocatedTextForm() = runTest {
+        val convertedDir = Files.createDirectories(temp.resolve("xml"))
+        val service = service(OnDiskModuleCache(temp.resolve("cache-backslash")), convertedDir)
+        service.fetchModule(ordersKey)
+
+        val read = service.readSource(ordersKey, "converted\\orders_fmb.xml", 1, 1)
+        assertContains(read.text, "<")
+        // And the location it echoes back is the ref as every other result spells it.
+        assertEquals("converted/orders_fmb.xml", read.source.file)
+    }
+
+    /**
+     * An entry written before `--converted-dir` was set keeps a fingerprint that still matches, but
+     * its text form is not in the shared directory. Every read of it says "call fetch_module", so
+     * fetch_module must not answer "already cached" — that is a loop the caller cannot leave.
+     */
+    @Test
+    fun anEntryFetchedBeforeTheConvertedDirWasSetIsConvertedThereOnTheNextFetch() = runTest {
+        val cache = OnDiskModuleCache(temp.resolve("cache-moved"))
+        service(cache).fetchModule(ordersKey)
+        val relocated = service(cache, Files.createDirectories(temp.resolve("xml-later")))
+
+        assertEquals(false, relocated.fetchModule(ordersKey).fromCache)
+        assertContains(relocated.readSource(ordersKey, "converted/orders_fmb.xml", 1, 1).text, "<")
+        assertEquals(true, relocated.fetchModule(ordersKey).fromCache, "and once it is there, it is warm again")
     }
 }

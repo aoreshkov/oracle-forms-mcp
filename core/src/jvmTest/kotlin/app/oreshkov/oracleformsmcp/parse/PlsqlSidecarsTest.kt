@@ -101,6 +101,38 @@ class PlsqlSidecarsTest {
         assertEquals("x&#99999999;y\n", decoded.text)
     }
 
+    /**
+     * A converter that escapes twice escapes everything twice, not only the line breaks: `<` in
+     * the file is `&amp;lt;`, and what arrives is `&lt;`. Recovering the newlines and leaving
+     * those would serve `IF a &lt; b` — PL/SQL that does not compile and that no search for
+     * `a < b` finds.
+     */
+    @Test
+    fun aRecoveredBodyHasItsNamedReferencesDecodedToo() {
+        val decoded = decodeDoubleEscaped("IF a &lt; b &amp;&amp; c &gt; d THEN&#10;x := &quot;it&apos;s&quot;;")
+        assertEquals(TextEncoding.RECOVERED, decoded.encoding)
+        assertEquals("IF a < b && c > d THEN\nx := \"it's\";", decoded.text)
+    }
+
+    /** One level of escaping is undone, never two: `&amp;lt;` here was `&lt;` in the source. */
+    @Test
+    fun recoveryDecodesOneLevelOnly() {
+        val decoded = decodeDoubleEscaped("x := '&amp;lt;';&#10;")
+        assertEquals(TextEncoding.RECOVERED, decoded.encoding)
+        assertEquals("x := '&lt;';\n", decoded.text)
+    }
+
+    /**
+     * A surrogate code point is not a character. Decoding it yields an unpaired half that the
+     * UTF-8 sidecar writes as `?`, so the text would match neither the source nor the reference.
+     */
+    @Test
+    fun aSurrogateReferenceIsKeptLiterallyWhileTheRestIsRecovered() {
+        val decoded = decodeDoubleEscaped("x&#55357;y&#xDFFF;z&#10;")
+        assertEquals(TextEncoding.RECOVERED, decoded.encoding)
+        assertEquals("x&#55357;y&#xDFFF;z\n", decoded.text)
+    }
+
     @Test
     fun aBodyWithARealLineBreakIsNeverTouched() {
         val decoded = decodeDoubleEscaped("BEGIN\n  x := '&#10;';\nEND;")

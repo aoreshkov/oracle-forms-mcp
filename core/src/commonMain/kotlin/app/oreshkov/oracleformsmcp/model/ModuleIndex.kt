@@ -26,9 +26,11 @@ import kotlinx.serialization.Serializable
  * query source and clauses; `3` added a block's master-detail relations and item width and height;
  * `4` added the size a property class supplies, so a classed item's height is resolvable rather
  * than merely absent; `5` added a program unit's first line, so a listing tells an inherited or
- * empty unit from one with code without reading its body.
+ * empty unit from one with code without reading its body; `6` decodes the predefined references
+ * (`&lt;` and the rest) in a doubly-escaped body along with its line breaks, and leaves a
+ * surrogate reference as written.
  */
-public const val CURRENT_INDEX_VERSION: Int = 5
+public const val CURRENT_INDEX_VERSION: Int = 6
 
 /**
  * The parsed, cacheable index of one Forms module that MCP tools read.

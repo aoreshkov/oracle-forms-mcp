@@ -80,6 +80,18 @@ internal class DecodedText(val text: String, val encoding: TextEncoding)
 private val NUMERIC_ENTITY = Regex("""&#(\d+|[xX][0-9a-fA-F]+);""")
 
 /**
+ * Every reference recovery undoes: numeric, or one of XML's five predefined names. One pattern,
+ * so one pass — `&amp;lt;` becomes `&lt;` and stays that way, because a second pass would undo an
+ * escaping the source really had.
+ */
+private val XML_REFERENCE = Regex("""&(?:#(\d+|[xX][0-9a-fA-F]+)|(lt|gt|amp|quot|apos));""")
+
+private val PREDEFINED_ENTITIES = mapOf("lt" to "<", "gt" to ">", "amp" to "&", "quot" to "\"", "apos" to "'")
+
+/** A code point a reference may decode to: a Unicode scalar value, so never half a surrogate pair. */
+private fun isDecodable(code: Int): Boolean = code in 1..0x10FFFF && code !in 0xD800..0xDFFF
+
+/**
  * Undoes double escaping in a PL/SQL body, when the evidence says that is what happened.
  *
  * A correctly escaped file writes a newline as `&#10;` and the XML parser hands over a real
@@ -92,6 +104,10 @@ private val NUMERIC_ENTITY = Regex("""&#(\d+|[xX][0-9a-fA-F]+);""")
  * real line break at all, *and* decoding its leftover references introduces one. A genuine
  * one-liner is left alone even when it contains `&#9;`, and a multi-line body is never touched.
  *
+ * A converter that escapes twice escapes everything twice, so once the guard holds the predefined
+ * names (`&lt;` and the rest) are decoded along with the numeric references: recovering only the
+ * line breaks would serve `IF a &lt; b`, which is not the PL/SQL that was written.
+ *
  * It cannot be proven — a body that really did contain those characters inside a string literal
  * looks the same — which is why the result is labelled [TextEncoding.RECOVERED] and served that
  * way rather than quietly swapped in.
@@ -101,15 +117,17 @@ internal fun decodeDoubleEscaped(raw: String): DecodedText {
         return DecodedText(raw, TextEncoding.ORIGINAL)
     }
     if (!NUMERIC_ENTITY.containsMatchIn(raw)) return DecodedText(raw, TextEncoding.ORIGINAL)
-    val decoded = NUMERIC_ENTITY.replace(raw) { match ->
+    val decoded = XML_REFERENCE.replace(raw) { match ->
+        val name = match.groupValues[2]
+        if (name.isNotEmpty()) return@replace PREDEFINED_ENTITIES.getValue(name)
         val digits = match.groupValues[1]
         val code = if (digits[0] == 'x' || digits[0] == 'X') {
             digits.substring(1).toIntOrNull(16)
         } else {
             digits.toIntOrNull()
         }
-        // An out-of-range or unparseable reference is left exactly as it was found.
-        if (code == null || code !in 1..0x10FFFF) match.value else String(Character.toChars(code))
+        // An out-of-range, surrogate or unparseable reference is left exactly as it was found.
+        if (code == null || !isDecodable(code)) match.value else String(Character.toChars(code))
     }
     return if (decoded.contains('\n')) {
         DecodedText(decoded, TextEncoding.RECOVERED)
