@@ -115,6 +115,19 @@ class ToolArgumentsTest {
     }
 
     @Test
+    fun anIntegerTooLargeToUseSaysSoRatherThanThatItIsNoInteger() {
+        val args = buildJsonObject {
+            put("module", "ORDERS")
+            put("query", "x")
+            put("offset", 3_000_000_000L)
+        }
+        assertEquals(
+            listOf("'offset' is '3000000000', which is out of range (at most ${Int.MAX_VALUE})"),
+            argumentProblems(typed, args),
+        )
+    }
+
+    @Test
     fun aValueThatParsesAsTheDeclaredTypeIsAcceptedAndReadTheSameWay() {
         val args = buildJsonObject {
             put("module", "ORDERS")

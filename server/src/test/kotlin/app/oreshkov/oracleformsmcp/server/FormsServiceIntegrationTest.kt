@@ -4,7 +4,7 @@ import app.oreshkov.oracleformsmcp.annotation.OnDiskAnnotationStore
 import app.oreshkov.oracleformsmcp.cache.OnDiskModuleCache
 import app.oreshkov.oracleformsmcp.convert.PreConvertedCopyConverter
 import app.oreshkov.oracleformsmcp.core.ModuleConverter
-import app.oreshkov.oracleformsmcp.core.ModuleNotFetchedException
+import app.oreshkov.oracleformsmcp.core.ModuleStaleException
 import app.oreshkov.oracleformsmcp.model.AnnotationKind
 import app.oreshkov.oracleformsmcp.model.Author
 import app.oreshkov.oracleformsmcp.model.ElementKind
@@ -349,15 +349,18 @@ class FormsServiceIntegrationTest {
     /**
      * A save that lands while a fetch is converting must not be stamped onto the facts that fetch
      * produced: they may describe either version, so the fetch fails naming the call that settles
-     * it, and caches nothing that would read as current.
+     * it. The run has already rewritten the entry's sidecars by then, so what it leaves cached must
+     * be its own index, read as stale — never the previous one, which a save that *reverts* the
+     * file would make look current again over sidecars it did not write.
      */
     @Test
     fun aSourceSavedDuringTheFetchIsNotStampedAsFresh() = runTest {
-        var saveDuringConversion = true
+        val source = formsDir.resolve("orders_fmb.xml")
+        var duringConversion: (() -> Unit)? = null
         val converter = object : ModuleConverter by PreConvertedCopyConverter() {
             override suspend fun convert(key: ModuleKey, sourcePath: String, targetDir: String): String {
                 val out = PreConvertedCopyConverter().convert(key, sourcePath, targetDir)
-                if (saveDuringConversion) formsDir.resolve("orders_fmb.xml").appendText("<!-- saved mid-fetch -->")
+                duringConversion?.invoke()
                 return out
             }
         }
@@ -370,11 +373,17 @@ class FormsServiceIntegrationTest {
             formsDir = formsDir,
         )
 
+        // A saved, then B saved; the fetch of B is under way when A is saved back over it.
+        racing.fetchModule(ordersKey)
+        val versionA = Files.readAllBytes(source)
+        source.appendText("<!-- version B -->")
+        duringConversion = { Files.write(source, versionA) }
+
         val failure = assertFailsWith<IllegalStateException> { racing.fetchModule(ordersKey) }
         assertTrue(failure.message!!.contains("fetch_module"), failure.message!!)
-        assertFailsWith<ModuleNotFetchedException> { racing.listBlocks(ordersKey) }
+        assertFailsWith<ModuleStaleException> { racing.listBlocks(ordersKey) }
 
-        saveDuringConversion = false
+        duringConversion = null
         assertFalse(racing.fetchModule(ordersKey).fromCache)
         racing.listBlocks(ordersKey)
     }

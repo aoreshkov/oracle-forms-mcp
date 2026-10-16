@@ -886,21 +886,22 @@ public final class app/oreshkov/oracleformsmcp/dto/ModuleSearchHit$Companion {
 
 public final class app/oreshkov/oracleformsmcp/dto/ModuleSearchResults {
 	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/ModuleSearchResults$Companion;
-	public fun <init> (Ljava/lang/String;IIIIILjava/util/List;ZLjava/lang/String;Ljava/lang/String;Ljava/util/List;)V
-	public synthetic fun <init> (Ljava/lang/String;IIIIILjava/util/List;ZLjava/lang/String;Ljava/lang/String;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;IIIIIILjava/util/List;ZLjava/lang/String;Ljava/lang/String;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;IIIIIILjava/util/List;ZLjava/lang/String;Ljava/lang/String;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
 	public final fun component10 ()Ljava/lang/String;
-	public final fun component11 ()Ljava/util/List;
+	public final fun component11 ()Ljava/lang/String;
+	public final fun component12 ()Ljava/util/List;
 	public final fun component2 ()I
 	public final fun component3 ()I
 	public final fun component4 ()I
 	public final fun component5 ()I
 	public final fun component6 ()I
-	public final fun component7 ()Ljava/util/List;
-	public final fun component8 ()Z
-	public final fun component9 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;IIIIILjava/util/List;ZLjava/lang/String;Ljava/lang/String;Ljava/util/List;)Lapp/oreshkov/oracleformsmcp/dto/ModuleSearchResults;
-	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/ModuleSearchResults;Ljava/lang/String;IIIIILjava/util/List;ZLjava/lang/String;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/ModuleSearchResults;
+	public final fun component7 ()I
+	public final fun component8 ()Ljava/util/List;
+	public final fun component9 ()Z
+	public final fun copy (Ljava/lang/String;IIIIIILjava/util/List;ZLjava/lang/String;Ljava/lang/String;Ljava/util/List;)Lapp/oreshkov/oracleformsmcp/dto/ModuleSearchResults;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/ModuleSearchResults;Ljava/lang/String;IIIIIILjava/util/List;ZLjava/lang/String;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/ModuleSearchResults;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCachedModules ()I
 	public final fun getHint ()Ljava/lang/String;
@@ -911,6 +912,7 @@ public final class app/oreshkov/oracleformsmcp/dto/ModuleSearchResults {
 	public final fun getSkippedNotCached ()I
 	public final fun getSkippedStale ()I
 	public final fun getTruncated ()Z
+	public final fun getUnreadableFileCount ()I
 	public final fun getUnreadableFiles ()Ljava/util/List;
 	public final fun getUnreadableModules ()I
 	public fun hashCode ()I
@@ -1577,6 +1579,38 @@ public final synthetic class app/oreshkov/oracleformsmcp/dto/TriggerSummary$$ser
 }
 
 public final class app/oreshkov/oracleformsmcp/dto/TriggerSummary$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class app/oreshkov/oracleformsmcp/dto/UnreadableFile {
+	public static final field Companion Lapp/oreshkov/oracleformsmcp/dto/UnreadableFile$Companion;
+	public fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;)Lapp/oreshkov/oracleformsmcp/dto/UnreadableFile;
+	public static synthetic fun copy$default (Lapp/oreshkov/oracleformsmcp/dto/UnreadableFile;Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lapp/oreshkov/oracleformsmcp/dto/UnreadableFile;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getModule ()Lapp/oreshkov/oracleformsmcp/model/ModuleKey;
+	public final fun getPath ()Ljava/lang/String;
+	public final fun getUri ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class app/oreshkov/oracleformsmcp/dto/UnreadableFile$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Lapp/oreshkov/oracleformsmcp/dto/UnreadableFile$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Lapp/oreshkov/oracleformsmcp/dto/UnreadableFile;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Lapp/oreshkov/oracleformsmcp/dto/UnreadableFile;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class app/oreshkov/oracleformsmcp/dto/UnreadableFile$Companion {
 	public final fun serializer ()Lkotlinx/serialization/KSerializer;
 }
 

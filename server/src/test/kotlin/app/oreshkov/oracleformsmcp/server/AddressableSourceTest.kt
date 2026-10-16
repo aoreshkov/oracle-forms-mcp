@@ -163,6 +163,10 @@ class AddressableSourceTest {
         assertEquals(0, empty.totalLines)
         assertTrue(empty.source.endLine < empty.source.startLine, "no line was served: ${empty.source}")
         assertNull(empty.source.asResourceLink(), "a link must not name a line that was not served")
+        val past = assertFailsWith<IllegalArgumentException> {
+            service.readSource(ordersKey, "plsql/triggers/ORDERS.ORDER_ID.WHEN-VALIDATE-ITEM.sql", startLine = 500)
+        }
+        assertTrue(past.message!!.contains("0 lines"), past.message!!)
     }
 
     @Test

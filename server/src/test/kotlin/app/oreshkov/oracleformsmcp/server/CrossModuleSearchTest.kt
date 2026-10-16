@@ -4,6 +4,7 @@ import app.oreshkov.oracleformsmcp.annotation.OnDiskAnnotationStore
 import app.oreshkov.oracleformsmcp.cache.OnDiskModuleCache
 import app.oreshkov.oracleformsmcp.convert.PreConvertedCopyConverter
 import app.oreshkov.oracleformsmcp.dto.ModuleSearchHit
+import app.oreshkov.oracleformsmcp.model.AttachedLibraryInfo
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.parse.FormsModuleParser
@@ -224,10 +225,26 @@ class CrossModuleSearchTest {
 
         assertEquals(2, result.scannedModules, "PICKER was not wholly read")
         assertEquals(1, result.unreadableModules)
+        assertEquals(1, result.unreadableFileCount)
         val named = result.unreadableFiles.single()
-        assertTrue(named.startsWith("oracleforms://PICKER.fmb/plsql/") && named.endsWith(sidecar.fileName.toString()), named)
+        assertEquals(picker, named.module)
+        assertTrue(named.path.startsWith("plsql/") && named.path.endsWith(sidecar.fileName.toString()), named.path)
+        assertEquals("oracleforms://PICKER.fmb/${named.path}", named.uri)
         val hint = assertNotNull(result.hint)
-        assertTrue(hint.contains("could not be read") && hint.contains(named), hint)
+        assertTrue(hint.contains("could not be read") && hint.contains("PICKER.fmb ${named.path}"), hint)
+    }
+
+    /** An attached library with no usable name is no library anyone can fetch, not a failed search. */
+    @Test
+    fun anAttachedLibraryWithNoUsableNameDoesNotFailTheSearch() = runTest {
+        fetchAll()
+        val named = assertNotNull(cache.get(entry))
+        cache.putIndex(named.copy(attachedLibraries = named.attachedLibraries + AttachedLibraryInfo("") + AttachedLibraryInfo("a..b")))
+
+        val result = service.searchModules(query = "PICKER")
+
+        assertEquals(listOf(entry), result.hits.modules())
+        service.getTrigger(entry, "KEY-HELP", block = null, item = null) // a read tool states the same libraries
     }
 
     @Test

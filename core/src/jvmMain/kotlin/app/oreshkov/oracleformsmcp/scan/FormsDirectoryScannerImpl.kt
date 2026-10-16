@@ -6,6 +6,7 @@ import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.model.ScannedModule
 import co.touchlab.kermit.Logger
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.exists
 import kotlin.io.path.extension
 import kotlin.io.path.isRegularFile
@@ -30,6 +31,9 @@ public class FormsDirectoryScannerImpl(
 ) : FormsDirectoryScanner {
 
     private val log = Logger.withTag("FormsDirectoryScanner")
+
+    /** What has been warned about already: every tool call scans, and a stray backup stays put. */
+    private val reported: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     override suspend fun scan(): List<ScannedModule> = withContext(Dispatchers.IO) {
         if (!formsDir.exists()) return@withContext emptyList()
@@ -59,10 +63,17 @@ public class FormsDirectoryScannerImpl(
     /** Records [file] under [key] unless the key is invalid or an earlier file already holds it. */
     private fun MutableMap<ModuleKey, Path>.claim(key: ModuleKey?, file: Path) {
         if (key == null) {
-            log.w { "Skipping '${file.name}' in $formsDir: its name is not a valid module name (no '..', ':' or path separators)" }
+            if (reported.add(file.name)) {
+                log.w {
+                    "Skipping '${file.name}' in $formsDir: its name is not a valid module name " +
+                        "(no '..', ':' or path separators)"
+                }
+            }
             return
         }
         val holder = putIfAbsent(key, file) ?: return
-        log.w { "'${file.name}' and '${holder.name}' in $formsDir are the same module $key; using '${holder.name}'" }
+        if (reported.add("${holder.name}/${file.name}")) {
+            log.w { "'${file.name}' and '${holder.name}' in $formsDir are the same module $key; using '${holder.name}'" }
+        }
     }
 }

@@ -105,17 +105,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **One badly named file no longer breaks the whole forms directory.** A file whose name no module
   can have, such as the backup `orders..bak.fmb`, made every directory scan fail, and with it
   `list_modules`, `fetch_module`, `search_modules` and `--prefetch`. It is now skipped with a
-  warning in the log. On a case-sensitive file system, `ORDERS.fmb` and `orders.fmb` are the same
-  module: the first name in sorted order is used, whatever order the directory lists them in, and
-  the log names both.
+  warning in the log, once per file. On a case-sensitive file system, `ORDERS.fmb` and
+  `orders.fmb` are the same module: the first name in sorted order is used, whatever order the
+  directory lists them in, and the log names both.
 - **`read_source` rejects an `endLine` before `startLine`** with a message naming both, instead of
   returning nothing with a location for a line it did not serve. An empty file is served as no
   lines, with no `resource_link`.
 - **`search_modules` reports cached files it could not read.** A file that cannot be decoded was
   skipped silently and its module still counted as scanned, so a search that never read it looked
   like one that found nothing there. Such modules now go in `unreadableModules` rather than
-  `scannedModules`, the files are named in `unreadableFiles`, and the `hint` says to treat a name
-  not found in them as undetermined.
+  `scannedModules`, `unreadableFileCount` counts the files and `unreadableFiles` names the first
+  few by module and path, and the `hint` says to treat a name not found in them as undetermined.
 - **A real option value containing `${` is no longer discarded.** Every `--convert-command`,
   `--compile-command` or `--converted-dir` value containing `${` was treated as an unfilled
   launcher template, so a shell wrapper such as `sh -c 'conv "${1}"' _ {}` was dropped without a
@@ -124,8 +124,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A module saved while it is being fetched is no longer indexed as current.** The source was
   fingerprinted after conversion and parsing, so a save landing in between stamped the new version
   onto facts read from the old one, and they were served as current until the next change. The
-  fingerprint is now taken before conversion; if the file changed by the end, `fetch_module`
-  caches nothing and says to call it again.
+  fingerprint is now taken before conversion; if the file changed by the end, the module reads
+  as stale and `fetch_module` says to call it again.
+- **An attached library with no usable name no longer fails `search_modules`** or the library hint
+  on `get_trigger` and `get_program_unit`; it is left out, since nothing could fetch it.
 
 ## [0.13.1] - 2026-10-13
 

@@ -132,7 +132,11 @@ private fun typeProblem(arg: String, prop: JsonObject, value: JsonElement): Stri
     }
     return when {
         type == "integer" && parseIntArg(value.content) == null ->
-            "'$arg' is '${value.content}', which is not an integer"
+            if (value.content.trim().toBigDecimalOrNull()?.let { it.stripTrailingZeros().scale() <= 0 } == true) {
+                "'$arg' is '${value.content}', which is out of range (at most ${Int.MAX_VALUE})"
+            } else {
+                "'$arg' is '${value.content}', which is not an integer"
+            }
         type == "boolean" && parseBooleanArg(value.content) == null ->
             "'$arg' is '${value.content}', which is not a boolean (true or false)"
         else -> null

@@ -589,6 +589,19 @@ public data class ModuleSearchHit(
 )
 
 /**
+ * A cached file `search_modules` could not read — undecodable text, or an I/O error — so a match
+ * in it would not have been found. Addressed like a [ModuleSearchHit]: [path] is cache-relative,
+ * and [uri] is present when a resource covers the file.
+ */
+@Serializable
+@SerialName("UnreadableFile")
+public data class UnreadableFile(
+    val module: ModuleKey,
+    val path: String,
+    val uri: String? = null,
+)
+
+/**
  * `search_modules` — hits across every **cached** module, plus what the scan could and could not
  * reach.
  *
@@ -598,8 +611,8 @@ public data class ModuleSearchHit(
  * [skippedNotCached]/[skippedStale] the matching modules that could not be searched because they
  * were never fetched or have changed on disk since they were. [unreadableModules] were searched
  * only in part, because a cached file of theirs could not be read; they are not counted in
- * [scannedModules], and [unreadableFiles] names the first few of those files by URI. [hint] names
- * the call that fixes each of those.
+ * [scannedModules]. [unreadableFileCount] is how many files that was, and [unreadableFiles] names
+ * the first few. [hint] names the call that fixes each of those.
  *
  * [truncated] says work remains — either more hits than the result cap or more modules than one
  * call scans — and [nextCursor] is then the opaque token that resumes exactly where this call
@@ -615,7 +628,8 @@ public data class ModuleSearchResults(
     val skippedNotCached: Int = 0,
     val skippedStale: Int = 0,
     val unreadableModules: Int = 0,
-    val unreadableFiles: List<String> = emptyList(),
+    val unreadableFileCount: Int = 0,
+    val unreadableFiles: List<UnreadableFile> = emptyList(),
     val truncated: Boolean = false,
     val nextCursor: String? = null,
     val hint: String? = null,
