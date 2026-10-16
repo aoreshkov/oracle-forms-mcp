@@ -1,5 +1,6 @@
 package app.oreshkov.oracleformsmcp.parse
 
+import app.oreshkov.oracleformsmcp.model.TextEncoding
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.AfterTest
@@ -72,5 +73,38 @@ class PlsqlSidecarsTest {
     @Test
     fun aPreviewThatFitsIsLeftAlone() {
         assertEquals("BEGIN", firstCodeLine("\n\n   BEGIN\n  NULL;\nEND;"))
+    }
+
+    /**
+     * The guard's second half: entities alone are not evidence. A one-liner whose only reference
+     * is a tab is a real one-liner, and decoding it would rewrite a WhereClause or CommandText
+     * that was never doubly escaped.
+     */
+    @Test
+    fun aOneLinerWhoseReferencesAddNoLineBreakIsLeftAlone() {
+        val decoded = decodeDoubleEscaped("a&#9;b")
+        assertEquals(TextEncoding.ORIGINAL, decoded.encoding)
+        assertEquals("a&#9;b", decoded.text)
+    }
+
+    @Test
+    fun aHexLineFeedIsRecovered() {
+        val decoded = decodeDoubleEscaped("a&#xA;b")
+        assertEquals(TextEncoding.RECOVERED, decoded.encoding)
+        assertEquals("a\nb", decoded.text)
+    }
+
+    @Test
+    fun anOutOfRangeReferenceIsKeptLiterallyWhileTheRestIsRecovered() {
+        val decoded = decodeDoubleEscaped("x&#99999999;y&#10;")
+        assertEquals(TextEncoding.RECOVERED, decoded.encoding)
+        assertEquals("x&#99999999;y\n", decoded.text)
+    }
+
+    @Test
+    fun aBodyWithARealLineBreakIsNeverTouched() {
+        val decoded = decodeDoubleEscaped("BEGIN\n  x := '&#10;';\nEND;")
+        assertEquals(TextEncoding.ORIGINAL, decoded.encoding)
+        assertEquals("BEGIN\n  x := '&#10;';\nEND;", decoded.text)
     }
 }

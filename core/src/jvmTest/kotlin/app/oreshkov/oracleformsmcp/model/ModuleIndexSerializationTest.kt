@@ -2,6 +2,7 @@ package app.oreshkov.oracleformsmcp.model
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.time.Instant
@@ -94,5 +95,15 @@ class ModuleIndexSerializationTest {
         """.trimIndent()
         assertEquals(0, json.decodeFromString<ModuleIndex>(unstamped).indexVersion)
         assertNotEquals(0, CURRENT_INDEX_VERSION, "version 0 must stay reserved for unstamped entries")
+    }
+
+    /** A key read back from disk or a cursor goes through the same guard as one built in code. */
+    @Test
+    fun aDecodedKeyThatCouldLeaveItsDirectoryIsRejected() {
+        for (name in listOf("..", "../EVIL", "A\\\\B", "C:X")) {
+            assertFailsWith<IllegalArgumentException>(name) {
+                json.decodeFromString<ModuleKey>("""{"name": "$name", "type": "FORM"}""")
+            }
+        }
     }
 }

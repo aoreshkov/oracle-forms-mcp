@@ -4,6 +4,7 @@ import app.oreshkov.oracleformsmcp.annotation.OnDiskAnnotationStore
 import app.oreshkov.oracleformsmcp.cache.OnDiskModuleCache
 import app.oreshkov.oracleformsmcp.convert.PreConvertedCopyConverter
 import app.oreshkov.oracleformsmcp.dto.ModuleSearchHit
+import app.oreshkov.oracleformsmcp.dto.ModuleSearchResults
 import app.oreshkov.oracleformsmcp.model.AttachedLibraryInfo
 import app.oreshkov.oracleformsmcp.model.ModuleKey
 import app.oreshkov.oracleformsmcp.model.ModuleType
@@ -355,6 +356,39 @@ class CrossModuleSearchTest {
 
         assertTrue(failure.message!!.contains("different search"), failure.message!!)
         assertTrue(failure.message!!.contains("omit 'cursor'"), "the message must name the way out")
+    }
+
+    /**
+     * The query is not the only argument that changes the result set: each of the others selects
+     * different hits or different modules, so a cursor carried across any one of them would land
+     * in a page of something else just as surely. Changing exactly one at a time pins each into
+     * the fingerprint on its own.
+     */
+    @Test
+    fun aCursorIsRefusedWhenAnyOneSearchArgumentChanges() = runTest {
+        fetchAll()
+        val cursor = assertNotNull(service.searchModules(query = ":GLOBAL", maxResults = 1).nextCursor)
+
+        val changedOneArgument: Map<String, suspend () -> ModuleSearchResults> = mapOf(
+            "scope" to { service.searchModules(query = ":GLOBAL", scope = "all", maxResults = 1, cursor = cursor) },
+            "modulePattern" to {
+                service.searchModules(query = ":GLOBAL", modulePattern = "PICK", maxResults = 1, cursor = cursor)
+            },
+            "regex" to { service.searchModules(query = ":GLOBAL", regex = true, maxResults = 1, cursor = cursor) },
+            "ignoreCase" to {
+                service.searchModules(query = ":GLOBAL", ignoreCase = false, maxResults = 1, cursor = cursor)
+            },
+        )
+        for ((argument, search) in changedOneArgument) {
+            val failure = assertFailsWith<IllegalArgumentException>("changing only '$argument'") { search() }
+            assertTrue(failure.message!!.contains("different search"), "$argument: ${failure.message}")
+        }
+
+        // Spelling the defaults out is the same search, so the cursor still continues it.
+        val explicit = service.searchModules(
+            query = ":GLOBAL", scope = "PLSQL", modulePattern = " ", maxResults = 1, cursor = cursor,
+        )
+        assertEquals(1, explicit.hits.size)
     }
 
     @Test

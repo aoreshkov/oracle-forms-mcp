@@ -9,14 +9,39 @@ import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.ResourceTemplate
 import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
 import io.modelcontextprotocol.kotlin.sdk.utils.PathSegmentTemplateMatcher
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+
+/** How many threads race, and how many fresh rounds they race — enough that the window is hit. */
+private const val RACERS = 8
+private const val RACE_ROUNDS = 50
+
+/**
+ * Runs [body] on [threads] real threads released together by a barrier. Coroutines on
+ * `Dispatchers.Default` start whenever a worker is free, so the first ones are often done before
+ * the last ones begin and the race the test is about never happens.
+ */
+private fun raceOnThreads(threads: Int, body: suspend (racer: Int) -> Unit) {
+    val barrier = CyclicBarrier(threads)
+    val pool = Executors.newFixedThreadPool(threads)
+    try {
+        val futures = (0 until threads).map { racer ->
+            pool.submit {
+                barrier.await(10, TimeUnit.SECONDS)
+                runBlocking { body(racer) }
+            }
+        }
+        futures.forEach { it.get(30, TimeUnit.SECONDS) } // rethrows a racer's failure here
+    } finally {
+        pool.shutdownNow()
+    }
+}
 
 class ModuleResourcesTest {
 
@@ -35,14 +60,39 @@ class ModuleResourcesTest {
      * "already registered?" check. Losing that race must not fail the fetch.
      */
     @Test
-    fun concurrentRegistrationOfOneModuleKeepsExactlyOneResource() = runBlocking {
-        val server = serverWithResources()
+    fun concurrentRegistrationOfOneModuleKeepsExactlyOneResource() {
         val service = fakeService()
         val key = ModuleKey.of("orders", ModuleType.FORM)
 
-        List(8) { async(Dispatchers.Default) { server.addModuleIndexResource(service, key) } }.awaitAll()
+        repeat(RACE_ROUNDS) { round ->
+            val server = serverWithResources()
+            raceOnThreads(RACERS) { server.addModuleIndexResource(service, key) }
+            assertEquals(listOf(moduleIndexUri(key)), server.resources.keys.toList(), "round $round")
+        }
+    }
 
-        assertEquals(listOf(moduleIndexUri(key)), server.resources.keys.toList())
+    /**
+     * The bound is a check-then-act over a plain set *and* the server's resources, so only the
+     * mutex keeps the two agreeing. Racers register overlapping key sequences — repeats refresh
+     * recency, new keys evict — and afterwards exactly [limit] resources must be registered, and
+     * they must be exactly the ones the bookkeeping believes are.
+     */
+    @Test
+    fun concurrentRegistrationKeepsTheBoundAndTheBookkeepingInAgreement() {
+        val service = fakeService()
+        val keys = (0 until 24).map { ModuleKey.of("MOD%02d".format(it), ModuleType.FORM) }
+
+        repeat(RACE_ROUNDS) { round ->
+            val server = serverWithResources()
+            val indexResources = ModuleIndexResources(service, limit = 4)
+            raceOnThreads(RACERS) { racer ->
+                // Each racer walks the same keys from a different start, so every key is both
+                // registered fresh and re-registered while warm, by different threads.
+                keys.indices.forEach { i -> indexResources.register(server, keys[(i + racer * 5) % keys.size]) }
+            }
+            assertEquals(4, server.resources.size, "round $round")
+            assertEquals(indexResources.registeredUris().toSet(), server.resources.keys.toSet(), "round $round")
+        }
     }
 
     /**

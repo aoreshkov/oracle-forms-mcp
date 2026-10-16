@@ -237,19 +237,21 @@ internal fun parseArgs(
  *
  * Equality, not containment: a subdirectory of the forms directory is fine, because the scanner
  * reads the forms directory non-recursively.
+ *
+ * Throws rather than exiting, so the rule can be tested; `main` turns the throw into a usage error.
+ *
+ * @throws IllegalArgumentException naming what is wrong with [dir].
  */
-private fun convertedDir(dir: Path, formsDir: Path): Path {
+internal fun validateConvertedDir(dir: Path, formsDir: Path): Path {
     val resolved = dir.toAbsolutePath().normalize()
-    if (resolved.exists() && !resolved.isDirectory()) {
-        fail("--converted-dir is set to '$dir' but that is an existing file, not a directory")
+    require(!resolved.exists() || resolved.isDirectory()) {
+        "--converted-dir is set to '$dir' but that is an existing file, not a directory"
     }
-    if (resolved == formsDir.toAbsolutePath().normalize()) {
-        fail(
-            "--converted-dir must not be the forms directory ('$dir'). Conversion output is " +
-                "written there, named like the pre-converted modules read from the forms " +
-                "directory, so the server would overwrite its own inputs. Point it at a separate " +
-                "directory (a subdirectory of the forms directory is fine).",
-        )
+    require(resolved != formsDir.toAbsolutePath().normalize()) {
+        "--converted-dir must not be the forms directory ('$dir'). Conversion output is " +
+            "written there, named like the pre-converted modules read from the forms " +
+            "directory, so the server would overwrite its own inputs. Point it at a separate " +
+            "directory (a subdirectory of the forms directory is fine)."
     }
     return resolved
 }
@@ -301,6 +303,14 @@ fun main(args: Array<String>) {
         null
     }
 
+    val convertedDir = options.convertedDir?.let {
+        try {
+            validateConvertedDir(it, formsDir)
+        } catch (e: IllegalArgumentException) {
+            fail(e.message ?: "Invalid --converted-dir")
+        }
+    }
+
     val cacheDir = options.cacheDir ?: ServerConfig(formsDir).cacheDir
     val config = ServerConfig(
         formsDir = formsDir.toAbsolutePath().normalize(),
@@ -309,7 +319,7 @@ fun main(args: Array<String>) {
         conversionTimeout = options.conversionTimeoutSeconds.seconds,
         convertCommand = options.convertCommand,
         compileCommand = options.compileCommand,
-        convertedDir = options.convertedDir?.let { convertedDir(it, formsDir) },
+        convertedDir = convertedDir,
     )
     options.prefetch?.let { prefetch ->
         val failed = runBlocking { McpServerFactory.create(config).use { runPrefetch(it.service, prefetch) } }
