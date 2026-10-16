@@ -7,8 +7,13 @@
 // pipes the MCP protocol speaks over.
 //
 // It is executed in single-file source mode (`java OracleFormsMcpLauncher.java ...`), which needs
-// a JDK 21+ on PATH — a bare JRE has no compiler. That prerequisite is documented in the plugin
-// manifest and README; the JRE-only alternatives are the .mcpb bundle and `claude mcp add`.
+// a JDK on PATH — a bare JRE has no compiler — and the server it loads needs Java 25+. That
+// prerequisite is documented in the plugin manifest and README; the JRE-only alternatives are the
+// .mcpb bundle and `claude mcp add`.
+//
+// The launcher itself deliberately stays within the Java 21 language and API (CI compiles it with
+// `--release 21`): on a JDK too old for the server it must still compile and start, so it can say
+// what is wrong instead of dying in a compiler error the user never sees.
 //
 // INVARIANT: stdout belongs to the MCP stdio protocol. Every diagnostic here goes to stderr.
 
@@ -44,6 +49,8 @@ public final class OracleFormsMcpLauncher {
     private static final String REPO = "aoreshkov/oracle-forms-mcp";
     private static final String MAIN_CLASS = "app.oreshkov.oracleformsmcp.server.MainKt";
     private static final String USER_AGENT = "oracle-forms-mcp-plugin-launcher";
+    /** The Java feature release current servers are compiled for. */
+    private static final int SERVER_JAVA = 25;
 
     /** How long a resolved "latest" tag is trusted before the GitHub API is asked again. */
     private static final Duration LATEST_TTL = Duration.ofHours(24);
@@ -329,7 +336,18 @@ public final class OracleFormsMcpLauncher {
         URLClassLoader loader =
                 new URLClassLoader(classpath.toArray(URL[]::new), ClassLoader.getPlatformClassLoader());
         Thread.currentThread().setContextClassLoader(loader); // Logback resolves logback.xml via this
-        Method main = loader.loadClass(MAIN_CLASS).getMethod("main", String[].class);
+        Class<?> server;
+        try {
+            server = loader.loadClass(MAIN_CLASS);
+        } catch (UnsupportedClassVersionError e) {
+            // "latest" moved past the Java on PATH: servers after 0.14.0 are compiled for Java 25.
+            fail("The oracle-forms-mcp server in " + dist + " needs Java " + SERVER_JAVA
+                    + " or later, but the plugin is running on Java " + Runtime.version().feature()
+                    + ". Put a JDK " + SERVER_JAVA + "+ on PATH, or pin server version 0.14.0 (the"
+                    + " last to run on Java 21) in /plugin (Oracle Forms plugin config).");
+            return;
+        }
+        Method main = server.getMethod("main", String[].class);
         main.invoke(null, (Object) args);
     }
 

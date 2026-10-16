@@ -258,8 +258,8 @@ class FormsXmlParserTest {
             assertNotNull(blockTrigger.textRef).file,
             assertNotNull(formTrigger.textRef).file,
         )
-        assertEquals("-- block FORM commit", readRef(blockTrigger.textRef!!))
-        assertEquals("-- form level commit", readRef(formTrigger.textRef!!))
+        assertEquals("-- block FORM commit", readRef(blockTrigger.textRef))
+        assertEquals("-- form level commit", readRef(formTrigger.textRef))
     }
 
     @Test

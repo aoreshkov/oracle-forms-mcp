@@ -34,8 +34,10 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
 - `plugins/oracle-forms/` + `.claude-plugin/marketplace.json` — the Claude Code plugin channel,
   served straight from the repo by `/plugin marketplace add aoreshkov/oracle-forms-mcp`. The plugin
   carries no jars: `.mcp.json` runs `launcher/OracleFormsMcpLauncher.java` in Java single-file
-  source mode (hence **JDK** 21+, not JRE), which downloads the release zip, verifies its published
-  sha256, unpacks it under `${CLAUDE_PLUGIN_DATA}`, and loads it in-process. The
+  source mode (hence a **JDK** 25+, not a JRE), which downloads the release zip, verifies its published
+  sha256, unpacks it under `${CLAUDE_PLUGIN_DATA}`, and loads it in-process. The launcher itself
+  stays on the Java 21 language and API (CI compiles it with `--release 21`), so on a JDK older
+  than the server needs it still starts and names the fix instead of failing to compile. The
   `claude-code-plugin` CI job validates the manifests and compiles the launcher — nothing else
   stands between a commit on main and a user's install. It also carries one skill,
   `skills/trace-form/SKILL.md`: the traversal order and the habit→tool mapping that the server's

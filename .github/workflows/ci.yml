@@ -26,11 +26,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 25
 
       # Includes Gradle wrapper validation and build caching.
       - name: Set up Gradle
@@ -67,11 +67,11 @@ jobs:
           # The version check below compares against the last release tag.
           fetch-depth: 0
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 25
 
       # The plugin is consumed straight from the repository by `/plugin marketplace add`, so a
       # broken manifest or launcher ships the moment it lands on main — there is no build step
@@ -115,9 +115,10 @@ jobs:
           done
 
       # The launcher runs in single-file source mode on the user's machine, where a compile error
-      # surfaces only as an MCP server that fails to connect.
+      # surfaces only as an MCP server that fails to connect. `--release 21` keeps it compiling on a
+      # JDK older than the server needs, so there it can still say so instead of failing silently.
       - name: Compile the plugin launcher
-        run: javac -Xlint:all -d "${RUNNER_TEMP}/launcher" plugins/oracle-forms/launcher/*.java
+        run: javac --release 21 -Xlint:all -d "${RUNNER_TEMP}/launcher" plugins/oracle-forms/launcher/*.java
 
       # Claude Code updates an installed plugin only when plugin.json's `version` changes, so
       # a change under the plugin without a bump never reaches anyone who already has it. That
@@ -160,11 +161,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 25
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
