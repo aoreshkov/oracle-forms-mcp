@@ -44,4 +44,19 @@ class ModuleKeyTest {
         assertNull(ModuleKey.ofOrNull("c:x", ModuleType.FORM))
         assertNull(ModuleKey.ofOrNull(" ", ModuleType.FORM))
     }
+
+    /**
+     * The canonical name becomes a cache directory name, and a tool argument reaches the file
+     * system through [ModuleKey.parseOrNull] — so the constructor's guard is all that stands
+     * between `../evil.fmb` and a path outside the cache.
+     */
+    @Test
+    fun aNameThatCouldLeaveItsDirectoryIsRejected() {
+        for (spec in listOf("../evil.fmb", "a/b.fmb", "a\\b.fmb", "c:x.fmb", "a..b.fmb", "...fmb")) {
+            assertFailsWith<IllegalArgumentException>(spec) { ModuleKey.parse(spec) }
+            assertNull(ModuleKey.parseOrNull(spec), spec)
+        }
+        assertFailsWith<IllegalArgumentException> { ModuleKey("..", ModuleType.FORM) }
+        assertFailsWith<IllegalArgumentException> { ModuleKey("A/B", ModuleType.FORM) }
+    }
 }

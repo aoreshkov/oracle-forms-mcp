@@ -458,7 +458,8 @@ class FormsXmlParserTest {
         // Correctly escaped, so it already has real newlines and nothing is touched.
         val trigger = ordersIndex().triggers.single { it.name == "WHEN-VALIDATE-ITEM" }
         assertEquals(TextEncoding.ORIGINAL, trigger.textEncoding)
-        assertTrue(pickerIndex().triggers.none { it.name == "KEY-HELP" && it.textEncoding != TextEncoding.ORIGINAL })
+        // `single`, not `none { … }`: the latter passes just as well when the trigger is missing.
+        assertEquals(TextEncoding.ORIGINAL, pickerIndex().triggers.single { it.name == "KEY-HELP" }.textEncoding)
     }
 
     @Test

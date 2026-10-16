@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown and missing arguments, for example `'offset' is '50.5', which is not an integer`.
   Numeric strings (`"50"`), whole decimals (`50.0`) and booleans in any case (`"True"`) are
   accepted, and read the same way by the tools.
+- **Regression tests now pin guards that nothing tested** (no behaviour change): `read_source`'s
+  containment of a `file` path, with and without `--converted-dir`; the module-name guard against
+  separators and `..`; the sha256 branch of staleness detection; the double-escaping recovery's
+  guard; the cursor's binding to every `search_modules` argument; the `--converted-dir` checks;
+  and the bounded index-resource registration under truly concurrent callers.
 
 ### Fixed
 - **The conversion timeout now stops the conversion.** Every converter runs under a wrapper — a
