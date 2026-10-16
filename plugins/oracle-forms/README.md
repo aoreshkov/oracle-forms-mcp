@@ -15,7 +15,7 @@ Claude Code then asks for the **Forms directory**. Point it at the folder holdin
 
 ## Requirements
 
-- **A JDK 21+ on your `PATH`.** Check with `javac -version`. The launcher below runs in Java's
+- **A JDK 25+ on your `PATH`.** Check with `javac -version`. The launcher below runs in Java's
   single-file source mode, which a bare JRE cannot compile. If you only have a JRE, use the
   [`.mcpb` bundle or `claude mcp add`](https://github.com/aoreshkov/oracle-forms-mcp#quick-start)
   instead — both take a prebuilt launcher script.

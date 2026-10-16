@@ -6,8 +6,8 @@ you invest time.
 
 ## Prerequisites
 
-- **JDK 21** (the build uses Gradle toolchains, so any JDK that can run Gradle works —
-  the toolchain resolves 21 automatically).
+- **JDK 25** (the build uses Gradle toolchains, so any JDK 17+ that can start the wrapper works —
+  Gradle downloads JDK 25 for its daemon and the toolchain when none is installed).
 - No other setup: `./gradlew` downloads everything else.
 - **No Oracle installation is required to build or test.** Converter behavior is covered by a
   fake `ORACLE_HOME` (stub scripts), and the copy-mode pipeline runs end-to-end against the

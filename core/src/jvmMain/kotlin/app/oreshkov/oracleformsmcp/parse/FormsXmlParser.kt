@@ -330,7 +330,7 @@ internal object FormsXmlParser {
 
                         // Any named element directly on an object-library tab is a stored object.
                         if (tab != null && parent?.element == "ObjectLibraryTab" && name != null) {
-                            tab = tab!!.copy(entries = tab!!.entries + ObjectLibraryEntry(name, element))
+                            tab = tab.copy(entries = tab.entries + ObjectLibraryEntry(name, element))
                         }
                     }
 

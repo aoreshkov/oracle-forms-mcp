@@ -1765,7 +1765,7 @@ class FormsService(
         Path.of(
             converter.convert(
                 key = key,
-                sourcePath = conversionSource(scanned).toString(),
+                sourcePath = conversionSource(scanned),
                 targetDir = convertedDirOf(key).toString(),
             ),
         )

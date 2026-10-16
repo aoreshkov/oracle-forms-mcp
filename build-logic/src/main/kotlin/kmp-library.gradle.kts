@@ -17,7 +17,7 @@ val libs = the<VersionCatalogsExtension>().named("libs")
 
 kotlin {
     jvm()
-    jvmToolchain(21)
+    jvmToolchain(25)
 
     // Published-library policy: every public declaration must carry an explicit visibility and
     // return type. Pairs with the ABI validation below so the surface is intentional, not inferred.

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The server now needs Java 25 or later** (it was 21). Java 25 is the current long-term-support
+  release, and the server is compiled for it, so on an older Java it does not start. Install a
+  JRE 25+ for the `.mcpb` bundle and `claude mcp add`, or a JDK 25+ for the Claude Code plugin.
+  The Docker image already ran on Java 25 and is unchanged. **0.14.0 is the last release that runs
+  on Java 21**; plugin users who cannot upgrade Java yet can pin it as the plugin's server version.
+- **The Claude Code plugin explains a Java that is too old** (plugin version 1.3.0). When "latest"
+  resolves to a server that needs a newer Java than the one on `PATH`, the plugin used to fail with
+  a raw `UnsupportedClassVersionError`. It now says which Java the server needs, which one it found,
+  and that pinning 0.14.0 is the alternative. The launcher still compiles on Java 21 so that it can
+  report this.
+- **Build toolchain:** Gradle 9.8.1 (fixes three high-severity advisories in the daemon and in
+  repository handling), Kotlin 2.4.20, Kover 0.9.11, Kermit 2.2.0, SLF4J 2.0.20, Logback 1.6.5.
+  Building needs no local JDK 25: Gradle provisions one for the daemon and the toolchain.
+
 ## [0.14.0] - 2026-10-16
 
 ### Changed

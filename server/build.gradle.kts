@@ -30,7 +30,7 @@ tasks.processTestResources {
 // Single source of truth for the MCP `Implementation` version: bake `project.version`
 // (from gradle.properties) into a classpath resource read at startup, so the advertised
 // server version can never drift from the build. See `ServerVersion` in the server sources.
-val generateVersionResource by tasks.registering(WriteProperties::class) {
+val generateVersionResource = tasks.register<WriteProperties>("generateVersionResource") {
     destinationFile = layout.buildDirectory.file("generated/version/mcp-version.properties")
     property("version", providers.provider { project.version.toString() })
 }
@@ -55,11 +55,11 @@ application {
 // never disagree with the build and the release process still has only TWO hand-bumped files
 // (gradle.properties + server.json) — see `.claude/skills/release`.
 //
-// The bundle carries the plain `installDist` tree and therefore needs a JRE 21+ on the user's
+// The bundle carries the plain `installDist` tree and therefore needs a JRE 25+ on the user's
 // PATH. MCPB's `compatibility.runtimes` can only express Node/Python, so that prerequisite is
 // documented in the manifest text and the README, not enforced by the format.
 // ---------------------------------------------------------------------------------------------
-val generateMcpbManifest by tasks.registering(Copy::class) {
+val generateMcpbManifest = tasks.register<Copy>("generateMcpbManifest") {
     description = "Generates the MCPB manifest.json with the build's version baked in."
     val buildVersion = project.version.toString()
     inputs.property("version", buildVersion)
@@ -69,7 +69,7 @@ val generateMcpbManifest by tasks.registering(Copy::class) {
     filter { line -> line.replace("@version@", buildVersion) }
 }
 
-val packageMcpb by tasks.registering(Zip::class) {
+tasks.register<Zip>("packageMcpb") {
     description = "Packages the server distribution as an installable .mcpb bundle."
     group = "distribution"
 
