@@ -16,7 +16,7 @@ import kotlinx.coroutines.runBlocking
 
 private const val DEFAULT_PORT = 3000
 
-private val USAGE = """
+internal val USAGE: String = """
     oracle-forms-mcp — MCP server serving the content of Oracle Forms modules in a directory.
 
     Usage: server [options] [<forms-dir>]

@@ -41,6 +41,9 @@ tasks.processResources {
 // Let the version test assert the resource matches the build's project.version.
 tasks.test {
     systemProperty("oracle-forms-mcp.expectedVersion", project.version.toString())
+    // `-Pgolden.update=true` rewrites the golden files under src/test/resources/golden instead of
+    // comparing against them. Read the diff before committing it.
+    providers.gradleProperty("golden.update").orNull?.let { systemProperty("golden.update", it) }
 }
 
 application {
