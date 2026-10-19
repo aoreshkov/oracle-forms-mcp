@@ -14,6 +14,10 @@ kermit = "2.2.0"
 slf4j = "2.0.20"
 kotlin-logging = "8.0.4"       # matches the MCP SDK's transitive facade; needed to silence its stdout banner
 logback = "1.6.5"
+# Pinned exactly: before 1.0 a minor may break, and what @ExperimentalCliKitApi marks (Main.kt uses
+# Constraint.RequiresValue) may change in any minor. 0.2.0 is built with Kotlin 2.4.21, a patch ahead
+# of the CodeQL cap above; on each bump, check which Kotlin the release was built with.
+cli-kit = "0.2.0"
 
 [libraries]
 # Build (gradle-plugin classpath for build-logic convention plugins)
@@ -45,6 +49,10 @@ kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }
 kotlin-logging = { module = "io.github.oshai:kotlin-logging", version.ref = "kotlin-logging" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+
+# CLI: parser, help and program runner behind Main.kt. cli-kit-testing always has cli-kit's version.
+cli-kit = { module = "app.oreshkov.clikit:cli-kit", version.ref = "cli-kit" }
+cli-kit-testing = { module = "app.oreshkov.clikit:cli-kit-testing", version.ref = "cli-kit" }
 
 # Kotlinx
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }

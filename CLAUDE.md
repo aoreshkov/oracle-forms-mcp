@@ -48,6 +48,11 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
 
 - **stdout is the stdio protocol channel.** All logging goes Kermit → SLF4J → Logback → stderr
   (`routeKermitToSlf4j()` runs before the SDK creates any logger; `logback.xml` targets stderr).
+  The command line is cli-kit's (`Main.kt`: one `CommandSpec` drives parsing, help and the
+  Environment list; `CliOptionsTest` runs it through `program.record`, the help page is pinned in
+  `golden/help-root.txt`, regenerated with `-Pgolden.update=true`). The kit writes stdout only for
+  `--help` and `--version`; a summary that belongs on stdout (`--prefetch`) goes through
+  `context.output`, never `println`.
 - **Index JSON stays small.** PL/SQL bodies live in `plsql/**` sidecars (or the `.pld` itself),
   referenced by 1-based inclusive `SourceRef` line ranges. Never inline code into `ModuleIndex`.
 - **`SourceRef` paths are cache-relative and layout-independent.** The converted text form is
@@ -217,8 +222,8 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   (`ModuleType.matchConverted`) — plus `FormsService.sharedOutputLock`, which serialises each conversion **together with its
   `canonicalizeConverted` rename** whenever `--converted-dir` is set: a freely named output is
   overwritable by the next run until it carries its module's name. Both options also read `OFMCP_CONVERT_COMMAND` /
-  `OFMCP_CONVERTED_DIR` (flag wins), and `Main.configured()` treats blank *and* an unsubstituted
-  `${user_config.…}` template as unset — that is how the MCPB/plugin channels pass "not set". Shared output/exit-code handling lives in `ConversionSupport.kt`: a file counts
+  `OFMCP_CONVERTED_DIR` (flag wins), and the `configured()` converter in `Main.kt` treats blank *and* an unsubstituted
+  `${user_config.…}` template as unset (cli-kit's `unsetWhen`) — that is how the MCPB/plugin channels pass "not set". Shared output/exit-code handling lives in `ConversionSupport.kt`: a file counts
   as produced only when it is fresh (not older than `startedAt` minus the 2s FAT slack) **and** new or
   changed (mtime+size) since the directory listing `OutputRun.begin` takes — freshness alone takes
   the sibling converted a moment ago. So a converter that copies with preserved mtimes (`copy`,

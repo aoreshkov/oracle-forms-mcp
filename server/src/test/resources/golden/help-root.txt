@@ -1,0 +1,120 @@
+oracle-forms-mcp — MCP server serving the content of Oracle Forms modules in a
+directory.
+
+The forms directory (required) may be given with --forms-dir or as the
+positional argument. Conversion of .fmb/.mmb/.olb/.pll binaries uses, in order:
+the --convert-command command if given, else the frmf2xml/frmcmp tools under
+ORACLE_HOME if that is set; otherwise pre-converted files (*_fmb.xml, *_mmb.xml,
+*_olb.xml, *.pld) are expected next to the modules and copied into the cache. A
+.pll library goes to the --compile-command command first when one is given; the
+other module types are unaffected by it.
+
+Usage:
+  server [options] [forms-dir]
+
+Examples:
+  # Serve a directory over stdio
+  server C:\forms
+
+  # http://127.0.0.1:3000/mcp, this machine only
+  server --forms-dir /srv/forms --transport http --port 3000
+
+  # Convert with a site-supplied tool, into one directory
+  server --forms-dir C:\forms --convert-command C:\tools\fmb2xml.bat --converted-dir C:\forms-xml
+
+  # A converter command line with its own arguments
+  server --forms-dir /srv/forms --convert-command "/opt/forms/convert.sh --xml {}"
+
+  # Warm the whole cache, then exit
+  server --forms-dir /srv/forms --prefetch-all
+
+  # Libraries through frmcmp, everything else through ORACLE_HOME or the cache
+  server --forms-dir /srv/forms --converted-dir /srv/forms-xml --compile-command "frmcmp_batch Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}"
+
+Arguments:
+  forms-dir  The same as --forms-dir
+
+Options:
+      --forms-dir <path>          Directory containing the Forms modules
+      --convert-command <cmd>     Site-supplied converter run instead of
+                                  frmf2xml: a whole command line with its
+                                  arguments, quoting any part that contains
+                                  spaces ("C:\tools\my conv.bat" -xml), or a
+                                  JSON array of arguments
+                                  (["wine","f2x.exe","-xml"]). It is spawned
+                                  directly, never through a shell.
+
+                                  The module's absolute path replaces {} and is
+                                  appended as the last argument when {} does not
+                                  appear; the output file's absolute path
+                                  replaces {out} (never appended). Runs with the
+                                  cwd set to the converted directory
+                                  (--converted-dir, else the module's cache dir)
+                                  and must write the text forms there or to
+                                  {out} (*_fmb.xml etc., .pld for .pll). Takes
+                                  precedence over ORACLE_HOME.
+                                  [env: OFMCP_CONVERT_COMMAND]
+      --compile-command <cmd>     Converter for .pll libraries only, run instead
+                                  of whatever would convert them otherwise; same
+                                  syntax and placeholders as --convert-command.
+                                  frmcmp writes its .pld next to the module
+                                  unless told otherwise, so pass it
+                                  Output_File={out}.
+                                  [env: OFMCP_COMPILE_COMMAND]
+      --converted-dir <path>      Directory the converted XML/.pld text forms
+                                  are written into: one flat directory for all
+                                  modules, each file named after its module
+                                  (orders_fmb.xml, utils.pld). The converter
+                                  runs with this as its working directory.
+                                  Created if missing.
+                                  [default: inside each module's own cache entry]
+                                  [env: OFMCP_CONVERTED_DIR]
+      --transport <name>          Transport to run (stdio|http) [default: stdio]
+      --host <address>            Address the http transport listens on, this
+                                  machine only by default. The transport has no
+                                  authentication, so anything else lets every
+                                  client that can reach the port call every
+                                  tool; inside a container use 0.0.0.0 and
+                                  publish the port on the host's loopback (-p
+                                  127.0.0.1:3000:3000). [default: 127.0.0.1]
+                                  [env: OFMCP_HTTP_HOST]
+      --port <int>                Port for the http transport [default: 3000]
+      --allowed-host <host>       Extra Host header the http transport accepts;
+                                  repeatable. Only localhost by default, via
+                                  DNS-rebinding protection.
+      --allowed-origin <url>      Extra Origin the http transport accepts;
+                                  repeatable
+      --cache-dir <path>          Cache directory
+                                  [default: OS cache dir + /oracle-forms-mcp]
+      --annotations-dir <path>    Durable annotation store
+                                  [default: <cache dir>/annotations]
+      --conversion-timeout <sec>  Kill a conversion after this many seconds
+                                  [default: 120]
+      --prefetch <pattern>        Instead of serving, fetch (convert and index)
+                                  every module whose name contains <pattern>
+                                  (case-insensitive), one at a time, then exit,
+                                  so a session's search_modules covers them.
+                                  Already-current modules are skipped cheaply,
+                                  so a rerun resumes. Exits 1 when any module
+                                  failed.
+      --prefetch-all              The same for every module in the forms
+                                  directory
+      --prefetch-type <type>      Only prefetch this module type; given alone,
+                                  every module of that type
+                                  (form|menu|library|object_library)
+      --json                      With a prefetch, write its summary on stdout
+                                  as JSON (modules, fetched, current, failed)
+
+Environment:
+  OFMCP_CONVERT_COMMAND  Same as --convert-command
+  OFMCP_COMPILE_COMMAND  Same as --compile-command
+  OFMCP_CONVERTED_DIR    Same as --converted-dir
+  OFMCP_HTTP_HOST        Same as --host
+  ORACLE_HOME            Oracle Forms installation providing frmf2xml/frmcmp
+
+Notes:
+  exactly one of --forms-dir and <forms-dir>
+  --prefetch and --prefetch-all cannot be combined
+  --port requires --transport http
+  --allowed-host requires --transport http
+  --allowed-origin requires --transport http

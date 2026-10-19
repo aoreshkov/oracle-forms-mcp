@@ -21,6 +21,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Build toolchain:** Gradle 9.8.1 (fixes three high-severity advisories in the daemon and in
   repository handling), Kotlin 2.4.20, Kover 0.9.11, Kermit 2.2.0, SLF4J 2.0.20, Logback 1.6.5.
   Building needs no local JDK 25: Gradle provisions one for the daemon and the toolchain.
+- **The command line is parsed by [cli-kit](https://github.com/aoreshkov/delva/tree/main/cli-kit)
+  0.2.0**, so the help page, the parser and the list of environment variables come from one
+  declaration and can no longer drift apart. Every option, variable and default works as before.
+  What you will notice:
+  - `--version` (`-V`) prints the version, and `--option=value` works for every option.
+  - A mistyped option gets a suggestion (`did you mean --convert-command?`), and a usage error
+    prints the usage line instead of the whole help page.
+  - `--help` wraps to the terminal (at most 100 columns), and has Environment and Notes sections.
+  - The warning for an unfilled `${user_config.…}` value now reads
+    `warning: --converted-dir: ignoring '${user_config.converted_dir}': an unfilled
+    user-configuration template, so it is unset`.
+  - `--prefetch` shows a progress line at a terminal, reports each failed module as it happens,
+    and with the new `--json` writes its summary as a JSON object for CI.
+- **Some command lines that were silently accepted are now refused** (exit status 2):
+  `--prefetch` together with `--prefetch-all` (the last one used to win), `--port`,
+  `--allowed-host` or `--allowed-origin` without `--transport http` (they used to be ignored), and
+  both `--forms-dir` and a positional forms directory.
+- **An unexpected failure exits with status 70** instead of the JVM's 1. Its stack trace is still
+  logged on stderr first, so it reaches the MCP client's log.
+- **A stdio server stopped by a signal now shuts down cleanly.** On SIGTERM or Ctrl-C it closes the
+  server, and the session's tool-error summary is logged, as when the client closes stdin.
+- The start script passes `--enable-native-access=ALL-UNNAMED`: cli-kit uses native code on Windows
+  to enable colour at a console. Without the flag, the JDK prints a warning there.
 
 ## [0.14.0] - 2026-10-16
 
