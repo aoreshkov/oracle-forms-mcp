@@ -454,7 +454,15 @@ tool to anyone who can reach it.
 --prefetch <pattern>        Fetch every module whose name contains <pattern>, then exit
 --prefetch-all              Fetch every module in the forms directory, then exit
 --prefetch-type <type>      Limit --prefetch to form, menu, library or object_library
+--json                      With a prefetch: the summary on stdout as a JSON object
+--help / --version          Print the full help page, or the version, and exit
 ```
+
+`server --help` is the complete reference: every option with its default and its variable, and
+the rules between them. `--port`, `--allowed-host` and `--allowed-origin` need `--transport http`,
+and `--prefetch` and `--prefetch-all` cannot be combined. Exit status 0 is success, 1 a prefetch
+in which a module failed, 2 a command-line mistake, and 70 an unexpected failure, whose stack trace
+precedes it on stderr.
 
 The converter options and the HTTP bind address can also be set as environment variables, for
 clients that configure a server with variables rather than arguments (`docker run -e`, the `env`

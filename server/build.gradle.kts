@@ -12,12 +12,14 @@ dependencies {
     implementation(libs.ktor.server.cio)
     implementation(libs.ktor.server.sse)
     implementation(libs.kermit)
+    implementation(libs.cli.kit)
 
     implementation(libs.slf4j.api)
     implementation(libs.kotlin.logging)
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.cli.kit.testing)
 }
 
 // Classpath fixtures under /fixtures/** come from the canonical demo dir at the repo root; the
@@ -48,6 +50,11 @@ tasks.test {
 
 application {
     mainClass = "app.oreshkov.oracleformsmcp.server.MainKt"
+    // cli-kit calls native code (FFM) on Windows only: to enable escape sequences at a console, and
+    // to tell a pipe whose reader left from a failed write. Granted here, it covers every channel
+    // that runs the start script (installDist, the release zip, MCPB, the GHCR image). Without it
+    // the JDK warns on stderr; under JEP 472's future deny default the kit carries on without it.
+    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
 // ---------------------------------------------------------------------------------------------

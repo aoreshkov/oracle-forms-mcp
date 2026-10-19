@@ -1,36 +1,27 @@
 package app.oreshkov.oracleformsmcp.server
 
+import app.oreshkov.clikit.HelpRenderer
+import app.oreshkov.clikit.testing.GoldenFiles
 import java.nio.file.Path
-import kotlin.io.path.createDirectories
-import kotlin.io.path.exists
-import kotlin.io.path.readText
-import kotlin.io.path.writeText
 import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.fail
 
 /**
  * The help page is the operator's whole manual for the flags, so a change to it is pinned in a
- * golden file and shows up as a reviewed diff. Regenerate with `-Pgolden.update=true` and read the
- * diff before committing it.
+ * golden file and shows up as a reviewed diff. It is rendered at a fixed 80 columns, so the file
+ * does not depend on the terminal that runs the test. Regenerate with `-Pgolden.update=true` and
+ * read the diff before committing it.
+ *
+ * Only the help page: the tree has no `completion` command, so the completion scripts
+ * `GoldenFiles.assertSurface` would also pin are output the server never produces.
  */
 class HelpPageTest {
 
+    private val golden = GoldenFiles(Path.of("src", "test", "resources", "golden"), "golden.update")
+
     @Test
     fun theHelpPageMatchesItsGoldenFile() {
-        val file = GOLDEN_DIR.resolve("help-root.txt")
-        val actual = USAGE.replace("\r\n", "\n") + "\n"
-        if (System.getProperty(UPDATE_PROPERTY).toBoolean()) {
-            file.parent.createDirectories()
-            file.writeText(actual)
-            return
-        }
-        if (!file.exists()) fail("missing golden file $file; generate it with -P$UPDATE_PROPERTY=true")
-        assertEquals(file.readText().replace("\r\n", "\n"), actual, "the help page changed; regenerate with -P$UPDATE_PROPERTY=true and review the diff")
-    }
-
-    private companion object {
-        val GOLDEN_DIR: Path = Path.of("src", "test", "resources", "golden")
-        const val UPDATE_PROPERTY = "golden.update"
+        val path = listOf(commandTree)
+        golden.assertMatches(GoldenFiles.helpFileName(path), HelpRenderer().render(path))
+        golden.assertNoOrphans(setOf(GoldenFiles.helpFileName(path)))
     }
 }
