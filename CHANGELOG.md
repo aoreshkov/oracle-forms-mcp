@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-19
+
 ### Changed
 - **The server now needs Java 25 or later** (it was 21). Java 25 is the current long-term-support
   release, and the server is compiled for it, so on an older Java it does not start. Install a
@@ -774,7 +776,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.12.0...v0.13.0
