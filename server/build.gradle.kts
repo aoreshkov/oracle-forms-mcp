@@ -57,6 +57,30 @@ application {
     applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
+// The start scripts choose their Java from OFMCP_JAVA_HOME first, then JAVA_HOME, then PATH — the
+// MCPB bundle's Java setting is passed that way (see startscripts/ for why not as JAVA_HOME). Gradle
+// offers no hook into its templates short of copying them whole, so a fragment is spliced in ahead
+// of the line that resolves JAVA_HOME; if a Gradle upgrade rewords that line, the build fails here
+// rather than shipping scripts that silently ignore the setting.
+tasks.startScripts {
+    val unixFragment = layout.projectDirectory.file("startscripts/ofmcp-java-home.sh")
+    val windowsFragment = layout.projectDirectory.file("startscripts/ofmcp-java-home.bat")
+    inputs.files(unixFragment, windowsFragment)
+    doLast {
+        fun splice(script: File, anchor: String, fragment: File) {
+            val text = script.readText()
+            check(anchor in text) { "$script no longer contains \"$anchor\"; move the OFMCP_JAVA_HOME splice" }
+            val eol = if ("\r\n" in text) "\r\n" else "\n"
+            val lines = fragment.readText().replace("\r\n", "\n").replace("\n", eol)
+            script.writeText(text.replaceFirst(anchor, lines + anchor))
+        }
+        val task = this as CreateStartScripts
+        val bin = task.outputDir!!
+        splice(bin.resolve(task.applicationName!!), "# Determine the Java command", unixFragment.asFile)
+        splice(bin.resolve("${task.applicationName}.bat"), "@rem Find java.exe", windowsFragment.asFile)
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // MCPB bundle (one-click desktop install)
 //
@@ -66,6 +90,7 @@ application {
 // (gradle.properties + server.json) — see `.claude/skills/release`.
 //
 // The bundle carries the plain `installDist` tree and therefore needs a JRE 25+ on the user's
+// machine: the one its Java installation setting names (OFMCP_JAVA_HOME), else JAVA_HOME, else
 // PATH. MCPB's `compatibility.runtimes` can only express Node/Python, so that prerequisite is
 // documented in the manifest text and the README, not enforced by the format.
 // ---------------------------------------------------------------------------------------------
