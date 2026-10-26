@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "oracle-forms": {
-      "command": "java",
+      "command": "${user_config.java}",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/launcher/OracleFormsMcpLauncher.java",
         "--forms-dir",

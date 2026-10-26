@@ -298,8 +298,9 @@ server into the plugin's data directory on first use — no clone, no build, no 
 tools are live after `/reload-plugins`, and the plugin's `trace-form` skill teaches the traversal
 above — the order to ask in, and the readings that mislead — so a trace does not start with `grep`.
 
-> **Requires a JDK 25+ on your `PATH`** (`javac -version`), because the plugin's bootstrap runs in
-> Java's single-file source mode. With only a JRE, use the `.mcpb` bundle or `claude mcp add` below.
+> **Requires a JDK 25+** (`javac -version`), because the plugin's bootstrap runs in Java's
+> single-file source mode. It uses the one on your `PATH` unless you set the plugin's `java` option
+> to another JDK's `java` executable. With only a JRE, use the `.mcpb` bundle or `claude mcp add` below.
 
 Details, configuration options, and the escape hatches are in the
 [plugin README](plugins/oracle-forms/README.md).

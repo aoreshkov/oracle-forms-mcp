@@ -10,7 +10,7 @@
       "name": "oracle-forms",
       "source": "./plugins/oracle-forms",
       "displayName": "Oracle Forms",
-      "description": "Read Oracle Forms modules (.fmb/.mmb/.pll/.olb) from a directory — blocks, items, triggers, program units, PL/SQL, and durable annotations. Needs a JDK 25+ on PATH.",
+      "description": "Read Oracle Forms modules (.fmb/.mmb/.pll/.olb) from a directory — blocks, items, triggers, program units, PL/SQL, and durable annotations. Needs a JDK 25+, on PATH or configured by path.",
       "category": "development",
       "keywords": ["oracle", "forms", "fmb", "plsql", "legacy", "modernization"],
       "homepage": "https://github.com/aoreshkov/oracle-forms-mcp#readme",

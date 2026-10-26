@@ -15,8 +15,9 @@ Claude Code then asks for the **Forms directory**. Point it at the folder holdin
 
 ## Requirements
 
-- **A JDK 25+ on your `PATH`.** Check with `javac -version`. The launcher below runs in Java's
-  single-file source mode, which a bare JRE cannot compile. If you only have a JRE, use the
+- **A JDK 25+**, on your `PATH` (check with `javac -version`) or anywhere else, named by the
+  `java` option below. The launcher runs in Java's single-file source mode, which a bare JRE
+  cannot compile. If you only have a JRE, use the
   [`.mcpb` bundle or `claude mcp add`](https://github.com/aoreshkov/oracle-forms-mcp#quick-start)
   instead — both take a prebuilt launcher script.
 - **An Oracle Forms installation (`ORACLE_HOME`) for live conversion**, exported in the environment
@@ -36,6 +37,7 @@ Set these in `/plugin` → **Oracle Forms** → configure; they are stored in yo
 | `compile_command` | — (optional) | A separate converter for `.pll` libraries only, with the same syntax as `convert_command`; the output `.pld` path replaces `{out}`. Needed when `convert_command` is built on `frmf2xml`, which rejects libraries: `frmcmp_batch Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}`. Needs server 0.11.0+. |
 | `converted_dir` | — (optional) | Where to keep the converted XML / `.pld` text forms: one flat directory for all modules, each file named after its module (`orders_fmb.xml`, `utils.pld`). Must not be the forms directory. Defaults to inside the cache. |
 | `server_version` | `latest` | Which released server build to run. Set a version such as `0.4.0` to pin. |
+| `java` | `java` | The `java` executable that runs the launcher and the server — a JDK 25+. The default is the one on `PATH`; give a full path to the executable (`C:\Program Files\Java\jdk-25\bin\java.exe`, `/usr/lib/jvm/jdk-25/bin/java`) to use a JDK that isn't on `PATH`, or a newer one than `PATH` has. Plugin 1.4.0+. |
 
 The three optional ones are handed to the server as `OFMCP_CONVERT_COMMAND`,
 `OFMCP_COMPILE_COMMAND` and `OFMCP_CONVERTED_DIR` (see the [escape hatches](#escape-hatches) table)

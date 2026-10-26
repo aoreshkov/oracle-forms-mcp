@@ -7,9 +7,10 @@
 // pipes the MCP protocol speaks over.
 //
 // It is executed in single-file source mode (`java OracleFormsMcpLauncher.java ...`), which needs
-// a JDK on PATH — a bare JRE has no compiler — and the server it loads needs Java 25+. That
-// prerequisite is documented in the plugin manifest and README; the JRE-only alternatives are the
-// .mcpb bundle and `claude mcp add`.
+// a JDK — a bare JRE has no compiler — and the server it loads needs Java 25+. Which `java` runs
+// it is the plugin's `java` option (default: the one on PATH), substituted into .mcp.json's
+// `command`. That prerequisite is documented in the plugin manifest and README; the JRE-only
+// alternatives are the .mcpb bundle and `claude mcp add`.
 //
 // The launcher itself deliberately stays within the Java 21 language and API (CI compiles it with
 // `--release 21`): on a JDK too old for the server it must still compile and start, so it can say
@@ -137,7 +138,7 @@ public final class OracleFormsMcpLauncher {
                 String installed = newestInstalled(distRoot);
                 if (installed == null) throw e;
                 warn("could not install the latest release " + version + ": " + describe(e)
-                        + " — using installed " + installed);
+                        + "; using installed " + installed);
                 return distRoot.resolve(installed);
             }
         }
@@ -305,7 +306,7 @@ public final class OracleFormsMcpLauncher {
             }
         }
         if (!Files.isDirectory(target.resolve("lib"))) {
-            throw new IOException("The release archive had no lib/ directory — refusing to install");
+            throw new IOException("The release archive had no lib/ directory; refusing to install");
         }
     }
 
@@ -340,11 +341,13 @@ public final class OracleFormsMcpLauncher {
         try {
             server = loader.loadClass(MAIN_CLASS);
         } catch (UnsupportedClassVersionError e) {
-            // "latest" moved past the Java on PATH: servers after 0.14.0 are compiled for Java 25.
+            // "latest" moved past the Java that runs us: servers after 0.14.0 are compiled for Java 25.
             fail("The oracle-forms-mcp server in " + dist + " needs Java " + SERVER_JAVA
                     + " or later, but the plugin is running on Java " + Runtime.version().feature()
-                    + ". Put a JDK " + SERVER_JAVA + "+ on PATH, or pin server version 0.14.0 (the"
-                    + " last to run on Java 21) in /plugin (Oracle Forms plugin config).");
+                    + " (" + System.getProperty("java.home") + "). Set the plugin's Java executable"
+                    + " to a JDK " + SERVER_JAVA + "+ java (or put one on PATH), or pin server"
+                    + " version 0.14.0 (the last to run on Java 21). Both are in /plugin (Oracle"
+                    + " Forms plugin config).");
             return;
         }
         Method main = server.getMethod("main", String[].class);
