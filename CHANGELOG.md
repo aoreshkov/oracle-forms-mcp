@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `C:\Program Files\Java\jdk-25\bin\java.exe`. It defaults to `java`, the one on `PATH`, so nothing
   changes until you set it. When the Java is too old for the server, the message now names the
   installation it found and points to this option.
+- **The `.mcpb` bundle can run on a Java that is not on `PATH`.** Its settings have a new optional
+  **Java installation** folder. Behind it, the `server` start script (also in the release zip and
+  `installDist`) now reads `OFMCP_JAVA_HOME` before `JAVA_HOME` and `PATH`. A separate variable
+  keeps an empty setting from hiding the `JAVA_HOME` you already have. The folder may be the
+  installation itself, its `bin` folder, or on macOS the `.jdk` bundle.
 
 ### Fixed
 - **The plugin's messages read correctly in a Windows console.** Three of them contained an em dash,

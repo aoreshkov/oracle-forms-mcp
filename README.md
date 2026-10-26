@@ -319,6 +319,13 @@ Register with Claude Code (stdio):
 claude mcp add oracle-forms -- server/build/install/server/bin/server --forms-dir C:\path\to\forms
 ```
 
+The `server` script runs on the Java installation `OFMCP_JAVA_HOME` names, else `JAVA_HOME`, else
+the `java` on `PATH`, so a JRE that is not on `PATH` is one variable away:
+
+```
+claude mcp add --env OFMCP_JAVA_HOME=C:\Java\jdk-25 --transport stdio oracle-forms -- server/build/install/server/bin/server --forms-dir C:\path\to\forms
+```
+
 ### Claude Desktop (one-click bundle)
 
 Download `oracle-forms-mcp-<version>.mcpb` from the
@@ -326,10 +333,12 @@ Download `oracle-forms-mcp-<version>.mcpb` from the
 Desktop installs it as a connector and prompts for your forms directory with a native folder picker
 — no JSON editing, no local build.
 
-> **Requires a JRE 25+ on your `PATH`.** The bundle ships the server, not a Java runtime. The
-> [MCPB](https://github.com/modelcontextprotocol/mcpb) manifest format can only declare Node and
-> Python runtimes, so this cannot be checked at install time: if the connector fails to start,
-> confirm `java -version` works in a terminal.
+> **Requires a JRE 25+.** The bundle ships the server, not a Java runtime. It runs on the **Java
+> installation** chosen in the connector's settings, else the one `JAVA_HOME` names, else the `java`
+> on your `PATH`. The [MCPB](https://github.com/modelcontextprotocol/mcpb) manifest format can only
+> declare Node and Python runtimes, so this cannot be checked at install time: if the connector
+> fails to start, choose the Java installation in its settings, or confirm `java -version` works in
+> a terminal.
 
 The same copy-mode caveat as [Docker](#docker-copy-mode-only) applies unless the machine has an
 Oracle Forms installation (`ORACLE_HOME`) for live `.fmb`/`.pll` conversion.
