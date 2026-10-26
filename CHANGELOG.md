@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-26
+
 ### Added
 - **The Claude Code plugin can run on a JDK that is not on `PATH`** (plugin version 1.4.0). A new
   `java` option names the `java` executable that runs the plugin, for example
@@ -792,7 +794,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.13.0...v0.13.1
