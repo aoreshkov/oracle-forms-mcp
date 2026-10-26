@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The Claude Code plugin can run on a JDK that is not on `PATH`** (plugin version 1.4.0). A new
+  `java` option names the `java` executable that runs the plugin, for example
+  `C:\Program Files\Java\jdk-25\bin\java.exe`. It defaults to `java`, the one on `PATH`, so nothing
+  changes until you set it. When the Java is too old for the server, the message now names the
+  installation it found and points to this option.
+
+### Fixed
+- **The plugin's messages read correctly in a Windows console.** Three of them contained an em dash,
+  which a Windows console showed as `�`; they are plain ASCII now.
+
 ## [0.15.0] - 2026-10-19
 
 ### Changed
