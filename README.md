@@ -409,6 +409,10 @@ warning at startup whenever that address is not loopback. The Host/Origin check 
 from being used against the server through DNS rebinding. It does not stop a client on the network
 that sends `Host: 127.0.0.1` itself.
 
+Sessions expire after 30 minutes without a request (an open event stream does not count, a tool
+call still running does), and their id then answers `404`, on which an MCP client starts a new
+session. At most 10,000 sessions are open at once.
+
 ### Docker (copy-mode only)
 
 A container image is published to `ghcr.io/aoreshkov/oracle-forms-mcp`. Oracle's `frmf2xml` /

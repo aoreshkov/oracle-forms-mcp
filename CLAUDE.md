@@ -196,6 +196,12 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   `OnDiskModuleCache.putIndex` writes-then-renames, `OnDiskAnnotationStore` serialises on
   `writeMutex`, and `addModuleIndexResource` tolerates a lost registration race. Lock order is
   always per-module fetch lock → `sharedOutputLock`, never the reverse.
+- **Nothing is keyed on the MCP session.** Since SDK 0.16, HTTP sessions expire after 30 min idle
+  (`SESSION_IDLE_TIMEOUT` in `HttpTransport.kt`; an in-flight call holds one, an open `GET` does
+  not), and the 2026-07-28 spec revision drops sessions altogether. All state lives in
+  `FormsService`, the cache and the annotation store, keyed by module or element; paging is
+  opaque cursors/offsets. The only session-bound features — `list_changed` notifications and the
+  log forwarder — stay isolated in `ModuleIndexResources` and `Logging.kt`.
 - Public API changes require `gradlew updateKotlinAbi` (KGP ABI validation on `core`).
 
 ## Gotchas
