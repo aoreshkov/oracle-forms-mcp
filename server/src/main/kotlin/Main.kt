@@ -26,6 +26,8 @@ import app.oreshkov.clikit.writeArray
 import app.oreshkov.clikit.writeObject
 import app.oreshkov.oracleformsmcp.model.ModuleType
 import app.oreshkov.oracleformsmcp.server.transport.DEFAULT_HTTP_HOST
+import app.oreshkov.oracleformsmcp.server.transport.allowedHostProblem
+import app.oreshkov.oracleformsmcp.server.transport.allowedOriginProblem
 import app.oreshkov.oracleformsmcp.server.transport.bindAddress
 import app.oreshkov.oracleformsmcp.server.transport.runHttpServer
 import app.oreshkov.oracleformsmcp.server.transport.runStdioServer
@@ -125,6 +127,15 @@ private val hostConverter: ValueConverter<String> = ValueConverter { raw ->
         ?: ConversionResult.Invalid("expected an address, e.g. 127.0.0.1 or 0.0.0.0")
 }.unsetWhen({ UNFILLED_TEMPLATE.matches(it.trim()) }, notice = ::unfilledNotice)
 
+/**
+ * A Host or Origin allowlist entry, trimmed and checked here: the SDK checks its entries only when
+ * the engine starts, and stops the server on a bad one with an exception that names no option.
+ */
+private fun allowListEntry(problem: (String) -> String?): ValueConverter<String> = ValueConverter { raw ->
+    val entry = raw.trim()
+    problem(entry)?.let { ConversionResult.Invalid(it) } ?: ConversionResult.Ok(entry)
+}
+
 /** The module types, spelled as `ModuleType` names them (`object_library`) and matched in any case. */
 private val moduleTypeConverter: ValueConverter<ModuleType> =
     Converters.enum(ModuleType.entries) { it.name.lowercase() }.let { exact ->
@@ -204,15 +215,17 @@ private val portOption = Option.Single(
 )
 private val allowedHostOption = Option.Repeated(
     "--allowed-host",
-    Converters.string,
-    help = "Extra Host header the http transport accepts; repeatable. Only localhost by default, via " +
-        "DNS-rebinding protection.",
+    allowListEntry(::allowedHostProblem),
+    help = "Extra Host header the http transport accepts (forms.example, an IPv6 address in brackets); " +
+        "repeatable. Only localhost by default, via DNS-rebinding protection. A browser's Origin is still " +
+        "checked against localhost; allow another with --allowed-origin.",
     valueName = "host",
 )
 private val allowedOriginOption = Option.Repeated(
     "--allowed-origin",
-    Converters.string,
-    help = "Extra Origin the http transport accepts; repeatable",
+    allowListEntry(::allowedOriginProblem),
+    help = "Extra Origin the http transport accepts, written as a browser sends it (https://forms.example); " +
+        "repeatable. Compared by host only, so the scheme and port do not narrow it.",
     valueName = "url",
 )
 private val cacheDirOption = Option.Single(
