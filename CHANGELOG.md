@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-28
+
 ### Changed
 - **MCP Kotlin SDK 0.16.0** (from 0.15.0), which bounds Streamable HTTP sessions. On
   `--transport http` (and so in the container image), a session now **expires after 30 minutes
@@ -821,7 +823,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.13.1...v0.14.0
