@@ -2,24 +2,63 @@ package app.oreshkov.oracleformsmcp.server.transport
 
 import java.net.Inet6Address
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** The pure decisions behind [runHttpServer]: what it binds, who is allowed in, and what it reports. */
 class HttpTransportSettingsTest {
 
-    private val localhost = listOf("localhost", "127.0.0.1", "[::1]")
+    private val localhostHosts = listOf("localhost", "127.0.0.1", "[::1]")
+    private val localhostOrigins = listOf("http://localhost", "http://127.0.0.1", "http://[::1]")
 
     @Test
     fun `no extra entries keeps the SDK default`() {
-        assertNull(allowList(localhost, emptyList()))
+        assertEquals(AllowLists(hosts = null, origins = null), allowLists(emptyList(), emptyList()))
     }
 
     @Test
     fun `extra entries are added to localhost, not substituted for it`() {
-        assertEquals(localhost + "forms.example", allowList(localhost, listOf("forms.example")))
+        assertEquals(
+            AllowLists(localhostHosts + "forms.example", localhostOrigins + "https://forms.example"),
+            allowLists(listOf("forms.example"), listOf("https://forms.example")),
+        )
+    }
+
+    /** The SDK skips the Origin check for custom hosts with `null` origins; see [allowLists]. */
+    @Test
+    fun `extra hosts alone keep the Origin check on localhost`() {
+        assertEquals(AllowLists(localhostHosts + "forms.example", localhostOrigins), allowLists(listOf("forms.example"), emptyList()))
+    }
+
+    /** The SDK parses Origin entries as URLs; a bare `localhost` stopped the server at startup. */
+    @Test
+    fun `extra origins alone keep the localhost origins as URLs`() {
+        val origins = allowLists(emptyList(), listOf("https://forms.example")).origins.orEmpty()
+        assertEquals(localhostOrigins + "https://forms.example", origins)
+        assertTrue(origins.all { allowedOriginProblem(it) == null }, "$origins")
+    }
+
+    @Test
+    fun `an allowed host is a Host header value`() {
+        listOf("forms.example", "FORMS.example", "192.168.1.10", "forms.example:3000", "[::1]", "[fe80::1%257]:3000")
+            .forEach { assertNull(allowedHostProblem(it), it) }
+        assertContains(allowedHostProblem("https://forms.example:3000/mcp").orEmpty(), "e.g. forms.example:3000")
+        assertContains(allowedHostProblem("fe80::1").orEmpty(), "[fe80::1]")
+        listOf("", "forms example", "user@forms.example", "forms.example:http", "[::1", ":3000")
+            .forEach { assertNotNull(allowedHostProblem(it), "accepted '$it'") }
+    }
+
+    @Test
+    fun `an allowed origin is what a browser sends`() {
+        listOf("https://forms.example", "http://forms.example:8080", "http://[::1]:3000", "https://forms.example/")
+            .forEach { assertNull(allowedOriginProblem(it), it) }
+        assertContains(allowedOriginProblem("forms.example").orEmpty(), "https://forms.example")
+        listOf("https://", "https://forms.example/mcp", "https://u@forms.example", "https://forms.example?x", "null", "a b://c")
+            .forEach { assertNotNull(allowedOriginProblem(it), "accepted '$it'") }
     }
 
     @Test
@@ -43,6 +82,16 @@ class HttpTransportSettingsTest {
         assertEquals(2, warnings.size)
         assertTrue("--allowed-host 192.168.1.10" in warnings.last(), warnings.last())
         assertEquals(1, bindWarnings(bindAddress("192.168.1.10"), 3000, listOf("192.168.1.10")).size)
+    }
+
+    /** Unbracketed, the advice was a value the SDK refuses at startup. */
+    @Test
+    fun `the advice for an IPv6 address is a value --allowed-host accepts`() {
+        val warnings = bindWarnings(bindAddress("fe80::1"), 3000, emptyList())
+        val advised = "[fe80:0:0:0:0:0:0:1]"
+        assertContains(warnings.last(), "--allowed-host $advised")
+        assertNull(allowedHostProblem(advised))
+        assertEquals(1, bindWarnings(bindAddress("fe80::1"), 3000, listOf(advised)).size)
     }
 
     @Test

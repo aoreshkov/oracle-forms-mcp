@@ -79,11 +79,17 @@ Options:
                                   127.0.0.1:3000:3000). [default: 127.0.0.1]
                                   [env: OFMCP_HTTP_HOST]
       --port <int>                Port for the http transport [default: 3000]
-      --allowed-host <host>       Extra Host header the http transport accepts;
+      --allowed-host <host>       Extra Host header the http transport accepts
+                                  (forms.example, an IPv6 address in brackets);
                                   repeatable. Only localhost by default, via
-                                  DNS-rebinding protection.
-      --allowed-origin <url>      Extra Origin the http transport accepts;
-                                  repeatable
+                                  DNS-rebinding protection. A browser's Origin
+                                  is still checked against localhost; allow
+                                  another with --allowed-origin.
+      --allowed-origin <url>      Extra Origin the http transport accepts,
+                                  written as a browser sends it
+                                  (https://forms.example); repeatable. Compared
+                                  by host only, so the scheme and port do not
+                                  narrow it.
       --cache-dir <path>          Cache directory
                                   [default: OS cache dir + /oracle-forms-mcp]
       --annotations-dir <path>    Durable annotation store

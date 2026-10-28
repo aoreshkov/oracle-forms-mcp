@@ -284,6 +284,19 @@ class CliOptionsTest {
         assertEquals(TransportKind.STDIO, parse("/srv/forms", env = mapOf(ENV_HTTP_HOST to "0.0.0.0")).transport)
     }
 
+    /** The SDK reads these only when the engine starts, and stopped the server naming no option. */
+    @Test
+    fun malformedAllowListEntriesAreUsageErrors() {
+        val origin = refused("/srv/forms", "--transport", "http", "--allowed-origin", "forms.example")
+        assertContains(origin, "--allowed-origin")
+        assertContains(origin, "https://forms.example")
+        val host = refused("/srv/forms", "--transport", "http", "--allowed-host", "https://forms.example")
+        assertContains(host, "--allowed-host")
+        assertContains(host, "no scheme")
+        val http = parse("/srv/forms", "--transport", "http", "--allowed-host", " forms.example ", "--allowed-host", "[::1]:3000")
+        assertEquals(listOf("forms.example", "[::1]:3000"), http.allowedHosts, "trimmed, and a port is allowed")
+    }
+
     @Test
     fun malformedValuesAreUsageErrors() {
         assertContains(refused("/srv/forms", "--transport", "sse"), "is not one of stdio|http")

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`--allowed-origin` no longer stops the HTTP server at startup.** Any use of it used to end with
+  `IllegalStateException: Invalid origin in DnsRebindingProtection.allowedOrigins: 'localhost'`,
+  so the option had never worked. The localhost entries it was combined with are now written as
+  origins (`http://localhost`, …), and the origin you give is admitted beside them.
+- **`--allowed-host` no longer switches off the Origin check.** Given without `--allowed-origin`,
+  it used to let a request through whatever `Origin` it carried. A browser's `Origin` is now always
+  checked, against localhost plus any `--allowed-origin`, and anything else gets `403`, as the MCP
+  transport spec requires. Requests with no `Origin` (every client that is not a browser) are
+  unaffected. **If a browser-based client reaches the server through a host you allowed, add that
+  origin with `--allowed-origin`.**
+- **A malformed `--allowed-host` or `--allowed-origin` is a command-line error** (exit 2) that
+  names the option and the expected form, instead of an unexpected failure once the server starts.
+  An origin needs its scheme (`https://forms.example`), and an IPv6 host goes in brackets
+  (`[fe80::1]`). The startup hint that suggests `--allowed-host` for an IPv6 bind address now
+  writes it in brackets too, so following it works.
+
 ## [0.16.0] - 2026-10-26
 
 ### Added

@@ -457,7 +457,8 @@ tool to anyone who can reach it.
 --transport stdio|http      Transport (default: stdio)
 --host <address>            HTTP bind address (default: 127.0.0.1; pass 0.0.0.0 inside a container)
 --port <int>                HTTP port (default: 3000)
---allowed-host / --allowed-origin   Extra HTTP hosts/origins (localhost-only by default)
+--allowed-host <host>       Extra HTTP Host header to accept (localhost-only by default)
+--allowed-origin <url>      Extra browser Origin to accept, e.g. https://forms.example
 --cache-dir <path>          Cache override (default: OS cache dir + /oracle-forms-mcp)
 --annotations-dir <path>    Durable annotation store (default: <cache dir>/annotations)
 --conversion-timeout <sec>  Kill a stuck conversion (default: 120)
@@ -473,6 +474,11 @@ the rules between them. `--port`, `--allowed-host` and `--allowed-origin` need `
 and `--prefetch` and `--prefetch-all` cannot be combined. Exit status 0 is success, 1 a prefetch
 in which a module failed, 2 a command-line mistake, and 70 an unexpected failure, whose stack trace
 precedes it on stderr.
+
+Both allowlists add to localhost rather than replace it, and the two are checked separately:
+allowing a host does not allow an origin. A browser-based client opened from anywhere but
+localhost needs its origin passed with `--allowed-origin`, or it gets `403`. Clients that are not
+browsers send no `Origin` and need only the host.
 
 The converter options and the HTTP bind address can also be set as environment variables, for
 clients that configure a server with variables rather than arguments (`docker run -e`, the `env`

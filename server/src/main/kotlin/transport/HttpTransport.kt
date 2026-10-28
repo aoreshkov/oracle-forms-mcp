@@ -10,6 +10,8 @@ import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.mcpStreamableHttp
 import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.URI
+import java.net.URISyntaxException
 import java.net.UnknownHostException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -23,6 +25,13 @@ internal const val DEFAULT_HTTP_HOST: String = "127.0.0.1"
 
 /** The SDK's DNS-rebinding protection default: only these Host values are admitted. */
 private val LOCALHOST_HOSTS = listOf("localhost", "127.0.0.1", "[::1]")
+
+/**
+ * The same three as Origin entries. The SDK parses an Origin entry as a URL and refuses one with no
+ * scheme at startup, so [LOCALHOST_HOSTS] cannot double as this list. Comparison is by host only,
+ * so these also admit `https://` and any port.
+ */
+private val LOCALHOST_ORIGINS = listOf("http://localhost", "http://127.0.0.1", "http://[::1]")
 
 /** Keep-alive cadence for idle SSE streams; see the note in [runHttpServer]. */
 private val SSE_HEARTBEAT_PERIOD = 30.seconds
@@ -78,9 +87,11 @@ internal fun EmbeddedServer<*, *>.stopGracefully() {
  *
  * With no [allowedHosts]/[allowedOrigins] the SDK's DNS-rebinding protection stays at its
  * (secure) default, which only admits requests whose Host/Origin resolve to localhost —
- * connect via `http://127.0.0.1:port/mcp`. Passing extra hosts *appends* to the localhost
- * defaults (see [allowList]); comparison is hostname-only, so entries need no port. The SDK also
- * caps POST bodies (4 MiB default), left at its default here.
+ * connect via `http://127.0.0.1:port/mcp`. Extra entries of either kind *append* to the localhost
+ * defaults, and the Origin check stays on whichever kind was given (see [allowLists]); comparison
+ * is hostname-only, so entries need no port. A request with no `Origin` at all is admitted: only a
+ * browser sends one, and a client that is not a browser cannot be rebound. The SDK also caps POST
+ * bodies (4 MiB default), left at its default here.
  *
  * The SDK still offers an `eventStore` for SSE resumability; it is deliberately not used —
  * spec revision 2026-07-28 removes stream resumability (`Last-Event-ID`) from Streamable HTTP,
@@ -128,9 +139,10 @@ internal fun httpEngine(
     allowedHosts: List<String> = emptyList(),
     allowedOrigins: List<String> = emptyList(),
 ): EmbeddedServer<*, *> = embeddedServer(CIO, port = port, host = host) {
+    val allow = allowLists(allowedHosts, allowedOrigins)
     mcpStreamableHttp(
-        allowedHosts = allowList(LOCALHOST_HOSTS, allowedHosts),
-        allowedOrigins = allowList(LOCALHOST_HOSTS, allowedOrigins),
+        allowedHosts = allow.hosts,
+        allowedOrigins = allow.origins,
         // A conversion can hold the stream open for --conversion-timeout (120 s by default)
         // with only three progress frames in between, which idle-timeout proxies and clients
         // read as a dead connection. Ktor's own default period is also 30 s — stated here so
@@ -139,14 +151,64 @@ internal fun httpEngine(
     ) { server }
 }
 
+/** The Host and Origin allowlists handed to the SDK; `null` leaves that one at the SDK's default. */
+internal data class AllowLists(val hosts: List<String>?, val origins: List<String>?)
+
 /**
- * The Host (or Origin) allowlist handed to the SDK: `null` when nothing [extra] was configured,
- * which keeps the SDK's own localhost-only default, and otherwise [defaults] *plus* [extra] —
- * the SDK replaces its default with whatever list it is given, so passing [extra] alone would
- * stop `localhost` itself from connecting the moment one extra host is allowed.
+ * The allowlists for [extraHosts]/[extraOrigins]: both `null` when there are none, which keeps the
+ * SDK's own localhost-only default for both headers, and otherwise **both** given in full, each
+ * localhost default *plus* its extras. Both, because of two SDK rules:
+ *
+ * - it replaces a default with whatever list it is given, so passing the extras alone would stop
+ *   `localhost` itself from connecting the moment one extra entry is allowed;
+ * - it checks `Origin` only when it is given origins or keeps its own *host* default, so custom
+ *   hosts with `null` origins switch the Origin check off. The spec makes that check a MUST
+ *   (a present, invalid `Origin` is answered `403`), so it is never left `null` beside custom hosts.
  */
-internal fun allowList(defaults: List<String>, extra: List<String>): List<String>? =
-    if (extra.isEmpty()) null else defaults + extra
+internal fun allowLists(extraHosts: List<String>, extraOrigins: List<String>): AllowLists =
+    if (extraHosts.isEmpty() && extraOrigins.isEmpty()) {
+        AllowLists(hosts = null, origins = null)
+    } else {
+        AllowLists(hosts = LOCALHOST_HOSTS + extraHosts, origins = LOCALHOST_ORIGINS + extraOrigins)
+    }
+
+/**
+ * Why [host] cannot be an `--allowed-host` entry, or `null` when it can.
+ *
+ * The SDK checks its entries only when the engine starts, and a bad one stops the server with an
+ * `IllegalStateException` that names no option; this is the same check made when the command line
+ * is parsed. It is stricter than the SDK's, never looser: a Host header's own form, `name[:port]`,
+ * with an IPv6 literal in brackets.
+ */
+internal fun allowedHostProblem(host: String): String? = when {
+    PLAIN_HOST.matches(host) || BRACKETED_HOST.matches(host) -> null
+    "://" in host -> "a Host value has no scheme; give the name alone, e.g. ${host.substringAfter("://").substringBefore('/')}"
+    host.count { it == ':' } > 1 && '[' !in host -> "an IPv6 address goes in brackets, as in a Host header: [$host]"
+    else -> "expected a host name or address, optionally with a port, e.g. forms.example or 192.168.1.10"
+}
+
+private val PLAIN_HOST = Regex("""[^\s:\[\]/@?#]+(:\d+)?""")
+private val BRACKETED_HOST = Regex("""\[[^\s\[\]/@?#]+](:\d+)?""")
+
+/**
+ * Why [origin] cannot be an `--allowed-origin` entry, or `null` when it can.
+ *
+ * The SDK parses entries with Ktor's lenient URL parser and stops the server at startup on one it
+ * cannot read, a schemeless `forms.example` included. This accepts only what a browser actually
+ * sends, `scheme://host[:port]` (a trailing `/` is forgiven), so it is stricter than that parser and
+ * everything it accepts also starts the server.
+ */
+internal fun allowedOriginProblem(origin: String): String? {
+    if ("://" !in origin) return "an origin starts with its scheme, e.g. https://$origin"
+    val uri = try {
+        URI(origin)
+    } catch (_: URISyntaxException) {
+        null
+    }
+    val isOrigin = uri != null && uri.host != null && uri.rawUserInfo == null &&
+        uri.rawPath.orEmpty() in setOf("", "/") && uri.rawQuery == null && uri.rawFragment == null
+    return if (isOrigin) null else "expected an origin as a browser sends it, scheme://host[:port], e.g. https://forms.example"
+}
 
 /**
  * The address `--host` names, resolved the way the engine would have resolved it (the first
@@ -176,8 +238,10 @@ internal fun bindWarnings(address: InetAddress, port: Int, allowedHosts: List<St
         "The Host/Origin check only stops DNS rebinding from a browser. Bind to $DEFAULT_HTTP_HOST " +
         "unless something in front restricts who can connect — a container port published on the " +
         "host's loopback only (-p 127.0.0.1:$port:$port), a firewall, or an authenticating proxy."
-    val literal = address.hostAddress
-    if (address.isAnyLocalAddress || allowedHosts.any { it.equals(literal, ignoreCase = true) }) return listOf(exposed)
+    if (address.isAnyLocalAddress) return listOf(exposed)
+    // The Host header's spelling, so the advice below is a value --allowed-host accepts.
+    val literal = urlHost(address)
+    if (allowedHosts.any { it.equals(literal, ignoreCase = true) }) return listOf(exposed)
     val rejected = "Requests addressed to $literal are rejected by the Host check until it is allowed: " +
         "add --allowed-host $literal for clients to use ${endpointUrl(address, port)}."
     return listOf(exposed, rejected)
@@ -188,11 +252,11 @@ internal fun bindWarnings(address: InetAddress, port: Int, allowedHosts: List<St
  * is no address to connect *to*, so it is shown as loopback, which it includes; an IPv6 address is
  * bracketed, with its zone ID's `%` encoded as `%25` (RFC 6874), as a URL requires.
  */
-internal fun endpointUrl(address: InetAddress, port: Int): String {
-    val urlHost = when {
-        address.isAnyLocalAddress -> DEFAULT_HTTP_HOST
-        address is Inet6Address -> "[${address.hostAddress.replace("%", "%25")}]"
-        else -> address.hostAddress
-    }
-    return "http://$urlHost:$port/mcp"
+internal fun endpointUrl(address: InetAddress, port: Int): String = "http://${urlHost(address)}:$port/mcp"
+
+/** The host part of [endpointUrl], which is also what a client using that URL sends as `Host`. */
+private fun urlHost(address: InetAddress): String = when {
+    address.isAnyLocalAddress -> DEFAULT_HTTP_HOST
+    address is Inet6Address -> "[${address.hostAddress.replace("%", "%25")}]"
+    else -> address.hostAddress
 }
