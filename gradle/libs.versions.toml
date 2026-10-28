@@ -6,7 +6,7 @@ kover = "0.9.11"
 # the standalone binary-compatibility-validator plugin has been dropped.
 
 # Third-party
-mcp-kotlin-sdk = "0.15.0"
+mcp-kotlin-sdk = "0.16.0"
 ktor = "3.6.0"
 kotlinx-coroutines = "1.11.0"
 kotlinx-serialization = "1.11.0"
@@ -31,7 +31,7 @@ mcp-kotlin-sdk = { module = "io.modelcontextprotocol:kotlin-sdk-server", version
 
 # Ktor (server-side only — this project fetches nothing over the network)
 #
-# This pin deliberately leads the MCP SDK's own transitive Ktor (0.15.0 resolves 3.5.1), so the
+# This pin deliberately leads the MCP SDK's own transitive Ktor (0.16.0 resolves 3.5.2), so the
 # bump here upgrades the SDK's ktor-server-{core,sse,websockets,content-negotiation} too. Kept
 # ahead for the CIO server fixes the HTTP transport sits on: KTOR-9704 (UTF-8 text responses were
 # 5-7x slow), KTOR-9761 (handler leak when an idle timeout cancels a claimed response) and

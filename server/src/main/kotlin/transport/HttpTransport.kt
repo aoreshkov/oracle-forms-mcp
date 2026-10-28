@@ -14,6 +14,7 @@ import java.net.URI
 import java.net.URISyntaxException
 import java.net.UnknownHostException
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.launch
 
@@ -35,6 +36,18 @@ private val LOCALHOST_ORIGINS = listOf("http://localhost", "http://127.0.0.1", "
 
 /** Keep-alive cadence for idle SSE streams; see the note in [runHttpServer]. */
 private val SSE_HEARTBEAT_PERIOD = 30.seconds
+
+/**
+ * How long a stateful session may go without a request before it is closed; its id then answers
+ * `404`, on which a conforming client re-initializes. The SDK's own default since 0.16 — stated here
+ * so a change of that default shows up as a diff rather than as different behaviour. Not
+ * `Duration.INFINITE`: on a server with no authentication, abandoned sessions would then pile up
+ * until [MAX_SESSIONS] refuses everyone. See the note in [runHttpServer] for what counts as idle.
+ */
+private val SESSION_IDLE_TIMEOUT = 30.minutes
+
+/** Open-session ceiling, counting sessions still initializing; the next `initialize` gets `503`. The SDK default. */
+private const val MAX_SESSIONS = 10_000
 
 /**
  * How long a terminating server keeps serving calls that are already in flight.
@@ -97,6 +110,16 @@ internal fun EmbeddedServer<*, *>.stopGracefully() {
  * spec revision 2026-07-28 removes stream resumability (`Last-Event-ID`) from Streamable HTTP,
  * so adopting it now would buy a feature on its way out.
  *
+ * Sessions are stateful and **expire** ([SESSION_IDLE_TIMEOUT], at most [MAX_SESSIONS] open). A
+ * session is idle only while none of its POST/DELETE requests is in flight, so a `fetch_module`
+ * conversion that holds its call for the whole `--conversion-timeout` is never expired mid-call.
+ * An open `GET` stream does **not** keep it alive — the engine may never notice that a listener has
+ * gone — so the SSE heartbeat keeps proxies from cutting the stream but not the session from
+ * expiring: a client that only listens for `list_changed` loses its session after the timeout and
+ * gets `404` on its next request, which the spec answers with a fresh `initialize`. A `GET` with no
+ * `Mcp-Session-Id` is `400`. Nothing here keys state on the session id (all of it is per module or
+ * per element), so a re-initialized client loses only the SDK's per-session `logging/setLevel`.
+ *
  * On SIGTERM the engine drains rather than cuts; see [SHUTDOWN_GRACE]. The hook is installed
  * **before** `start`, because `addShutdownHook` registers itself off the `ApplicationStarting`
  * event and a hook added afterwards would never arm.
@@ -131,13 +154,20 @@ fun runHttpServer(
     engine.start(wait = true)
 }
 
-/** The engine [runHttpServer] runs, extracted so the address it listens on can be tested. */
+/**
+ * The engine [runHttpServer] runs, extracted so the address it listens on can be tested.
+ *
+ * [sessionIdleTimeout] and [maxSessions] exist only so `HttpSessionLifecycleTest` can shrink them;
+ * there is deliberately no command-line option for either.
+ */
 internal fun httpEngine(
     server: Server,
     port: Int,
     host: String = DEFAULT_HTTP_HOST,
     allowedHosts: List<String> = emptyList(),
     allowedOrigins: List<String> = emptyList(),
+    sessionIdleTimeout: Duration = SESSION_IDLE_TIMEOUT,
+    maxSessions: Int = MAX_SESSIONS,
 ): EmbeddedServer<*, *> = embeddedServer(CIO, port = port, host = host) {
     val allow = allowLists(allowedHosts, allowedOrigins)
     mcpStreamableHttp(
@@ -148,6 +178,8 @@ internal fun httpEngine(
         // read as a dead connection. Ktor's own default period is also 30 s — stated here so
         // the value is greppable next to that timeout.
         sseHeartbeatConfig = { period = SSE_HEARTBEAT_PERIOD },
+        sessionIdleTimeout = sessionIdleTimeout,
+        maxSessions = maxSessions,
     ) { server }
 }
 

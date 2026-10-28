@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **MCP Kotlin SDK 0.16.0** (from 0.15.0), which bounds Streamable HTTP sessions. On
+  `--transport http` (and so in the container image), a session now **expires after 30 minutes
+  without a request** and its id answers `404`, on which a client following the MCP transport spec
+  starts a new session; a tool call that is still running keeps its session alive, however long a
+  conversion takes, and an open event stream does not. At most 10,000 sessions are open at once (the
+  next `initialize` gets `503`), and a `GET` without `Mcp-Session-Id` is rejected with `400`. stdio
+  is unaffected. Also from the SDK: a misspelt prompt name is now an invalid-params error the client
+  can correct rather than an internal error, and a cancelled request no longer logs an error.
+
 ### Fixed
 - **`--allowed-origin` no longer stops the HTTP server at startup.** Any use of it used to end with
   `IllegalStateException: Invalid origin in DnsRebindingProtection.allowedOrigins: 'localhost'`,
