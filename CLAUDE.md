@@ -212,8 +212,14 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   an unclosed nested comment. Spell paths without `/*` sequences in doc comments.
 - StAX reports an event's **end** location; `FormsXmlParser` derives element start lines from
   the previous event's end (see `startLineOf`). Pinned by `objectRefSlicesReparseAsXml`.
-- Oracle tools: `frmf2xml` writes to the process **cwd** (run it with cwd = cache `converted/`);
-  exit codes are unreliable — success is judged by the output file. `frmcmp_batch` over `frmcmp`.
+- Oracle tools: looked for in `ORACLE_HOME/bin`, then `FORMS_INSTANCE/bin` (Linux Forms 12c+ has
+  `frmf2xml` only as `frmf2xml.sh` there). `frmf2xml` writes to the process **cwd** on Windows but
+  **next to its input** on Linux 14.1.2, so it converts a *copy* of the module in a per-run
+  staging dir inside the target (cwd = that dir) and the result is moved out — never point it at
+  the module in place, the forms dir may be read-only. Outside Windows the tools get
+  `TERM=vt220` / `FORMS_API_TK_BYPASS=TRUE` when unset (`headlessEnv`): without them a host's
+  minimal environment fails `frmcmp_batch` (`FRM-91500`) and `frmf2xml` (no display).
+  Exit codes are unreliable — success is judged by the output file. `frmcmp_batch` over `frmcmp`.
   `--convert-command` swaps in a site-supplied converter on the same cwd convention
   (`CustomCommandModuleConverter`); precedence is command → `ORACLE_HOME` → copy-mode. It is a
   **whole command line**, not an executable: `ConvertCommandSpec` splits it into argv (quoted

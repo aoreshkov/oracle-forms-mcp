@@ -49,6 +49,7 @@ public final class app/oreshkov/oracleformsmcp/convert/ModuleConverters {
 
 public final class app/oreshkov/oracleformsmcp/convert/OracleToolsModuleConverter : app/oreshkov/oracleformsmcp/core/ModuleConverter {
 	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/nio/file/Path;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/nio/file/Path;JLjava/nio/file/Path;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/nio/file/Path;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun conversionCaveat (Lapp/oreshkov/oracleformsmcp/model/ModuleType;)Ljava/lang/String;
 	public fun convert (Lapp/oreshkov/oracleformsmcp/model/ModuleKey;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

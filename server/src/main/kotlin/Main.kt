@@ -347,6 +347,10 @@ private val root = CommandSpec(
     environment = listOf(
         EnvironmentVariable(ENV_FORMS_DIR, "The forms directory, when neither --forms-dir nor the argument gives one"),
         EnvironmentVariable(ENV_ORACLE_HOME, "Oracle Forms installation providing frmf2xml/frmcmp"),
+        EnvironmentVariable(
+            "FORMS_INSTANCE",
+            "Forms instance whose bin is searched after ORACLE_HOME's (frmf2xml.sh on Linux Forms 12c+)",
+        ),
     ),
 )
 
