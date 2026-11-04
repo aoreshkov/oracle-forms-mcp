@@ -81,6 +81,12 @@ verifiable with `gh attestation verify <zip> --repo aoreshkov/oracle-forms-mcp`.
 To wipe the downloaded distributions, delete the plugin's data directory
 (`~/.claude/plugins/data/oracle-forms-oracle-forms-mcp/`); the next session re-fetches.
 
+The launcher also runs outside Claude Code (plugin 1.5.0+): a host that starts it with a fixed
+command line can pass the forms directory as `OFMCP_FORMS_DIR`, and without `OFMCP_PLUGIN_DATA` the
+downloads go to a per-user directory — `%LOCALAPPDATA%\oracle-forms-mcp\launcher` on Windows,
+`~/Library/Application Support/oracle-forms-mcp/launcher` on macOS, and
+`$XDG_DATA_HOME/oracle-forms-mcp/launcher` (else `~/.local/share/…`) elsewhere.
+
 ## What you get
 
 The full tool set — `list_modules`, `fetch_module`, `get_module_overview`, `list_blocks`,

@@ -21,7 +21,8 @@ import kotlinx.coroutines.withContext
  * **Calling convention.** [commandSpec] is a full command line, not just an executable: it is
  * split into an argv list by [ConvertCommandSpec] (a quoted string, or a JSON array), the module's
  * absolute path is substituted for `{}` — or appended when the spec has no `{}` — the canonical
- * output path is substituted for `{out}` (never appended), and the process is spawned directly with
+ * output path is substituted for `{out}` and the server's start directory for `{start}` (neither
+ * ever appended), and the process is spawned directly with
  * that list, never through a shell, with the working directory set to the directory the text form
  * is kept in (the server's `--converted-dir` when configured, else the module's cache directory).
  * That mirrors how `frmf2xml` is driven: the command is expected to write its output *into the
@@ -44,13 +45,19 @@ public class CustomCommandModuleConverter internal constructor(
     private val timeout: Duration,
     /** The setting [commandSpec] came from — what every message about a broken command names. */
     private val option: ConverterOption,
+    /**
+     * What `{start}` stands for and a relative program resolves against: the directory the server
+     * was started in. A parameter only so that a test need not change the process's own; it has no
+     * default, because a default on this constructor would publish a synthetic one in the ABI.
+     */
+    private val startDir: Path,
 ) : ModuleConverter {
 
     public constructor(
         commandSpec: String,
         formsDir: Path? = null,
         timeout: Duration = 120.seconds,
-    ) : this(commandSpec, formsDir, timeout, ConverterOption.CONVERT)
+    ) : this(commandSpec, formsDir, timeout, ConverterOption.CONVERT, ConvertCommandSpec.startPath())
 
     override val description: String = "Custom conversion command ($commandSpec)"
 
@@ -89,6 +96,7 @@ public class CustomCommandModuleConverter internal constructor(
             template,
             sourcePath = source.toAbsolutePath().toString(),
             outputPath = target.resolve(key.convertedFileName).toAbsolutePath().toString(),
+            startDir = startDir.toString(),
         )
         val toolName = displayName(template.first())
         val run = OutputRun.begin(target)
@@ -151,19 +159,25 @@ public class CustomCommandModuleConverter internal constructor(
      * runs in the output directory: on Unix the exec happens after the chdir, so a relative program
      * would be looked up there. A program that is not an existing file is left untouched for the OS
      * to resolve on `PATH` — that is how `wine`, `docker`, or `python3` are named.
+     *
+     * A program written with `{start}` is checked as what it names, and left in the template as
+     * written: `argvFor` makes it absolute in the same single pass as every other argument.
      */
     private fun resolveCommand(): List<String> {
         val template = ConvertCommandSpec.parse(commandSpec, option)
         val program = template.first()
+        val located = ConvertCommandSpec.withStartDir(program, startDir.toString())
         val asFile = try {
-            Path.of(program).takeIf { it.isRegularFile() }
+            startDir.resolve(located).takeIf { it.isRegularFile() }
         } catch (_: Exception) {
             null
         }
-        if (asFile != null) return listOf(asFile.toAbsolutePath().toString()) + template.drop(1)
-        if (isPathLike(program)) {
+        if (asFile != null) {
+            return if (located != program) template else listOf(asFile.toAbsolutePath().toString()) + template.drop(1)
+        }
+        if (isPathLike(located)) {
             throw ConverterNotFoundException(
-                "${option.flag} is set to '$commandSpec' but its program '$program' is not an " +
+                "${option.flag} is set to '$commandSpec' but its program '$located' is not an " +
                     "existing file. Point it at the converter script, or drop the flag to " +
                     "${option.fallback}.",
             )

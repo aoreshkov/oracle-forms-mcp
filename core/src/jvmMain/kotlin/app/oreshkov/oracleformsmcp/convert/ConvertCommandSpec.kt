@@ -39,6 +39,12 @@ import kotlinx.serialization.json.JsonPrimitive
  * appended: a command without it writes into its working directory, as it always has. It exists
  * for tools that cannot be pointed at a working directory — `frmcmp` writes its `.pld` next to the
  * *module* unless it is given an output file.
+ *
+ * [START_PLACEHOLDER] is the directory the server was started in, and is likewise never appended.
+ * A relative *program* is already resolved against that directory, but an *argument* is resolved by
+ * the child, which runs in the converted directory — so a converter shipped beside a launcher and
+ * run by an interpreter (`java {start}/converter/Convert.java`) needs it, and a host that writes its
+ * MCP config literally, with no variable of its own for the plugin root, has no other way to say so.
  */
 internal object ConvertCommandSpec {
 
@@ -48,8 +54,11 @@ internal object ConvertCommandSpec {
     /** Stands for the absolute path the text form is to be written to, e.g. `<dir>/utils.pld`. */
     const val OUTPUT_PLACEHOLDER: String = "{out}"
 
-    /** Both placeholders in one pattern, so substitution is a single pass over each argument. */
-    private val PLACEHOLDER = Regex("""\{(?:out)?\}""")
+    /** Stands for the absolute directory the server process was started in. */
+    const val START_PLACEHOLDER: String = "{start}"
+
+    /** Every placeholder in one pattern, so substitution is a single pass over each argument. */
+    private val PLACEHOLDER = Regex("""\{(?:out|start)?\}""")
 
     /**
      * Parses [spec] into a non-empty argv template, or throws with a message naming the fix — and
@@ -69,18 +78,41 @@ internal object ConvertCommandSpec {
 
     /**
      * Applies [template] to one module: [sourcePath] replaces [SOURCE_PLACEHOLDER] (or is appended
-     * when no argument carries it) and [outputPath] replaces [OUTPUT_PLACEHOLDER] (never appended).
+     * when no argument carries it), [outputPath] replaces [OUTPUT_PLACEHOLDER] and [startDir]
+     * replaces [START_PLACEHOLDER] (neither ever appended).
      *
-     * Both are replaced in one pass, so a path that itself contains `{}` or `{out}` is inserted
+     * All are replaced in one pass, so a path that itself contains a placeholder is inserted
      * verbatim rather than substituted again; the lambda form of `replace` also keeps `$` and a
-     * backslash in a path literal.
+     * backslash in a path literal. Substitution happens after the value was split into arguments,
+     * so a path with spaces stays inside the argument it was written in, in either syntax.
      */
-    fun argvFor(template: List<String>, sourcePath: String, outputPath: String): List<String> {
+    fun argvFor(
+        template: List<String>,
+        sourcePath: String,
+        outputPath: String,
+        startDir: String = startDirectory(),
+    ): List<String> {
         val argv = template.map { arg ->
-            PLACEHOLDER.replace(arg) { if (it.value == SOURCE_PLACEHOLDER) sourcePath else outputPath }
+            PLACEHOLDER.replace(arg) {
+                when (it.value) {
+                    SOURCE_PLACEHOLDER -> sourcePath
+                    OUTPUT_PLACEHOLDER -> outputPath
+                    else -> startDir
+                }
+            }
         }
         return if (template.any { SOURCE_PLACEHOLDER in it }) argv else argv + sourcePath
     }
+
+    /** [arg] with only [START_PLACEHOLDER] replaced: what a program written with it names. */
+    fun withStartDir(arg: String, startDir: String): String =
+        PLACEHOLDER.replace(arg) { if (it.value == START_PLACEHOLDER) startDir else it.value }
+
+    /** The directory the server process was started in, which a relative program resolves against. */
+    fun startPath(): Path = Path.of("").toAbsolutePath()
+
+    /** [startPath] as the text [START_PLACEHOLDER] is replaced with. */
+    fun startDirectory(): String = startPath().toString()
 
     private fun parseJsonArray(option: ConverterOption, spec: String, trimmed: String): List<String> {
         val elements = try {
@@ -153,6 +185,7 @@ internal object ConvertCommandSpec {
                 "array ([\"wine\", \"conv.exe\", \"-xml\"]). Write $SOURCE_PLACEHOLDER where the " +
                 "module path belongs; it is appended as the last argument when omitted. Write " +
                 "$OUTPUT_PLACEHOLDER where a tool that does not write into its working directory " +
-                "takes its output file.",
+                "takes its output file, and $START_PLACEHOLDER for the directory the server was " +
+                "started in.",
         )
 }

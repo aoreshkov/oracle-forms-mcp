@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The forms directory can be given as `OFMCP_FORMS_DIR`**, for a host that starts the server with
+  a fixed command line and can pass a user's settings only as environment variables. `--forms-dir`
+  or the positional argument still wins, and an exported variable never conflicts with either.
+  A blank value, or a `${…}` template nobody filled in, counts as not set.
+- **`{start}` in a converter command** is replaced with the absolute directory the server was
+  started in, in `--convert-command` and `--compile-command` alike, and is never appended. A
+  relative program was already found from there, but a relative *argument* is looked up by the
+  command, which runs in the converted directory; `{start}` names a file shipped beside the server
+  (`["java", "{start}/converter/Convert.java", "{}", "{out}"]`) from one value on every OS.
+- **The plugin launcher runs without `OFMCP_PLUGIN_DATA`** (plugin version 1.5.0), keeping its
+  downloads in a per-user data directory of the OS instead of stopping. Its messages name the
+  `OFMCP_SERVER_VERSION` variable beside `/plugin`, for hosts that have no `/plugin`.
+
 ## [0.17.0] - 2026-10-28
 
 ### Changed

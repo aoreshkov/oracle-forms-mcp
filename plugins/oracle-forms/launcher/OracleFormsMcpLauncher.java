@@ -12,6 +12,10 @@
 // `command`. That prerequisite is documented in the plugin manifest and README; the JRE-only
 // alternatives are the .mcpb bundle and `claude mcp add`.
 //
+// Nothing in it needs Claude Code, though: another host can run it with a fixed command line and the
+// user's settings as environment variables (OFMCP_FORMS_DIR and the rest, read by the server), and
+// without OFMCP_PLUGIN_DATA it keeps its downloads in a per-user data directory of the OS.
+//
 // The launcher itself deliberately stays within the Java 21 language and API (CI compiles it with
 // `--release 21`): on a JDK too old for the server it must still compile and start, so it can say
 // what is wrong instead of dying in a compiler error the user never sees.
@@ -62,6 +66,14 @@ public final class OracleFormsMcpLauncher {
     private static final Pattern TAG_NAME = Pattern.compile("\"tag_name\"\\s*:\\s*\"v?([^\"]+)\"");
     /** Leading digit required: a version becomes a directory name, and "." or ".." must not. */
     private static final Pattern VERSION = Pattern.compile("[0-9][0-9A-Za-z.+-]*");
+    /** A value that is nothing but a variable reference its host never expanded. */
+    private static final Pattern UNEXPANDED = Pattern.compile("\\$\\{[^}]*}");
+
+    /**
+     * Where a user pins the server version, for messages. Not only /plugin: a host other than Claude
+     * Code may start this launcher and pass the user's settings as variables.
+     */
+    private static final String PIN_WHERE = "(server_version in /plugin, or OFMCP_SERVER_VERSION)";
 
     public static void main(String[] args) throws Exception {
         checkConfigured(args);
@@ -88,7 +100,7 @@ public final class OracleFormsMcpLauncher {
     // ---------------------------------------------------------------------------------------
 
     private static Path resolveDistribution() throws Exception {
-        Path dataDir = requiredEnv("OFMCP_PLUGIN_DATA");
+        Path dataDir = dataDirectory();
         Path distRoot = dataDir.resolve("dist");
         Path stagingRoot = dataDir.resolve("staging");
         String requested = envOrDefault("OFMCP_SERVER_VERSION", "latest");
@@ -99,7 +111,8 @@ public final class OracleFormsMcpLauncher {
             String version = requested.startsWith("v") ? requested.substring(1) : requested;
             if (!VERSION.matcher(version).matches()) {
                 throw new IOException("Invalid server version '" + requested
-                        + "'. Set it to 'latest' or a released version such as '0.4.0' in /plugin.");
+                        + "'. Set it to 'latest' or a released version such as '0.4.0' "
+                        + PIN_WHERE + ".");
             }
             Path dist = distRoot.resolve(version);
             if (!isInstalled(dist)) install(version, dist, stagingRoot);
@@ -117,7 +130,7 @@ public final class OracleFormsMcpLauncher {
                 if (installed == null) {
                     throw new IOException("Could not reach the GitHub releases API to find the latest"
                             + " oracle-forms-mcp server, and no version is installed yet. Check the"
-                            + " network, or pin a version in /plugin (Oracle Forms plugin config).", e);
+                            + " network, or pin a version " + PIN_WHERE + ".", e);
                 }
                 warn("could not check for the latest release (" + e + "); using installed " + installed);
                 return distRoot.resolve(installed);
@@ -228,7 +241,7 @@ public final class OracleFormsMcpLauncher {
         } catch (IOException e) {
             throw new IOException("No published checksum for release v" + version + " ("
                     + archive + ".sha256). A release still uploading its assets has none yet;"
-                    + " one before 0.4.0 never had one, so pin 0.4.0 or later in /plugin, or"
+                    + " one before 0.4.0 never had one, so pin 0.4.0 or later " + PIN_WHERE + ", or"
                     + " install the server manually and point OFMCP_SERVER_HOME at it.", e);
         }
         // sha256sum format: "<hex>  <filename>".
@@ -346,8 +359,7 @@ public final class OracleFormsMcpLauncher {
                     + " or later, but the plugin is running on Java " + Runtime.version().feature()
                     + " (" + System.getProperty("java.home") + "). Set the plugin's Java executable"
                     + " to a JDK " + SERVER_JAVA + "+ java (or put one on PATH), or pin server"
-                    + " version 0.14.0 (the last to run on Java 21). Both are in /plugin (Oracle"
-                    + " Forms plugin config).");
+                    + " version 0.14.0, the last to run on Java 21 " + PIN_WHERE + ".");
             return;
         }
         Method main = server.getMethod("main", String[].class);
@@ -413,14 +425,42 @@ public final class OracleFormsMcpLauncher {
         });
     }
 
-    private static Path requiredEnv(String name) throws IOException {
-        String value = System.getenv(name);
-        if (value == null || value.isBlank()) {
-            throw new IOException(name + " is not set. This launcher is meant to be started by the"
-                    + " Claude Code plugin; to run it directly, set OFMCP_SERVER_HOME to an"
-                    + " installed server distribution instead.");
+    /**
+     * Where downloaded distributions are kept: {@code OFMCP_PLUGIN_DATA}, which the Claude Code
+     * plugin sets to its own data directory, else a per-user directory of this OS. The fallback is
+     * for a host that starts the launcher with a fixed command line and passes environment values
+     * literally, so it has no variable of its own to hand over. A value that is wholly an
+     * unexpanded {@code ${...}} reference counts as unset: taken as a path, it would quietly create
+     * a directory of that name wherever the host happened to start us.
+     */
+    private static Path dataDirectory() {
+        String configured = envOrDefault("OFMCP_PLUGIN_DATA", "");
+        if (!configured.isEmpty() && !UNEXPANDED.matcher(configured).matches()) return Path.of(configured);
+        if (!configured.isEmpty()) warn("ignoring OFMCP_PLUGIN_DATA='" + configured + "', which was never expanded");
+        return defaultDataDirectory();
+    }
+
+    /**
+     * The per-user data directory for this OS, with a {@code launcher} directory inside it so that
+     * nothing else ever shares the downloads: {@code %LOCALAPPDATA%} on Windows (local, not
+     * roaming: these are 50 MB of jars), {@code ~/Library/Application Support} on macOS, and
+     * {@code $XDG_DATA_HOME} or {@code ~/.local/share} elsewhere.
+     */
+    private static Path defaultDataDirectory() {
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        Path home = Path.of(System.getProperty("user.home"));
+        Path base;
+        if (os.startsWith("windows")) {
+            String local = envOrDefault("LOCALAPPDATA", "");
+            base = local.isEmpty() ? home.resolve("AppData").resolve("Local") : Path.of(local);
+        } else if (os.startsWith("mac")) {
+            base = home.resolve("Library").resolve("Application Support");
+        } else {
+            // The XDG spec says a relative value is invalid and is to be ignored.
+            String xdg = envOrDefault("XDG_DATA_HOME", "");
+            base = !xdg.isEmpty() && Path.of(xdg).isAbsolute() ? Path.of(xdg) : home.resolve(".local").resolve("share");
         }
-        return Path.of(value);
+        return base.resolve("oracle-forms-mcp").resolve("launcher");
     }
 
     private static String envOrDefault(String name, String fallback) {

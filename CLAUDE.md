@@ -35,7 +35,9 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   served straight from the repo by `/plugin marketplace add aoreshkov/oracle-forms-mcp`. The plugin
   carries no jars: `.mcp.json` runs `launcher/OracleFormsMcpLauncher.java` in Java single-file
   source mode (hence a **JDK** 25+, not a JRE), which downloads the release zip, verifies its published
-  sha256, unpacks it under `${CLAUDE_PLUGIN_DATA}`, and loads it in-process. The launcher itself
+  sha256, unpacks it under `${CLAUDE_PLUGIN_DATA}` (passed as `OFMCP_PLUGIN_DATA`; without it, a
+  per-user OS data directory, so a host that sets only `OFMCP_*` variables can run it too), and
+  loads it in-process. The launcher itself
   stays on the Java 21 language and API (CI compiles it with `--release 21`), so on a JDK older
   than the server needs it still starts and names the fix instead of failing to compile. The
   `claude-code-plugin` CI job validates the manifests and compiles the launcher — nothing else
@@ -240,7 +242,10 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   goes compile → convert → `ORACLE_HOME` → copy and every other type is untouched; unset, nothing is
   wrapped. `frmcmp` writes the `.pld` **next to the module**, whatever its cwd, unless given
   `Output_File` — hence `{out}` (the absolute canonical output path, substituted in the same single
-  pass as `{}`, **never appended**) and the stray-file hint on "produced no output file". Messages
+  pass as `{}`, **never appended**) and the stray-file hint on "produced no output file". `{start}`
+  is the third placeholder in that pass (the server's start directory, never appended): a relative
+  *program* is resolved against it, but an argument is resolved by the child in its own cwd, so a
+  file beside the server reaches an interpreter only as `{start}/…`. Messages
   name the right option through the internal `ConverterOption`, whose fallback advice differs per
   option. **Whether a module's binary or its text form is consumed — and fingerprinted — is
   `ModuleConverter.convertsBinary(type)`, asked per module type.** Never re-derive it from the

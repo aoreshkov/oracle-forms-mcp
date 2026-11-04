@@ -134,6 +134,33 @@ class ConvertCommandSpecTest {
         )
     }
 
+    /** `{start}` names a file beside the server, wherever the argument is; it is never appended. */
+    @Test
+    fun substitutesTheStartDirectoryWithoutAppendingIt() {
+        assertEquals(
+            listOf("java", "/opt/plugin root/converter/Convert.java", "xml", "/forms/ORDERS.fmb", OUT),
+            ConvertCommandSpec.argvFor(
+                ConvertCommandSpec.parse("java {start}/converter/Convert.java xml {} {out}"),
+                "/forms/ORDERS.fmb", OUT, startDir = "/opt/plugin root",
+            ),
+        )
+        assertEquals(
+            listOf("conv", "--home=/opt/plugin", "/forms/ORDERS.fmb"),
+            ConvertCommandSpec.argvFor(listOf("conv", "--home={start}"), "/forms/ORDERS.fmb", OUT, "/opt/plugin"),
+            "the module path is still appended when {} is absent",
+        )
+    }
+
+    /** A start directory that itself contains a placeholder is inserted verbatim. */
+    @Test
+    fun substitutesTheStartDirectoryInTheSamePass() {
+        assertEquals(
+            listOf("java", "/odd/{}/{out}/Convert.java", "/forms/ORDERS.fmb"),
+            ConvertCommandSpec.argvFor(listOf("java", "{start}/Convert.java", "{}"), "/forms/ORDERS.fmb", OUT, "/odd/{}/{out}"),
+        )
+        assertEquals("/odd/{}/{out}/x {}", ConvertCommandSpec.withStartDir("{start}/x {}", "/odd/{}/{out}"))
+    }
+
     /** `Regex.replace` with a string replacement would treat `$1` or a backslash as syntax. */
     @Test
     fun keepsDollarSignsAndBackslashesInSubstitutedPaths() {
