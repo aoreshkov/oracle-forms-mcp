@@ -49,8 +49,15 @@ grep -n '"version"' server.json
 `CHANGELOG.md` follows Keep a Changelog. Move the `## [Unreleased]` items into a new
 `## [<VERSION>] - <YYYY-MM-DD>` section, add a fresh empty `## [Unreleased]`, and update the
 link-reference lines at the bottom (`[Unreleased]` compare range + a new `[<VERSION>]` tag link).
-Use `git log <last-tag>..HEAD` to gather user-facing changes. (The GitHub release itself also
-sets `generate_release_notes: true`, but the curated changelog is the human-facing record.)
+Use `git log <last-tag>..HEAD` to gather user-facing changes.
+
+That section **is the GitHub release body**: the workflow extracts it with
+`.github/scripts/release-notes.sh <VERSION>`, before the build, and fails the release if the
+section is missing or empty. GitHub appends its generated pull request list below it, grouped by
+`.github/release.yml` (dependency bumps last). Preview the body with
+`sh .github/scripts/release-notes.sh <VERSION>`. The script joins the changelog's hard-wrapped
+lines, because a release body renders every newline as a line break. Write wrapped lines as
+indented continuations, and keep nested list items as `  - `.
 
 ## 4. Pre-flight checks (catch the known release-pipeline gotchas)
 
