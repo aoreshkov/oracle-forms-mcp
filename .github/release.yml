@@ -1,0 +1,11 @@
+# Groups the pull request list GitHub generates for a release. It sits below the curated
+# CHANGELOG.md section (see .github/workflows/release.yml), so it is the full record, not the
+# summary: everything except dependency bumps first, then the bumps on their own.
+changelog:
+  categories:
+    - title: Pull requests
+      labels: ["*"]
+      exclude:
+        labels: [dependencies]
+    - title: Dependency updates
+      labels: [dependencies]
