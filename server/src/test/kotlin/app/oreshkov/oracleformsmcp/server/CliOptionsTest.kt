@@ -242,16 +242,42 @@ class CliOptionsTest {
     }
 
     @Test
-    fun theFormsDirectoryIsTheFlagOrThePositionalExactlyOnce() {
+    fun theFormsDirectoryIsTheFlagOrThePositionalAtMostOnce() {
         assertEquals(Path.of("/srv/forms"), parse("/srv/forms").formsDir)
         // An unfilled bundle template gives way to the positional, after a warning.
         val run = run("--forms-dir", "\${user_config.forms_dir}", "/srv/forms")
         assertEquals(Path.of("/srv/forms"), run.options?.formsDir)
         assertContains(run.result.stderr, "warning: --forms-dir: ignoring")
 
-        assertContains(refused(), "exactly one of --forms-dir and <forms-dir> is required")
+        val none = refused()
+        assertContains(none, "the forms directory is required")
+        assertContains(none, ENV_FORMS_DIR, message = "the error names every way to give it")
         assertContains(refused("--forms-dir", "/a", "/b"), "cannot be combined")
-        assertContains(refused("--forms-dir", "\${user_config.forms_dir}"), "which counts as not set")
+        val unfilled = refused("--forms-dir", "\${user_config.forms_dir}")
+        assertContains(unfilled, "ignoring '\${user_config.forms_dir}'")
+        assertContains(unfilled, "the forms directory is required")
+    }
+
+    /**
+     * A host that starts every installation with the same command line can pass the directory only
+     * as a variable. The command line still wins, in either spelling, and is never "combined" with
+     * it: the positional is the same setting as the flag, not a second one.
+     */
+    @Test
+    fun theFormsDirectoryComesFromTheEnvironmentWhenTheCommandLineGivesNone() {
+        val env = mapOf(ENV_FORMS_DIR to "/srv/forms")
+        assertEquals(Path.of("/srv/forms"), parse(env = env).formsDir)
+        assertEquals(Path.of("/a"), parse("/a", env = env).formsDir)
+        assertEquals(Path.of("/a"), parse("--forms-dir", "/a", env = env).formsDir)
+        assertEquals(
+            Path.of("/srv/forms"),
+            parse("--forms-dir", "\${user_config.forms_dir}", env = env).formsDir,
+            "an unfilled flag gives way to the variable, as it does to the positional",
+        )
+
+        // What a host passes for a setting the user never filled in.
+        assertContains(refused(env = mapOf(ENV_FORMS_DIR to "\${user_config.forms_dir}")), "which counts as not set")
+        assertContains(refused(env = mapOf(ENV_FORMS_DIR to "  ")), "the forms directory is required")
     }
 
     @Test

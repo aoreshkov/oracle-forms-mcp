@@ -49,7 +49,9 @@ public object ModuleConverters {
             else -> OracleToolsModuleConverter(Path.of(oracleHome), formsDir, timeout)
         }
         if (compileCommand.isNullOrBlank()) return base
-        val libraries = CustomCommandModuleConverter(compileCommand, formsDir, timeout, ConverterOption.COMPILE)
+        val libraries = CustomCommandModuleConverter(
+            compileCommand, formsDir, timeout, ConverterOption.COMPILE, ConvertCommandSpec.startPath(),
+        )
         return ByModuleTypeConverter(mapOf(ModuleType.LIBRARY to libraries), base)
     }
 }

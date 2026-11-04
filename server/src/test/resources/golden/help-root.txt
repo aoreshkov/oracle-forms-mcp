@@ -1,13 +1,14 @@
 oracle-forms-mcp — MCP server serving the content of Oracle Forms modules in a
 directory.
 
-The forms directory (required) may be given with --forms-dir or as the
-positional argument. Conversion of .fmb/.mmb/.olb/.pll binaries uses, in order:
-the --convert-command command if given, else the frmf2xml/frmcmp tools under
-ORACLE_HOME if that is set; otherwise pre-converted files (*_fmb.xml, *_mmb.xml,
-*_olb.xml, *.pld) are expected next to the modules and copied into the cache. A
-.pll library goes to the --compile-command command first when one is given; the
-other module types are unaffected by it.
+The forms directory (required) may be given with --forms-dir, as the positional
+argument, or in OFMCP_FORMS_DIR when neither is given. Conversion of
+.fmb/.mmb/.olb/.pll binaries uses, in order: the --convert-command command if
+given, else the frmf2xml/frmcmp tools under ORACLE_HOME if that is set;
+otherwise pre-converted files (*_fmb.xml, *_mmb.xml, *_olb.xml, *.pld) are
+expected next to the modules and copied into the cache. A .pll library goes to
+the --compile-command command first when one is given; the other module types
+are unaffected by it.
 
 Usage:
   server [options] [forms-dir]
@@ -47,13 +48,17 @@ Options:
                                   The module's absolute path replaces {} and is
                                   appended as the last argument when {} does not
                                   appear; the output file's absolute path
-                                  replaces {out} (never appended). Runs with the
-                                  cwd set to the converted directory
-                                  (--converted-dir, else the module's cache dir)
-                                  and must write the text forms there or to
-                                  {out} (*_fmb.xml etc., .pld for .pll). Takes
-                                  precedence over ORACLE_HOME.
-                                  [env: OFMCP_CONVERT_COMMAND]
+                                  replaces {out}, and the directory the server
+                                  was started in replaces {start} (neither
+                                  appended): write a file the command takes as
+                                  an argument as {start}/<path>, since a
+                                  relative argument is looked up from the
+                                  command's own cwd. Runs with the cwd set to
+                                  the converted directory (--converted-dir, else
+                                  the module's cache dir) and must write the
+                                  text forms there or to {out} (*_fmb.xml etc.,
+                                  .pld for .pll). Takes precedence over
+                                  ORACLE_HOME. [env: OFMCP_CONVERT_COMMAND]
       --compile-command <cmd>     Converter for .pll libraries only, run instead
                                   of whatever would convert them otherwise; same
                                   syntax and placeholders as --convert-command.
@@ -116,10 +121,12 @@ Environment:
   OFMCP_COMPILE_COMMAND  Same as --compile-command
   OFMCP_CONVERTED_DIR    Same as --converted-dir
   OFMCP_HTTP_HOST        Same as --host
+  OFMCP_FORMS_DIR        The forms directory, when neither --forms-dir nor the
+                         argument gives one
   ORACLE_HOME            Oracle Forms installation providing frmf2xml/frmcmp
 
 Notes:
-  exactly one of --forms-dir and <forms-dir>
+  --forms-dir and <forms-dir> cannot be combined
   --prefetch and --prefetch-all cannot be combined
   --port requires --transport http
   --allowed-host requires --transport http

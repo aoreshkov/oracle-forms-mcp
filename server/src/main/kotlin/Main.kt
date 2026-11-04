@@ -46,6 +46,13 @@ import kotlinx.coroutines.withTimeoutOrNull
 private const val DEFAULT_PORT = 3000
 private const val DEFAULT_CONVERSION_TIMEOUT_SECONDS = 120
 
+/**
+ * The forms directory, for a host that starts the server with a fixed command line and can pass a
+ * user's settings only as variables. Read by [cliOptionsOf] rather than as [formsDirOption]'s `env`:
+ * see [formsDirOf].
+ */
+internal const val ENV_FORMS_DIR: String = "OFMCP_FORMS_DIR"
+
 /** Environment variables mirroring the converter flags, for launchers that can only set env. */
 internal const val ENV_CONVERT_COMMAND: String = "OFMCP_CONVERT_COMMAND"
 internal const val ENV_COMPILE_COMMAND: String = "OFMCP_COMPILE_COMMAND"
@@ -145,15 +152,17 @@ private val moduleTypeConverter: ValueConverter<ModuleType> =
         }
     }
 
+private val formsDirConverter = Converters.path.configured()
+
 private val formsDirOption = Option.Single(
     "--forms-dir",
-    Converters.path.configured(),
+    formsDirConverter,
     help = "Directory containing the Forms modules",
     valueName = "path",
 )
 private val formsDirArgument = Argument.Single(
     "forms-dir",
-    Converters.path.configured(),
+    formsDirConverter,
     help = "The same as --forms-dir",
     required = false,
 )
@@ -164,7 +173,9 @@ private val convertCommandOption = Option.Single(
         "any part that contains spaces (\"C:\\tools\\my conv.bat\" -xml), or a JSON array of arguments " +
         "([\"wine\",\"f2x.exe\",\"-xml\"]). It is spawned directly, never through a shell.\n\n" +
         "The module's absolute path replaces {} and is appended as the last argument when {} does not appear; " +
-        "the output file's absolute path replaces {out} (never appended). Runs with the cwd set to the converted " +
+        "the output file's absolute path replaces {out}, and the directory the server was started in replaces " +
+        "{start} (neither appended): write a file the command takes as an argument as {start}/<path>, since a " +
+        "relative argument is looked up from the command's own cwd. Runs with the cwd set to the converted " +
         "directory (--converted-dir, else the module's cache dir) and must write the text forms there or to {out} " +
         "(*_fmb.xml etc., .pld for .pll). Takes precedence over ORACLE_HOME.",
     valueName = "cmd",
@@ -276,7 +287,8 @@ private val jsonOption = Option.Flag(
 private val root = CommandSpec(
     "server",
     help = "oracle-forms-mcp — MCP server serving the content of Oracle Forms modules in a directory.\n\n" +
-        "The forms directory (required) may be given with --forms-dir or as the positional argument. " +
+        "The forms directory (required) may be given with --forms-dir, as the positional argument, or " +
+        "in $ENV_FORMS_DIR when neither is given. " +
         "Conversion of .fmb/.mmb/.olb/.pll binaries uses, in order: the --convert-command command if given, " +
         "else the frmf2xml/frmcmp tools under ORACLE_HOME if that is set; otherwise pre-converted files " +
         "(*_fmb.xml, *_mmb.xml, *_olb.xml, *.pld) are expected next to the modules and copied into the cache. " +
@@ -323,7 +335,8 @@ private val root = CommandSpec(
         ),
     ),
     constraints = listOf(
-        Constraint.ExactlyOne(formsDirOption, formsDirArgument),
+        // Not ExactlyOne: the variable can give the directory too, and formsDirOf requires one of the three.
+        Constraint.Exclusive(formsDirOption, formsDirArgument),
         Constraint.Exclusive(prefetchOption, prefetchAllOption),
         // An http setting silently ignored under stdio is a server not listening where it was asked to.
         // --host is left out: it reads OFMCP_HTTP_HOST, and a container that exports it may still run stdio.
@@ -332,6 +345,7 @@ private val root = CommandSpec(
         Constraint.RequiresValue(allowedOriginOption, transportOption, "http"),
     ),
     environment = listOf(
+        EnvironmentVariable(ENV_FORMS_DIR, "The forms directory, when neither --forms-dir nor the argument gives one"),
         EnvironmentVariable(ENV_ORACLE_HOME, "Oracle Forms installation providing frmf2xml/frmcmp"),
     ),
 )
@@ -359,8 +373,7 @@ internal fun cliOptionsOf(values: OptionValues, environment: (String) -> String?
         else -> null
     }
     return CliOptions(
-        // The ExactlyOne constraint has already refused a command line with neither.
-        formsDir = checkNotNull(values[formsDirOption] ?: values[formsDirArgument]),
+        formsDir = formsDirOf(values, environment),
         transport = values[transportOption] ?: TransportKind.STDIO,
         host = values[hostOption] ?: DEFAULT_HTTP_HOST,
         port = values[portOption] ?: DEFAULT_PORT,
@@ -375,6 +388,31 @@ internal fun cliOptionsOf(values: OptionValues, environment: (String) -> String?
         oracleHome = environment(ENV_ORACLE_HOME),
         prefetch = prefetch,
     )
+}
+
+/**
+ * The forms directory: `--forms-dir` or the positional argument (the Exclusive constraint has refused
+ * both), else [ENV_FORMS_DIR].
+ *
+ * The variable is read here rather than declared as the option's `env`, because cli-kit counts a
+ * value from a variable as the option being given: `server C:\forms` with the variable exported
+ * would then be "--forms-dir (from OFMCP_FORMS_DIR) cannot be combined with forms-dir". The
+ * positional is the same setting spelled differently, so the command line wins over the variable
+ * whichever spelling it used.
+ */
+private fun formsDirOf(values: OptionValues, environment: (String) -> String?): Path {
+    values[formsDirOption]?.let { return it }
+    values[formsDirArgument]?.let { return it }
+    val raw = environment(ENV_FORMS_DIR)
+    return when (val fromEnvironment = raw?.let(formsDirConverter::convert)) {
+        is ConversionResult.Ok -> fromEnvironment.value
+        is ConversionResult.Invalid -> usageError("invalid value for $ENV_FORMS_DIR: ${fromEnvironment.reason}")
+        // Unset: blank, or a launcher's template nobody filled in.
+        else -> usageError(
+            "the forms directory is required: give --forms-dir <path>, pass it as the argument, or set " +
+                ENV_FORMS_DIR + (if (raw.isNullOrBlank()) "" else " (it is '${raw.trim()}', which counts as not set)"),
+        )
+    }
 }
 
 /**

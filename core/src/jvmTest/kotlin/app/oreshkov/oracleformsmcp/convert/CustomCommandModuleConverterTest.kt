@@ -45,7 +45,7 @@ class CustomCommandModuleConverterTest {
         converter(command.toString(), timeoutSeconds)
 
     private fun compileConverter(command: String) =
-        CustomCommandModuleConverter(command, formsDir, 30.seconds, ConverterOption.COMPILE)
+        CustomCommandModuleConverter(command, formsDir, 30.seconds, ConverterOption.COMPILE, ConvertCommandSpec.startPath())
 
     private fun fakeBinary(name: String): Path = formsDir.resolve(name).also { it.writeText("binary") }
 
@@ -262,6 +262,54 @@ class CustomCommandModuleConverterTest {
         convertOrders(converter(script))
 
         assertEquals(fakeBinary("ORDERS.fmb").toString(), recordedArguments())
+    }
+
+    /** Where a plugin's server starts: its root, with a space in it to keep the quoting honest. */
+    private val startDir: Path = temp.resolve("plugin root")
+
+    private fun startedIn(command: String) =
+        CustomCommandModuleConverter(command, formsDir, 30.seconds, ConverterOption.CONVERT, startDir)
+
+    /**
+     * The case `{start}` exists for: an interpreter on PATH running a file shipped beside the
+     * server. The child runs in the converted directory, so a relative argument would miss it.
+     */
+    @Test
+    fun substitutesTheStartDirectoryInAnArgument() = runTest {
+        val script = argumentRecordingScript(copyFixture("orders_fmb.xml", temp))
+
+        convertOrders(startedIn("$script --tool {start}/converter/Convert.java {}"))
+
+        assertEquals("--tool $startDir/converter/Convert.java ${fakeBinary("ORDERS.fmb")}", recordedArguments())
+    }
+
+    @Test
+    fun runsAProgramNamedThroughTheStartDirectory() = runTest {
+        val script = argumentRecordingScript(copyFixture("orders_fmb.xml", temp), dir = startDir.resolve("converter"))
+
+        convertOrders(startedIn(jsonArrayOf("{start}/converter/${script.name}", "--xml")))
+
+        assertEquals("--xml ${fakeBinary("ORDERS.fmb")}", recordedArguments())
+    }
+
+    /** A relative program is resolved where the server started, not where the child runs. */
+    @Test
+    fun resolvesARelativeProgramAgainstTheStartDirectory() = runTest {
+        val script = argumentRecordingScript(copyFixture("orders_fmb.xml", temp), dir = startDir.resolve("converter"))
+
+        convertOrders(startedIn(jsonArrayOf("converter/${script.name}", "--xml")))
+
+        assertEquals("--xml ${fakeBinary("ORDERS.fmb")}", recordedArguments())
+    }
+
+    /** The message names the file that is missing, not the placeholder the user wrote. */
+    @Test
+    fun namesTheResolvedPathOfAMissingStartDirectoryProgram() = runTest {
+        val error = assertFailsWith<ConverterNotFoundException> {
+            convertOrders(startedIn(jsonArrayOf("{start}/converter/nope.cmd", "--xml")))
+        }
+
+        assertTrue("$startDir/converter/nope.cmd" in error.message!!, error.message)
     }
 
     @Test

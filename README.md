@@ -454,7 +454,7 @@ tool to anyone who can reach it.
 ### Options
 
 ```
---forms-dir <path>          Directory containing the Forms modules (or pass it positionally)
+--forms-dir <path>          Directory containing the Forms modules (or pass it positionally, or set OFMCP_FORMS_DIR)
 --convert-command <cmd>     Site-supplied converter command (with its arguments) instead of frmf2xml
 --compile-command <cmd>     Separate converter command for .pll libraries (0.11.0+)
 --converted-dir <path>      Directory the converted XML/.pld is written into (default: the cache)
@@ -484,12 +484,15 @@ allowing a host does not allow an origin. A browser-based client opened from any
 localhost needs its origin passed with `--allowed-origin`, or it gets `403`. Clients that are not
 browsers send no `Origin` and need only the host.
 
-The converter options and the HTTP bind address can also be set as environment variables, for
-clients that configure a server with variables rather than arguments (`docker run -e`, the `env`
-block of an MCP config). A flag always wins over its variable:
+The forms directory, the converter options and the HTTP bind address can also be set as
+environment variables, for clients that configure a server with variables rather than arguments
+(`docker run -e`, the `env` block of an MCP config, a plugin host that starts every installation
+with the same command line). The command line always wins over its variable — for the forms
+directory, in either spelling:
 
 | Flag | Variable |
 | --- | --- |
+| `--forms-dir` (or the argument) | `OFMCP_FORMS_DIR` |
 | `--convert-command` | `OFMCP_CONVERT_COMMAND` |
 | `--compile-command` | `OFMCP_COMPILE_COMMAND` |
 | `--converted-dir` | `OFMCP_CONVERTED_DIR` |
@@ -570,7 +573,17 @@ preferred but not required — any `.xml` (or `.pld` for a library) written into
 is picked up.
 
 The program itself may be a path (absolute or relative to where the server was started) or a bare
-name, which is looked up on `PATH`.
+name, which is looked up on `PATH`. An *argument*, though, is read by the command, which runs in
+the converted directory — so a file shipped beside the server and passed to an interpreter would be
+looked for there. Write it with **`{start}`**, which is replaced with the absolute directory the
+server was started in (and, like `{out}`, never appended):
+
+```
+server --forms-dir /srv/forms --convert-command '["java", "{start}/converter/Convert.java", "xml", "{}", "{out}"]'
+```
+
+That is how a plugin whose host starts its server in the plugin's own directory, and passes
+configuration through literally, names a converter it carries.
 
 With [`--converted-dir`](#keeping-the-converted-xml) that working directory *is* your directory, so
 a wrapper that writes to a fixed place of its own — rather than to wherever it was started — works
