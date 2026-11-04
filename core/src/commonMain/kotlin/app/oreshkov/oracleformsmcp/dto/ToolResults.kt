@@ -420,6 +420,10 @@ public data class BlockColumns(
  * One row of `list_triggers`. [bodySource] tells an empty-looking row that is subclassed from one
  * that is genuinely empty — the same distinction `get_trigger` makes, carried into the listing so
  * a scan of the rows does not have to call every one of them to find out.
+ *
+ * [inherited] is set exactly when [bodySource] is `INHERITED`, and is the pointer `get_trigger`
+ * serves — read from the index, so a form whose triggers are mostly subclassed names where every
+ * one of them lives in a single call, not one `get_trigger` per row.
  */
 @Serializable
 @SerialName("TriggerSummary")
@@ -431,6 +435,7 @@ public data class TriggerSummary(
     val firstLine: String = "",
     val lineCount: Int = 0,
     val bodySource: BodySource = BodySource.OWN,
+    val inherited: InheritanceRef? = null,
 )
 
 /**
@@ -475,6 +480,7 @@ public data class TriggerSource(
 /**
  * One row of `list_program_units`. [bodySource] does what it does on [TriggerSummary]: a
  * subclassed unit stores no code here, and without it the row reads as a unit that does nothing.
+ * [inherited] likewise names where an `INHERITED` unit's code lives.
  */
 @Serializable
 @SerialName("ProgramUnitSummary")
@@ -483,6 +489,7 @@ public data class ProgramUnitSummary(
     val unitType: ProgramUnitType,
     val lineCount: Int = 0,
     val bodySource: BodySource = BodySource.OWN,
+    val inherited: InheritanceRef? = null,
 )
 
 /** `list_program_units`. [total] counts every unit; [truncated] says the rows were cut at the cap. */

@@ -10,7 +10,10 @@ fun Server.registerListTriggersTool(service: FormsService) {
         description = "List a fetched module's triggers with their level (form/block/item/menu), " +
             "owning block/item, and line count. Filter by block, item, or level. 'concise' (default) " +
             "omits the one-line PL/SQL preview to save tokens when triaging a large trigger set; " +
-            "'detailed' includes it. Fetch a full body with get_trigger. 'total' counts every " +
+            "'detailed' includes it. Fetch a full body with get_trigger. A row with bodySource " +
+            "'inherited' carries 'inherited' at either verbosity: the module, file, name and " +
+            "ownerPath where its code lives, so the sources of a subclassed form's triggers need " +
+            "no get_trigger call each. 'total' counts every " +
             "trigger matching the filter; 'truncated' means the rows were cut at the response " +
             "cap — narrow with block, item or level to see the rest.",
         inputSchema = moduleSchema(
