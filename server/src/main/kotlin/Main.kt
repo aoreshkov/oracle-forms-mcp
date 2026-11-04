@@ -94,8 +94,16 @@ internal data class CliOptions(
     val prefetch: Prefetch? = null,
 )
 
-/** A warm-up run; [json] writes its summary as a JSON object instead of a sentence. */
-internal data class Prefetch(val pattern: String? = null, val type: ModuleType? = null, val json: Boolean = false)
+/**
+ * A warm-up run; [json] writes its summary as a JSON object instead of a sentence, and [force]
+ * converts every matching module again even when its cache entry is current.
+ */
+internal data class Prefetch(
+    val pattern: String? = null,
+    val type: ModuleType? = null,
+    val json: Boolean = false,
+    val force: Boolean = false,
+)
 
 /**
  * This converter, except that a value a launcher left unfilled counts as not given, and every other
@@ -265,7 +273,8 @@ private val prefetchOption = Option.Single(
     Converters.string,
     help = "Instead of serving, fetch (convert and index) every module whose name contains <pattern> " +
         "(case-insensitive), one at a time, then exit, so a session's search_modules covers them. " +
-        "Already-current modules are skipped cheaply, so a rerun resumes. Exits 1 when any module failed.",
+        "Already-current modules are skipped cheaply (unless --force), so a rerun resumes. Exits 1 when " +
+        "any module failed.",
     valueName = "pattern",
 )
 private val prefetchAllOption = Option.Flag(
@@ -281,6 +290,12 @@ private val prefetchTypeOption = Option.Single(
 private val jsonOption = Option.Flag(
     "--json",
     help = "With a prefetch, write its summary on stdout as JSON (modules, fetched, current, failed)",
+)
+private val forceOption = Option.Flag(
+    "--force",
+    help = "With a prefetch, convert every matching module again even when it is current — after fixing " +
+        "the conversion setup (FORMS_PATH, ORACLE_HOME, the converter command), which an unchanged module " +
+        "would otherwise never see. Annotations are kept",
 )
 
 @OptIn(ExperimentalCliKitApi::class)
@@ -311,6 +326,7 @@ private val root = CommandSpec(
         prefetchAllOption,
         prefetchTypeOption,
         jsonOption,
+        forceOption,
     ),
     arguments = listOf(formsDirArgument),
     examples = listOf(
@@ -365,15 +381,23 @@ internal val commandTree: CommandSpec get() = root
 internal fun cliOptionsOf(values: OptionValues, environment: (String) -> String?): CliOptions {
     val prefetchType = values[prefetchTypeOption]
     val json = values[jsonOption]
+    val force = values[forceOption]
     // `*` is accepted as "all" where a shell passes it through, but it is not the spelling to
     // document: the JVM launcher on Windows expands a bare `*` into file names.
     val pattern = values[prefetchOption]
     val prefetch = when {
-        values[prefetchAllOption] -> Prefetch(type = prefetchType, json = json)
-        pattern != null -> Prefetch(pattern.trim().takeUnless { it.isEmpty() || it == "*" }, prefetchType, json)
-        prefetchType != null -> Prefetch(type = prefetchType, json = json)
+        values[prefetchAllOption] -> Prefetch(type = prefetchType, json = json, force = force)
+        pattern != null ->
+            Prefetch(pattern.trim().takeUnless { it.isEmpty() || it == "*" }, prefetchType, json, force)
+        prefetchType != null -> Prefetch(type = prefetchType, json = json, force = force)
         // Serving, stdout is the MCP protocol channel; a JSON summary has nowhere to go.
         json -> usageError("--json applies only to a prefetch (--prefetch, --prefetch-all or --prefetch-type)")
+        // Serving, a module is forced one at a time with fetch_module(force=true); a flag that
+        // silently did nothing would leave the stale entries the operator meant to replace.
+        force -> usageError(
+            "--force applies only to a prefetch (--prefetch, --prefetch-all or --prefetch-type); " +
+                "while serving, call fetch_module with force=true",
+        )
         else -> null
     }
     return CliOptions(
@@ -582,7 +606,11 @@ private fun runPrefetch(config: ServerConfig, prefetch: Prefetch, context: Comma
         McpServerFactory.create(config).use { handle ->
             val progress = output.progress("Prefetching")
             try {
-                handle.service.prefetch(pattern = prefetch.pattern, type = prefetch.type) { done, total, outcome ->
+                handle.service.prefetch(
+                    pattern = prefetch.pattern,
+                    type = prefetch.type,
+                    force = prefetch.force,
+                ) { done, total, outcome ->
                     val error = outcome.error
                     if (error != null) {
                         progress.finish()

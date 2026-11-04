@@ -105,9 +105,9 @@ Options:
                                   every module whose name contains <pattern>
                                   (case-insensitive), one at a time, then exit,
                                   so a session's search_modules covers them.
-                                  Already-current modules are skipped cheaply,
-                                  so a rerun resumes. Exits 1 when any module
-                                  failed.
+                                  Already-current modules are skipped cheaply
+                                  (unless --force), so a rerun resumes. Exits 1
+                                  when any module failed.
       --prefetch-all              The same for every module in the forms
                                   directory
       --prefetch-type <type>      Only prefetch this module type; given alone,
@@ -115,6 +115,12 @@ Options:
                                   (form|menu|library|object_library)
       --json                      With a prefetch, write its summary on stdout
                                   as JSON (modules, fetched, current, failed)
+      --force                     With a prefetch, convert every matching module
+                                  again even when it is current — after fixing
+                                  the conversion setup (FORMS_PATH, ORACLE_HOME,
+                                  the converter command), which an unchanged
+                                  module would otherwise never see. Annotations
+                                  are kept
 
 Environment:
   OFMCP_CONVERT_COMMAND  Same as --convert-command

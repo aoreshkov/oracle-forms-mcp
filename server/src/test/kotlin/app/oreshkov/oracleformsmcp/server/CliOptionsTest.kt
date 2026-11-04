@@ -112,6 +112,16 @@ class CliOptionsTest {
         assertContains(refused("/srv/forms", "--json"), "--json applies only to a prefetch")
     }
 
+    /** Ignored while serving, `--force` would leave the stale entries its operator meant to replace. */
+    @Test
+    fun forceIsForAPrefetchOnly() {
+        assertEquals(
+            Prefetch(pattern = "ORDER", force = true),
+            parse("/srv/forms", "--prefetch", "ORDER", "--force").prefetch,
+        )
+        assertContains(refused("/srv/forms", "--force"), "fetch_module with force=true")
+    }
+
     @Test
     fun flagsWinOverTheEnvironment() {
         val env = mapOf(

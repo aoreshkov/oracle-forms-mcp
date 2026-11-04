@@ -426,6 +426,12 @@ class FormsServiceIntegrationTest {
                 .annotations.notes.size,
         )
 
+        // Nor must a forced re-conversion, which rewrites the whole cache entry (#121).
+        assertEquals(false, service.fetchModule(ordersKey, force = true).fromCache)
+        val afterForce = service.getElementAnnotations(ordersKey, ElementKind.TRIGGER, "WHEN-VALIDATE-ITEM", null)
+        assertEquals(listOf("Validates the order id is present"), afterForce.annotations.notes.map { it.body })
+        assertEquals(false, afterForce.annotations.notes.single().staleAgainstSource)
+
         // Changing the source (without re-indexing) flags the note as stale, but still serves it.
         val source = formsDir.resolve("orders_fmb.xml")
         Files.writeString(source, Files.readString(source) + "\n<!-- touched -->")

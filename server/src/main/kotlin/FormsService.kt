@@ -311,15 +311,22 @@ class FormsService(
      * [CURRENT_INDEX_VERSION] is re-parsed from the converted file already in the cache entry —
      * see [reindexInPlace]. That is the upgrade path: nothing about a new server build changes an
      * `.fmb`, so without it a warm module keeps answering with the facts the previous build knew.
+     *
+     * [force] skips both shortcuts and converts the source again. The fingerprint proves only that
+     * the *file* is unchanged, not that its conversion was right: `frmf2xml` run without the forms
+     * directory on `FORMS_PATH` still succeeds, minus every inherited object, and that result would
+     * otherwise be served as current until the file itself is saved again. Annotations live in
+     * their own store and are not touched.
      */
     suspend fun fetchModule(
         key: ModuleKey,
+        force: Boolean = false,
         onProgress: suspend (FetchProgress) -> Unit = {},
     ): FetchModuleSummary =
         // The warm path is inside the lock on purpose: hoisting the cache check out would restore
         // the very race this closes. A caller that arrives during a cold fetch of the same module
         // waits, then gets that fetch's result with `fromCache = true` instead of redoing the work.
-        fetchLocks.computeIfAbsent(key) { Mutex() }.withLock { fetchModuleLocked(key, onProgress) }
+        fetchLocks.computeIfAbsent(key) { Mutex() }.withLock { fetchModuleLocked(key, force, onProgress) }
 
     /**
      * Fetches every module in the forms directory whose name matches [pattern] (and whose type is
@@ -335,11 +342,14 @@ class FormsService(
      *
      * @param pattern the `list_modules` name filter: case-insensitive substring, or a regex with
      *   [regex]; `null` takes every module
+     * @param force convert every matching module again, current or not (see [fetchModule]); a
+     *   stopped forced run then does not resume, since every module reads as current to the next
      */
     suspend fun prefetch(
         pattern: String? = null,
         regex: Boolean = false,
         type: ModuleType? = null,
+        force: Boolean = false,
         onModule: suspend (done: Int, total: Int, outcome: PrefetchOutcome) -> Unit = { _, _, _ -> },
     ): List<PrefetchOutcome> {
         val nameMatcher = pattern?.let { moduleNameMatcher(it, regex) }
@@ -348,7 +358,7 @@ class FormsService(
             .sortedBy { it.toString() }
         return keys.mapIndexed { i, key ->
             val outcome = try {
-                PrefetchOutcome(key, fetchModule(key), null)
+                PrefetchOutcome(key, fetchModule(key, force), null)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -361,6 +371,7 @@ class FormsService(
 
     private suspend fun fetchModuleLocked(
         key: ModuleKey,
+        force: Boolean,
         onProgress: suspend (FetchProgress) -> Unit,
     ): FetchModuleSummary {
         val all = scanner.scan()
@@ -369,7 +380,9 @@ class FormsService(
                 "Module '$key' was not found in $formsDir. Call list_modules to see what exists.",
             )
         val source = fingerprintSource(scanned)
-        cache.get(key)?.let { cached ->
+        // Forced, the old entry is not cleared first: it is overwritten below exactly as a stale one
+        // is, so it stays readable until the new index lands.
+        if (!force) cache.get(key)?.let { cached ->
             if (cached.sourceFile == source.toString() &&
                 Fingerprints.matches(cached.fingerprint, source)
             ) {
@@ -384,7 +397,7 @@ class FormsService(
             }
         }
 
-        log.i { "Converting and indexing $key from $source (${converter.description})" }
+        log.i { "Converting and indexing $key from $source (${converter.description})${if (force) ", forced" else ""}" }
         // Taken before the converter reads the file, so a save landing during the fetch can only
         // make this entry stale — never stamp the new version onto facts read from the old one.
         val fingerprint = withContext(Dispatchers.IO) { Fingerprints.of(source) }

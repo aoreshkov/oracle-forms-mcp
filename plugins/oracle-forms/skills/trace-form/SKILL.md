@@ -27,6 +27,11 @@ that read as plausible, such as an inherited trigger reported empty). Both are h
 `fetch_module`; the second re-parses the converted file and runs no conversion. After upgrading the
 server, `list_modules(status="stale")` is the one call worth making before trusting a warm cache.
 
+Neither status sees a *conversion* that went wrong: a module whose file is unchanged stays current,
+however it was converted. When the conversion setup was fixed (`FORMS_PATH`, `ORACLE_HOME`, the
+converter command), or a form lacks objects its parent clearly supplies, `fetch_module` with
+`force: true` converts it afresh; annotations are kept.
+
 Every reflex has a call:
 
 | Reflex | Call instead |
