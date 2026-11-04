@@ -23,13 +23,24 @@ fun Server.registerFetchModuleTool(
             "module whose source is unchanged, indexed by this build, returns immediately; one " +
             "indexed by an older build is re-parsed from the converted file it already has, " +
             "without re-converting. Call this once per module " +
-            "(and again when list_modules reports STALE) before using the other tools. Returns " +
+            "(and again when list_modules reports STALE) before using the other tools. An " +
+            "unchanged module is never converted again on its own, so after the conversion setup " +
+            "was fixed (FORMS_PATH, ORACLE_HOME, a converter command) — or when a module lacks " +
+            "objects it should inherit — pass force=true to convert it afresh; annotations are " +
+            "kept. Returns " +
             "a summary (block/item/trigger/program-unit counts, attached libraries); its 'hint' " +
             "names the attached libraries not fetched yet — code the module calls but does not " +
             "define is usually there — and, separately, any the forms directory does not hold, " +
             "which nothing here can read: treat a routine you cannot find in one of those as " +
             "undetermined rather than absent.",
-        inputSchema = moduleSchema(),
+        inputSchema = moduleSchema(
+            mapOf(
+                "force" to boolProp(
+                    "Convert and index the module again even when its cache entry is current. " +
+                        "Default false.",
+                ),
+            ),
+        ),
         title = "Fetch and index a module",
         outputSchema = outputSchemaOf<FetchModuleSummary>(),
         // Writes the local cache (additive, repeat-safe); runs only local conversions.
@@ -41,10 +52,11 @@ fun Server.registerFetchModuleTool(
         ),
     ) { request ->
         guarded {
-            val key = service.resolveModule(request.args().moduleArg())
+            val args = request.args()
+            val key = service.resolveModule(args.moduleArg())
             // Clients opt into notifications/progress by sending a progressToken in _meta.
             val progressToken = request.params.meta?.progressToken
-            val summary = service.fetchModule(key) { progress ->
+            val summary = service.fetchModule(key, force = args.booleanArg("force") ?: false) { progress ->
                 progressToken?.let { sendFetchProgress(it, progress) }
             }
             onFetched(key)

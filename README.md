@@ -90,7 +90,7 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 | Tool | What it returns |
 |---|---|
 | `list_modules` | Modules in the forms dir with type, size, and cache status; filter by `pattern`/`regex`, `type`, `status` and page via `limit`/`cursor` |
-| `fetch_module` | Converts + indexes one module (idempotent; progress notifications) |
+| `fetch_module` | Converts + indexes one module (idempotent; `force=true` converts a current one again; progress notifications) |
 | `get_module_overview` | Names of every section + counts — the first call after a fetch (`verbosity=detailed` adds window and canvas objects) |
 | `list_blocks` | Blocks with base table, item count, trigger count |
 | `get_block` | One block: items with type, property class, prompt and trigger names, and its master-detail relations (`verbosity=detailed` adds data type, column, canvas, size, visible/required/LOV and the DML properties resolved through each item's property class; `columns=true` adds the base table's columns and the ones no item supplies); flags subclassed blocks/items |
@@ -249,6 +249,12 @@ Modules already current cost a fingerprint check, so a rerun picks up where a st
 server --forms-dir /srv/forms --prefetch-all
 server --forms-dir /srv/forms --prefetch ORDER --prefetch-type form
 ```
+
+A module is current as long as its *file* is unchanged — which says nothing about whether it was
+converted right. `frmf2xml` run without the forms directory on `FORMS_PATH`, for one, succeeds but
+leaves out every inherited object, and that result is served until the module is saved again. After
+fixing the conversion setup, convert again with `--force` (`--prefetch-all --force`), or one module
+at a time with `fetch_module(module=…, force=true)`. Annotations are kept either way.
 
 Both bounds are enforced and resumable: `maxResults` hits per page, and a ceiling on how many
 modules one call reads — a query that matches nothing would otherwise read every converted file in
@@ -471,6 +477,7 @@ tool to anyone who can reach it.
 --prefetch-all              Fetch every module in the forms directory, then exit
 --prefetch-type <type>      Limit --prefetch to form, menu, library or object_library
 --json                      With a prefetch: the summary on stdout as a JSON object
+--force                     With a prefetch: convert modules again even when they are current
 --help / --version          Print the full help page, or the version, and exit
 ```
 

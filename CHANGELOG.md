@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Force a re-conversion of a cached module** (#121): `fetch_module(force=true)`, and `--force`
+  with `--prefetch` / `--prefetch-all` / `--prefetch-type`. A module whose source is unchanged was
+  never converted again, so a result from a wrong setup — `frmf2xml` without the forms directory on
+  `FORMS_PATH` succeeds minus every inherited object — kept being served after the setup was fixed,
+  until its cache entry was deleted by hand. Annotations are kept. `--force` without a prefetch is
+  a usage error.
 - **The forms directory can be given as `OFMCP_FORMS_DIR`**, for a host that starts the server with
   a fixed command line and can pass a user's settings only as environment variables. `--forms-dir`
   or the positional argument still wins, and an exported variable never conflicts with either.
