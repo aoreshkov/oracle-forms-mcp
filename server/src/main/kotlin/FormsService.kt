@@ -732,6 +732,7 @@ class FormsService(
             .filter { block == null || it.blockName.equals(block, ignoreCase = true) }
             .filter { item == null || it.itemName.equals(item, ignoreCase = true) }
             .map {
+                val bodySource = bodySourceOf(it)
                 TriggerSummary(
                     name = it.name,
                     level = it.level,
@@ -744,7 +745,10 @@ class FormsService(
                     // Such a body counts zero lines: the stored count never goes below one, and
                     // "1 line" beside an inherited body reads as a one-line trigger.
                     lineCount = if (it.firstLine.isBlank()) 0 else it.lineCount,
-                    bodySource = bodySourceOf(it.firstLine, it.inherited),
+                    bodySource = bodySource,
+                    // Served at every verbosity: it is where the code is, not a preview of it.
+                    // Only beside INHERITED — an overriding body is this module's own code.
+                    inherited = it.inherited.takeIf { bodySource == BodySource.INHERITED },
                 )
             }
             .toList()
@@ -835,6 +839,7 @@ class FormsService(
                 // As in list_triggers: a body with no code is zero lines, not the stored minimum of one.
                 lineCount = if (bodySource == BodySource.OWN) unit.lineCount else 0,
                 bodySource = bodySource,
+                inherited = unit.inherited.takeIf { bodySource == BodySource.INHERITED },
             )
         }
         return ProgramUnitList(

@@ -58,5 +58,22 @@ class PreConvertedCopyConverterTest {
         }
         assertTrue(error.message!!.contains("ORACLE_HOME"))
         assertTrue(error.message!!.contains("orders_fmb.xml", ignoreCase = true))
+        // The site's own converter is often the easiest way out; the message has to name it (#122).
+        assertTrue(error.message!!.contains("--convert-command"), error.message)
+        assertTrue(error.message!!.contains("OFMCP_CONVERT_COMMAND"), error.message)
+        assertTrue(error.message!!.contains("fetch_module"), error.message)
+    }
+
+    @Test
+    fun missingPreConvertedLibraryNamesTheCompileCommand() = runTest {
+        val binary = formsDir.resolve("UTIL.pll").also { it.writeText("binary") }
+
+        val error = assertFailsWith<PreConvertedFileMissingException> {
+            converter.convert(ModuleKey.of("util", ModuleType.LIBRARY), binary.toString(), targetDir.toString())
+        }
+        // frmf2xml rejects libraries, so a .pll is pointed at the compile command instead.
+        assertTrue(error.message!!.contains("--compile-command"), error.message)
+        assertTrue(error.message!!.contains("OFMCP_COMPILE_COMMAND"), error.message)
+        assertTrue(error.message!!.contains("UTIL.pld", ignoreCase = true), error.message)
     }
 }

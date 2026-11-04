@@ -132,6 +132,17 @@ class SubclassedModuleTest {
         // decides which triggers are worth opening.
         assertEquals(0, listed.single { it.item == "SELECT" }.lineCount)
         assertEquals(2, listed.single { it.item == "CANCEL" }.lineCount)
+        // The row names where the code lives — the very pointer get_trigger serves — so finding the
+        // sources of a mostly subclassed form takes one listing, not a get_trigger per row (#122).
+        val selectRef = assertNotNull(listed.single { it.item == "SELECT" }.inherited)
+        assertEquals(
+            service.getTrigger(pickerKey, "WHEN-BUTTON-PRESSED", block = "BAR_LIST", item = "SELECT").inherited,
+            selectRef,
+        )
+        assertEquals("TOOLBAR", selectRef.module)
+        assertEquals("BAR.SELECT", selectRef.ownerPath)
+        // An overriding body is this module's own code; the row points nowhere else.
+        assertNull(listed.single { it.item == "CANCEL" }.inherited)
         assertEquals(
             0,
             service.listTriggers(pickerKey, block = "ORPHAN", item = null, level = null)
@@ -206,11 +217,16 @@ class SubclassedModuleTest {
         assertEquals(BodySource.INHERITED, units.getValue("BAR_REFRESH").bodySource)
         assertEquals(0, units.getValue("BAR_REFRESH").lineCount)
         assertEquals(BodySource.INHERITED, units.getValue("SHOW_INFO").bodySource)
+        assertEquals(
+            service.getProgramUnit(pickerKey, "BAR_REFRESH", unitType = "PROCEDURE").inherited,
+            assertNotNull(units.getValue("BAR_REFRESH").inherited),
+        )
 
         service.fetchModule(toolbarKey)
         val own = service.listProgramUnits(toolbarKey).units.single()
         assertEquals(BodySource.OWN, own.bodySource)
         assertEquals(4, own.lineCount)
+        assertNull(own.inherited)
 
         formsDir.resolve("stub_fmb.xml").writeText(
             """

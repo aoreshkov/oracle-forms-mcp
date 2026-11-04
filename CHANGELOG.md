@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`list_triggers` and `list_program_units` name where an inherited body lives** (#122). A row
+  with `bodySource: inherited` now carries the same `inherited` pointer `get_trigger` /
+  `get_program_unit` serve (parent module, file, name, `ownerPath`), at either verbosity. In a
+  mostly subclassed form that turns one `get_trigger` call per trigger into a single listing.
+- **The "no converter" error names `--convert-command` / `OFMCP_CONVERT_COMMAND`** (#122), or
+  `--compile-command` / `OFMCP_COMPILE_COMMAND` for a `.pll`, beside `ORACLE_HOME` and the
+  pre-converted file. The site's own command is often the easiest fix, and the error was where
+  nobody learned about it.
 - **Force a re-conversion of a cached module** (#121): `fetch_module(force=true)`, and `--force`
   with `--prefetch` / `--prefetch-all` / `--prefetch-type`. A module whose source is unchanged was
   never converted again, so a result from a wrong setup — `frmf2xml` without the forms directory on
