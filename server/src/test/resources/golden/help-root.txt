@@ -124,6 +124,8 @@ Environment:
   OFMCP_FORMS_DIR        The forms directory, when neither --forms-dir nor the
                          argument gives one
   ORACLE_HOME            Oracle Forms installation providing frmf2xml/frmcmp
+  FORMS_INSTANCE         Forms instance whose bin is searched after
+                         ORACLE_HOME's (frmf2xml.sh on Linux Forms 12c+)
 
 Notes:
   --forms-dir and <forms-dir> cannot be combined

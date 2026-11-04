@@ -68,7 +68,8 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
    `countsByStatus` for the shape of the whole match.
 2. `fetch_module` produces the module's text form in the cache and indexes it:
    - **`ORACLE_HOME` set** — binaries are converted with the Oracle tools in
-     `%ORACLE_HOME%\bin`: `frmf2xml` for `.fmb`/`.mmb`/`.olb` (XML), `frmcmp_batch`
+     `%ORACLE_HOME%\bin` (then `$FORMS_INSTANCE/bin`, where Linux Forms 12c+ keeps
+     `frmf2xml.sh`): `frmf2xml` for `.fmb`/`.mmb`/`.olb` (XML), `frmcmp_batch`
      (`Module_Type=LIBRARY Script=YES`) for `.pll` (a `.pld` text dump).
    - **`ORACLE_HOME` not set** — pre-converted files are expected next to the modules
      (`orders_fmb.xml`, `dupes_fmb.xml`, `picker_fmb.xml`, `toolbar_fmb.xml`,
@@ -679,9 +680,18 @@ tags, and relations you recorded intact.
 
 ## Notes on the Oracle tools
 
-- `frmf2xml` writes its output into the process working directory; the server runs it with the
-  converted directory as cwd (`--converted-dir`, else the module's cache dir) and passes
-  `OVERWRITE=YES USE_PROPERTY_IDS=NO`.
+- The tools are looked for in `$ORACLE_HOME/bin`, then in `$FORMS_INSTANCE/bin`: on Linux,
+  Forms 12c and later ship `frmf2xml` only as `frmf2xml.sh` in the Forms instance. `.sh`
+  wrappers are accepted there (and `.bat`/`.cmd`/`.exe` on Windows).
+- `frmf2xml` writes its output into the process working directory on some installs and next to
+  its input on others (Linux 14.1.2). The server therefore converts a copy of the module in a
+  private staging directory, with that directory as cwd, and moves the result into the converted
+  directory (`--converted-dir`, else the module's cache dir) — so the forms directory is never
+  written to and may be read-only. It passes `OVERWRITE=YES USE_PROPERTY_IDS=NO`.
+- Outside Windows, the tools run with `TERM=vt220` and `FORMS_API_TK_BYPASS=TRUE` unless the
+  server's environment already sets them: an MCP host may start the server with neither a
+  terminal nor a display, and without them `frmcmp_batch` fails with `FRM-91500` and `frmf2xml`
+  with "Failed to create new forms context". Set either yourself to override it.
 - `frmcmp_batch` is preferred over `frmcmp` (headless); the server passes
   `Script=YES Batch=YES Logon=NO` and an explicit `Output_File` — without one, `frmcmp` writes the
   `.pld` next to the module rather than into its working directory — and augments `FORMS_PATH`

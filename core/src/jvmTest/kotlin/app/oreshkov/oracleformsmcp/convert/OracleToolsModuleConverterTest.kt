@@ -11,6 +11,7 @@ import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 import java.time.Instant
 import kotlin.io.path.createDirectories
+import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.io.path.readText
 import kotlin.io.path.setLastModifiedTime
@@ -30,14 +31,16 @@ class OracleToolsModuleConverterTest {
     private val oracleHome: Path = temp.resolve("oracle-home")
     private val formsDir: Path = Files.createDirectories(temp.resolve("forms"))
     private val targetDir: Path = temp.resolve("target")
+    private val formsInstance: Path = temp.resolve("forms-instance")
 
     @AfterTest
     fun cleanup() {
         temp.toFile().deleteRecursively()
     }
 
-    private fun converter(timeoutSeconds: Int = 30) =
-        OracleToolsModuleConverter(oracleHome, formsDir, timeoutSeconds.seconds)
+    // The instance is always passed, so a FORMS_INSTANCE on the machine running the tests is never searched.
+    private fun converter(timeoutSeconds: Int = 30, instance: Path? = null) =
+        OracleToolsModuleConverter(oracleHome, formsDir, timeoutSeconds.seconds, instance)
 
     private fun fakeBinary(name: String): Path = formsDir.resolve(name).also { it.writeText("binary") }
 
@@ -151,6 +154,106 @@ class OracleToolsModuleConverterTest {
         }
         assertTrue(error.message!!.contains("ORACLE_HOME"))
         assertTrue(error.message!!.contains("frmf2xml"))
+        assertTrue("set FORMS_INSTANCE" in error.message!!, error.message)
+    }
+
+    /** A Linux Forms 12c+ install has no frmf2xml under ORACLE_HOME, only `frmf2xml.sh` in the instance. */
+    @Test
+    fun findsFrmf2xmlInTheFormsInstance() = runTest {
+        FakeOracleHome.binDir(oracleHome)
+        val fixture = copyFixture("orders_fmb.xml", temp)
+        val stub = FakeOracleHome.stubScript(
+            formsInstance.resolve("bin"),
+            "frmf2xml",
+            batchLines = FakeOracleHome.freshCopyBatch("$fixture", "%CD%\\orders_fmb.xml"),
+            shellLines = listOf("cp \"$fixture\" \"\$PWD/orders_fmb.xml\""),
+        )
+        if (!FakeOracleHome.isWindows) Files.move(stub, stub.resolveSibling("frmf2xml.sh"))
+
+        val output = converter(instance = formsInstance).convert(
+            ModuleKey.of("orders", ModuleType.FORM), fakeBinary("ORDERS.fmb").toString(), targetDir.toString(),
+        )
+
+        assertTrue(Path.of(output).readText().contains("FormModule"))
+    }
+
+    /**
+     * frmf2xml on Linux 14.1.2 writes next to its *input*, whatever its cwd. That must neither fail
+     * nor write into the forms directory, which is often a read-only working copy.
+     */
+    @Test
+    fun frmf2xmlWritingNextToItsInputLeavesTheFormsDirectoryAlone() = runTest {
+        val fixture = copyFixture("orders_fmb.xml", temp)
+        FakeOracleHome.stubTool(
+            oracleHome,
+            "frmf2xml",
+            batchLines = FakeOracleHome.freshCopyBatch("$fixture", "%~dp1orders_fmb.xml"),
+            shellLines = listOf("cp \"$fixture\" \"\$(dirname \"\$1\")/orders_fmb.xml\""),
+        )
+        val binary = fakeBinary("ORDERS.fmb")
+
+        val output = converter().convert(ModuleKey.of("orders", ModuleType.FORM), binary.toString(), targetDir.toString())
+
+        assertEquals(targetDir.resolve("orders_fmb.xml").toAbsolutePath(), Path.of(output))
+        assertTrue(Path.of(output).readText().contains("FormModule"))
+        assertEquals(listOf("ORDERS.fmb"), formsDir.listDirectoryEntries().map { it.name })
+        // Neither the staging directory nor the module's copy outlives the run.
+        assertEquals(listOf("orders_fmb.xml"), targetDir.listDirectoryEntries().map { it.name })
+    }
+
+    @Test
+    fun theStagingDirectoryIsRemovedWhenTheRunFails() = runTest {
+        FakeOracleHome.failingTool(oracleHome, "frmf2xml", "FRM-99999: boom")
+
+        assertFailsWith<ConversionFailedException> {
+            converter().convert(
+                ModuleKey.of("orders", ModuleType.FORM), fakeBinary("ORDERS.fmb").toString(), targetDir.toString(),
+            )
+        }
+
+        assertEquals(emptyList(), targetDir.listDirectoryEntries())
+    }
+
+    @Test
+    fun headlessEnvironmentFillsOnlyWhatIsMissing() {
+        assertEquals(
+            mapOf("TERM" to "vt220", "FORMS_API_TK_BYPASS" to "TRUE"),
+            OracleToolsModuleConverter.headlessEnv(mapOf("TERM" to " "), windows = false),
+        )
+        assertEquals(
+            emptyMap(),
+            OracleToolsModuleConverter.headlessEnv(
+                mapOf("TERM" to "xterm", "FORMS_API_TK_BYPASS" to "FALSE"),
+                windows = false,
+            ),
+        )
+        assertEquals(emptyMap(), OracleToolsModuleConverter.headlessEnv(emptyMap(), windows = true))
+    }
+
+    /** What reaches the tool: a server started without TERM still runs frmcmp_batch with one. */
+    @Test
+    fun theToolRunsWithTheHeadlessEnvironment() = runTest {
+        if (FakeOracleHome.isWindows) return@runTest
+        FakeOracleHome.stubTool(
+            oracleHome,
+            "frmcmp_batch",
+            batchLines = emptyList(),
+            shellLines = listOf(
+                "for a in \"\$@\"; do",
+                "  case \"\$a\" in Output_File=*) " +
+                    "echo \"PROCEDURE p IS BEGIN NULL; END; -- [\$TERM] [\$FORMS_API_TK_BYPASS]\" > \"\${a#Output_File=}\" ;; esac",
+                "done",
+            ),
+        )
+
+        val output = converter().convert(
+            ModuleKey.of("utils", ModuleType.LIBRARY), fakeBinary("UTILS.pll").toString(), targetDir.toString(),
+        )
+
+        val term = System.getenv("TERM").takeUnless { it.isNullOrBlank() } ?: "vt220"
+        val bypass = System.getenv("FORMS_API_TK_BYPASS").takeUnless { it.isNullOrBlank() } ?: "TRUE"
+        val text = Path.of(output).readText()
+        assertTrue("[$term] [$bypass]" in text, text)
     }
 
     @Test

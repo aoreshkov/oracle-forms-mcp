@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   downloads in a per-user data directory of the OS instead of stopping. Its messages name the
   `OFMCP_SERVER_VERSION` variable beside `/plugin`, for hosts that have no `/plugin`.
 
+### Fixed
+- **`ORACLE_HOME` conversion works on a Linux Forms 12c+ install** (#120). Three things stood in
+  the way, on Forms 14.1.2 at least:
+  - `frmf2xml` is not in `$ORACLE_HOME/bin` there, only as `frmf2xml.sh` in the Forms instance.
+    The tools are now also looked for in `$FORMS_INSTANCE/bin`, and `.sh` (and, on Windows,
+    `.cmd`) wrappers are accepted.
+  - `frmf2xml` writes its XML next to the module there, not into its working directory, so the
+    server found no output — and a writable forms directory got XML among its sources. It now
+    converts a copy of the module in a private staging directory and moves the result into the
+    cache, so the forms directory is never written to and may be read-only.
+  - Started without a terminal or a display, as an MCP host may start it, `frmcmp_batch` failed
+    with `FRM-91500` and `frmf2xml` with "Failed to create new forms context". Outside Windows,
+    the tools now run with `TERM=vt220` and `FORMS_API_TK_BYPASS=TRUE` unless the environment
+    already sets them.
+
 ## [0.17.0] - 2026-10-28
 
 ### Changed
