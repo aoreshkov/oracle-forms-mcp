@@ -73,7 +73,8 @@ private val STDIO_STOP_TIMEOUT = 5.seconds
 internal enum class TransportKind { STDIO, HTTP }
 
 internal data class CliOptions(
-    val formsDir: Path,
+    /** `null` when none was given: the server then starts and refuses every tool call (see [ServerConfig.formsDir]). */
+    val formsDir: Path?,
     val transport: TransportKind = TransportKind.STDIO,
     /** The http bind address: the `--host` flag, else [ENV_HTTP_HOST], else loopback. */
     val host: String = DEFAULT_HTTP_HOST,
@@ -302,8 +303,9 @@ private val forceOption = Option.Flag(
 private val root = CommandSpec(
     "server",
     help = "oracle-forms-mcp — MCP server serving the content of Oracle Forms modules in a directory.\n\n" +
-        "The forms directory (required) may be given with --forms-dir, as the positional argument, or " +
-        "in $ENV_FORMS_DIR when neither is given. " +
+        "The forms directory may be given with --forms-dir, as the positional argument, or " +
+        "in $ENV_FORMS_DIR when neither is given. Without one the server still starts, and every tool " +
+        "answers with an error naming that setting; a prefetch needs one. " +
         "Conversion of .fmb/.mmb/.olb/.pll binaries uses, in order: the --convert-command command if given, " +
         "else the frmf2xml/frmcmp tools under ORACLE_HOME if that is set; otherwise pre-converted files " +
         "(*_fmb.xml, *_mmb.xml, *_olb.xml, *.pld) are expected next to the modules and copied into the cache. " +
@@ -351,7 +353,7 @@ private val root = CommandSpec(
         ),
     ),
     constraints = listOf(
-        // Not ExactlyOne: the variable can give the directory too, and formsDirOf requires one of the three.
+        // Not ExactlyOne: the variable can give the directory too, and none at all still starts a server.
         Constraint.Exclusive(formsDirOption, formsDirArgument),
         Constraint.Exclusive(prefetchOption, prefetchAllOption),
         // An http setting silently ignored under stdio is a server not listening where it was asked to.
@@ -427,19 +429,18 @@ internal fun cliOptionsOf(values: OptionValues, environment: (String) -> String?
  * would then be "--forms-dir (from OFMCP_FORMS_DIR) cannot be combined with forms-dir". The
  * positional is the same setting spelled differently, so the command line wins over the variable
  * whichever spelling it used.
+ *
+ * `null` when none of the three gives one — blank, or a launcher's template nobody filled in. That
+ * is not an error here: a plugin host starts the server for everyone who installed it, and exiting
+ * reads as a crash to a user who has not set it yet. [startServer] decides what may run without it.
  */
-private fun formsDirOf(values: OptionValues, environment: (String) -> String?): Path {
+private fun formsDirOf(values: OptionValues, environment: (String) -> String?): Path? {
     values[formsDirOption]?.let { return it }
     values[formsDirArgument]?.let { return it }
-    val raw = environment(ENV_FORMS_DIR)
-    return when (val fromEnvironment = raw?.let(formsDirConverter::convert)) {
+    return when (val fromEnvironment = environment(ENV_FORMS_DIR)?.let(formsDirConverter::convert)) {
         is ConversionResult.Ok -> fromEnvironment.value
         is ConversionResult.Invalid -> usageError("invalid value for $ENV_FORMS_DIR: ${fromEnvironment.reason}")
-        // Unset: blank, or a launcher's template nobody filled in.
-        else -> usageError(
-            "the forms directory is required: give --forms-dir <path>, pass it as the argument, or set " +
-                ENV_FORMS_DIR + (if (raw.isNullOrBlank()) "" else " (it is '${raw.trim()}', which counts as not set)"),
-        )
+        else -> null
     }
 }
 
@@ -469,15 +470,17 @@ internal fun program(
  * reads the forms directory non-recursively.
  *
  * Throws rather than failing the command, so the rule can be tested; [startServer] turns the throw
- * into a usage error.
+ * into a usage error. With no [formsDir] there is nothing to compare against — and nothing will be
+ * converted — so only the file check applies; the next start that has one makes the comparison.
  *
  * @throws IllegalArgumentException naming what is wrong with [dir].
  */
-internal fun validateConvertedDir(dir: Path, formsDir: Path): Path {
+internal fun validateConvertedDir(dir: Path, formsDir: Path?): Path {
     val resolved = dir.toAbsolutePath().normalize()
     require(!resolved.exists() || resolved.isDirectory()) {
         "--converted-dir is set to '$dir' but that is an existing file, not a directory"
     }
+    if (formsDir == null) return resolved
     // Lexically first, then as a file: a symlink, junction or bind mount is a spelling no
     // normalising reveals, and the output would still land among the forms directory's inputs.
     // A comparison that cannot be made is a refusal, not a pass: that is the case it exists for.
@@ -515,7 +518,15 @@ private fun startServer(options: CliOptions, context: CommandContext): Int {
     // Before anything can log: Kermit's own default writer is stdout, the stdio protocol channel.
     routeKermitToSlf4j()
     val formsDir = options.formsDir
-    if (!formsDir.isDirectory()) usageError("Forms directory does not exist or is not a directory: $formsDir")
+    when {
+        // A warm-up has nothing to warm, and no session to tell; an operator ran it and reads this.
+        formsDir == null && options.prefetch != null -> usageError(
+            "a prefetch needs the forms directory: give --forms-dir <path>, pass it as the argument, or set $ENV_FORMS_DIR",
+        )
+        // Given but wrong is still refused: that is a typo to fix now, not a setting yet to be made.
+        formsDir != null && !formsDir.isDirectory() ->
+            usageError("Forms directory does not exist or is not a directory: $formsDir")
+    }
 
     // Resolved before anything starts, so a --host that names nothing is a usage error, not a
     // stack trace from inside the engine.
@@ -538,7 +549,7 @@ private fun startServer(options: CliOptions, context: CommandContext): Int {
 
     val cacheDir = options.cacheDir ?: ServerConfig(formsDir).cacheDir
     val config = ServerConfig(
-        formsDir = formsDir.toAbsolutePath().normalize(),
+        formsDir = formsDir?.toAbsolutePath()?.normalize(),
         cacheDir = cacheDir,
         annotationsDir = options.annotationsDir ?: cacheDir.resolve("annotations"),
         oracleHome = options.oracleHome,

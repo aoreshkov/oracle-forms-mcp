@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The server starts without a forms directory** (#128). It used to exit, which a plugin host —
+  starting the server for everyone who installed it — showed as a crash to a user who had not set
+  the directory yet. Now every tool answers with an error naming `OFMCP_FORMS_DIR` / `--forms-dir`
+  (and the plugin's and bundle's `forms_dir` setting), and the server instructions lead with the
+  same line. It is deliberately not an empty module list, which an agent would report as "there
+  are no Forms modules here". A directory that is given but does not exist is still refused at
+  startup, and so is a prefetch without one.
+
 ### Fixed
 - **`TERM=dumb` no longer fails `frmcmp_batch` with `FRM-91500`** (#120). The server already set
   `TERM=vt220` when the environment had none; a host that captures the server's output may set

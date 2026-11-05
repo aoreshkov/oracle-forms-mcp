@@ -75,6 +75,28 @@ internal fun Server.addCheckedTool(
 }
 
 /**
+ * Makes every tool in [names] answer [message] as an `isError` result, before its argument check
+ * and without running its handler, keeping its definition — name, description, schemas — as it was.
+ *
+ * For a server that cannot serve anything yet (no forms directory): the tool list a client sees
+ * stays the real one, so an agent calls the tool it would have called and is told what to fix,
+ * instead of finding no tools, or tools that answer emptily. Each refusal is still counted in
+ * [ToolErrorTally]. Applied to tools already registered through [addCheckedTool], so that one
+ * registration path is all a tool file knows about.
+ */
+internal fun Server.refuseTools(names: Collection<String>, message: String) {
+    names.forEach { name ->
+        val registered = checkNotNull(tools[name]) { "no tool named '$name' is registered" }
+        removeTool(name)
+        addTool(registered.tool) { request ->
+            val result = CallToolResult(content = listOf(TextContent(message)), isError = true)
+            ToolErrorTally.record(name, request.args().keys, result)
+            result
+        }
+    }
+}
+
+/**
  * Everything wrong with [args] against [schema], in the order a caller fixes it: arguments the
  * tool does not have (each with the one it most likely meant), required ones that are absent (each
  * with its description and permitted values), and values that are not the declared type or not in

@@ -155,6 +155,14 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   `isError` in `ToolErrorTally`. So the schema *is* the contract: an argument a handler reads must
   be declared, and a new tool that bypasses the wrapper fails
   `ToolRegistrationTest.everyToolRejectsAnArgumentItDoesNotHave`. Write tools pass an `example`.
+- **No forms directory is a state the server serves, not an exit.** A plugin host starts the server
+  for everyone who installed it, so `ServerConfig.formsDir` is nullable: the tool list stays the
+  real one, `registerAllTools` ends by making every tool registered in it answer
+  `FORMS_DIR_NOT_CONFIGURED` (`refuseTools`, ahead of the argument check), and the instructions
+  lead with it. Resources and the prompt reach `FormsService` directly, so its entry points call
+  `requireFormsDir()` — a new one reachable from them must too. Never answer with an empty list
+  instead: an agent reads that as "there are no Forms modules here". A prefetch, and a directory
+  given but missing, are still refused at startup.
 - **Every list-shaped result is bounded and says so.** Clients cap tool output (Claude Code at
   25k tokens), and a real forms directory holds thousands of modules, so no tool may return an
   unbounded collection: `list_modules` filters (`pattern`/`type`/`status`) then pages

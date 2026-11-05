@@ -1,14 +1,15 @@
 oracle-forms-mcp — MCP server serving the content of Oracle Forms modules in a
 directory.
 
-The forms directory (required) may be given with --forms-dir, as the positional
-argument, or in OFMCP_FORMS_DIR when neither is given. Conversion of
-.fmb/.mmb/.olb/.pll binaries uses, in order: the --convert-command command if
-given, else the frmf2xml/frmcmp tools under ORACLE_HOME if that is set;
-otherwise pre-converted files (*_fmb.xml, *_mmb.xml, *_olb.xml, *.pld) are
-expected next to the modules and copied into the cache. A .pll library goes to
-the --compile-command command first when one is given; the other module types
-are unaffected by it.
+The forms directory may be given with --forms-dir, as the positional argument,
+or in OFMCP_FORMS_DIR when neither is given. Without one the server still
+starts, and every tool answers with an error naming that setting; a prefetch
+needs one. Conversion of .fmb/.mmb/.olb/.pll binaries uses, in order: the
+--convert-command command if given, else the frmf2xml/frmcmp tools under
+ORACLE_HOME if that is set; otherwise pre-converted files (*_fmb.xml, *_mmb.xml,
+*_olb.xml, *.pld) are expected next to the modules and copied into the cache. A
+.pll library goes to the --compile-command command first when one is given; the
+other module types are unaffected by it.
 
 Usage:
   server [options] [forms-dir]
