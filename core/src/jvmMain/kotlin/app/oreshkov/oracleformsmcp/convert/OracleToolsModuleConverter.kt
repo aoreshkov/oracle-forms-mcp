@@ -186,9 +186,11 @@ public class OracleToolsModuleConverter(
         /**
          * What the tools need to run without a terminal or a display, for each variable [inherited]
          * lacks: an MCP host may start the server with a minimal environment. Without `TERM`,
-         * `frmcmp_batch` fails with `FRM-91500`; without a display, `frmf2xml` fails with "Failed
-         * to create new forms context" unless `FORMS_API_TK_BYPASS` is set — Oracle's script sets
-         * it only on AIX. A value already set, even `FALSE`, is left alone. Windows needs neither.
+         * `frmcmp_batch` fails with `FRM-91500` — and with `TERM=dumb` too, the value a host that
+         * captures a child's output often sets, so `dumb` counts as missing. Without a display,
+         * `frmf2xml` fails with "Failed to create new forms context" unless `FORMS_API_TK_BYPASS`
+         * is set — Oracle's script sets it only on AIX. Any other value already set, even `FALSE`,
+         * is left alone. Windows needs neither.
          */
         fun headlessEnv(
             inherited: Map<String, String> = System.getenv(),
@@ -196,9 +198,13 @@ public class OracleToolsModuleConverter(
         ): Map<String, String> {
             if (windows) return emptyMap()
             return buildMap {
-                if (inherited["TERM"].isNullOrBlank()) put("TERM", DEFAULT_TERM)
+                if (isUnusableTerm(inherited["TERM"])) put("TERM", DEFAULT_TERM)
                 if (inherited["FORMS_API_TK_BYPASS"].isNullOrBlank()) put("FORMS_API_TK_BYPASS", "TRUE")
             }
         }
+
+        /** A `TERM` Forms cannot run under: unset, blank, or `dumb`, which has no resource file. */
+        fun isUnusableTerm(term: String?): Boolean =
+            term.isNullOrBlank() || term.trim().equals("dumb", ignoreCase = true)
     }
 }

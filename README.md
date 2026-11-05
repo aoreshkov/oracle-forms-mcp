@@ -698,7 +698,8 @@ tags, and relations you recorded intact.
 - Outside Windows, the tools run with `TERM=vt220` and `FORMS_API_TK_BYPASS=TRUE` unless the
   server's environment already sets them: an MCP host may start the server with neither a
   terminal nor a display, and without them `frmcmp_batch` fails with `FRM-91500` and `frmf2xml`
-  with "Failed to create new forms context". Set either yourself to override it.
+  with "Failed to create new forms context". `TERM=dumb` counts as unset, since `frmcmp_batch`
+  fails under it the same way. Set either yourself to override it.
 - `frmcmp_batch` is preferred over `frmcmp` (headless); the server passes
   `Script=YES Batch=YES Logon=NO` and an explicit `Output_File` — without one, `frmcmp` writes the
   `.pld` next to the module rather than into its working directory — and augments `FORMS_PATH`

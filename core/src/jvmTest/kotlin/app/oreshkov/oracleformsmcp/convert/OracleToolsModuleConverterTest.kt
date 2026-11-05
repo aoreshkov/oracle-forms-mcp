@@ -220,6 +220,21 @@ class OracleToolsModuleConverterTest {
             mapOf("TERM" to "vt220", "FORMS_API_TK_BYPASS" to "TRUE"),
             OracleToolsModuleConverter.headlessEnv(mapOf("TERM" to " "), windows = false),
         )
+        // TERM=dumb fails frmcmp_batch with the same FRM-91500 as no TERM at all (#120).
+        assertEquals(
+            mapOf("TERM" to "vt220"),
+            OracleToolsModuleConverter.headlessEnv(
+                mapOf("TERM" to "dumb", "FORMS_API_TK_BYPASS" to "FALSE"),
+                windows = false,
+            ),
+        )
+        assertEquals(
+            mapOf("TERM" to "vt220"),
+            OracleToolsModuleConverter.headlessEnv(
+                mapOf("TERM" to "DUMB", "FORMS_API_TK_BYPASS" to "TRUE"),
+                windows = false,
+            ),
+        )
         assertEquals(
             emptyMap(),
             OracleToolsModuleConverter.headlessEnv(
@@ -250,7 +265,7 @@ class OracleToolsModuleConverterTest {
             ModuleKey.of("utils", ModuleType.LIBRARY), fakeBinary("UTILS.pll").toString(), targetDir.toString(),
         )
 
-        val term = System.getenv("TERM").takeUnless { it.isNullOrBlank() } ?: "vt220"
+        val term = System.getenv("TERM").takeUnless(OracleToolsModuleConverter::isUnusableTerm) ?: "vt220"
         val bypass = System.getenv("FORMS_API_TK_BYPASS").takeUnless { it.isNullOrBlank() } ?: "TRUE"
         val text = Path.of(output).readText()
         assertTrue("[$term] [$bypass]" in text, text)
