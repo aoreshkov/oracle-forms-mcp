@@ -45,8 +45,9 @@
     "forms_dir": {
       "type": "directory",
       "title": "Forms directory",
-      "description": "Directory containing the Oracle Forms modules to serve. Pre-converted *_fmb.xml / *.pld files are read from here too.",
-      "required": true
+      "description": "Directory containing the Oracle Forms modules to serve. Pre-converted *_fmb.xml / *.pld files are read from here too. Until it is set the server still starts, and every tool answers with an error asking for it.",
+      "required": false,
+      "default": ""
     },
     "convert_command": {
       "type": "string",

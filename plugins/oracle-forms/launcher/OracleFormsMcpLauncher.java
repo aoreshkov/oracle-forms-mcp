@@ -76,7 +76,10 @@ public final class OracleFormsMcpLauncher {
     private static final String PIN_WHERE = "(server_version in /plugin, or OFMCP_SERVER_VERSION)";
 
     public static void main(String[] args) throws Exception {
-        checkConfigured(args);
+        // An unset forms directory is not refused here: it arrives blank, or as Claude Code's
+        // unsubstituted ${user_config.forms_dir}, and the server treats both as unset. It starts,
+        // and every tool names the setting to make, which a plugin host shows far better than an
+        // exit.
 
         // Escape hatch: point OFMCP_SERVER_HOME at an existing installDist tree (a built checkout,
         // an unpacked release zip) and nothing is downloaded. Also how this launcher is testable
@@ -369,19 +372,6 @@ public final class OracleFormsMcpLauncher {
     // ---------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------
-
-    /**
-     * Fails early and legibly when the plugin's user configuration was never filled in: Claude Code
-     * leaves the placeholder in the argument list rather than substituting a value.
-     */
-    private static void checkConfigured(String[] args) {
-        for (String arg : args) {
-            if (arg.contains("${user_config.")) {
-                fail("The Oracle Forms plugin is not configured yet. Run /plugin, open the Oracle"
-                        + " Forms plugin, and set the forms directory.");
-            }
-        }
-    }
 
     private static byte[] get(URI uri) throws IOException, InterruptedException {
         HttpClient client = HttpClient.newBuilder()
