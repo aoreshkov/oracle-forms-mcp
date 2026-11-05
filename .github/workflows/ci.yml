@@ -86,7 +86,8 @@ jobs:
             test -f "${src}/.claude-plugin/plugin.json" || {
               echo "Marketplace source ${src} has no .claude-plugin/plugin.json"; exit 1; }
           done
-          jq -e '.name and .version and .userConfig.forms_dir.required == true' "$PLUGIN" > /dev/null
+          # forms_dir stays optional: without it the server starts and every tool asks for it.
+          jq -e '.name and .version and .userConfig.forms_dir.required == false' "$PLUGIN" > /dev/null
           # The MCP entry must keep resolving the launcher through ${CLAUDE_PLUGIN_ROOT}: a bare
           # relative path would resolve against the session's working directory instead.
           jq -e '.mcpServers["oracle-forms"].args[0]
