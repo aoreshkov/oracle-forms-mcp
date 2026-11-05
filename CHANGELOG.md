@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same line. It is deliberately not an empty module list, which an agent would report as "there
   are no Forms modules here". A directory that is given but does not exist is still refused at
   startup, and so is a prefetch without one.
+- **`forms_dir` is optional in the Claude Code plugin and the `.mcpb` bundle** (plugin version
+  1.6.0), so installing either without a directory gives that same error from every tool. The
+  plugin's launcher no longer exits on an unset directory; it leaves that to the server. Leaving it
+  empty needs a server newer than 0.18.0. Servers 0.5.0 to 0.18.0, whether pinned or still the
+  latest release, exit as before, and a server pinned to 0.4.0 or older takes the empty value as
+  the directory it was started in.
 
 ### Fixed
 - **`TERM=dumb` no longer fails `frmcmp_batch` with `FRM-91500`** (#120). The server already set

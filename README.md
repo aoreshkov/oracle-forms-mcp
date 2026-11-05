@@ -304,6 +304,8 @@ Claude Code prompts for your forms directory, then fetches and checksum-verifies
 server into the plugin's data directory on first use — no clone, no build, no JSON to edit. The
 tools are live after `/reload-plugins`, and the plugin's `trace-form` skill teaches the traversal
 above — the order to ask in, and the readings that mislead — so a trace does not start with `grep`.
+Skip the prompt and the server still starts; its tools then answer with an error asking for the
+directory until you set it in `/plugin`.
 
 > **Requires a JDK 25+** (`javac -version`), because the plugin's bootstrap runs in Java's
 > single-file source mode. It uses the one on your `PATH` unless you set the plugin's `java` option
@@ -338,7 +340,8 @@ claude mcp add --env OFMCP_JAVA_HOME=C:\Java\jdk-25 --transport stdio oracle-for
 Download `oracle-forms-mcp-<version>.mcpb` from the
 [latest release](https://github.com/aoreshkov/oracle-forms-mcp/releases/latest) and open it. Claude
 Desktop installs it as a connector and prompts for your forms directory with a native folder picker
-— no JSON editing, no local build.
+— no JSON editing, no local build. Leave it empty and the connector still starts; its tools then
+answer with an error asking for the directory until you set it in the connector's settings.
 
 > **Requires a JRE 25+.** The bundle ships the server, not a Java runtime. It runs on the **Java
 > installation** chosen in the connector's settings, else the one `JAVA_HOME` names, else the `java`

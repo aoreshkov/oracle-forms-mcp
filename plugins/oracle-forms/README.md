@@ -12,6 +12,8 @@ fetches the server itself — no clone, no Gradle build, no `.mcp.json` to hand-
 Claude Code then asks for the **Forms directory**. Point it at the folder holding your `.fmb`,
 `.mmb`, `.pll`, and `.olb` modules and the tools are live in the next session (or immediately after
 `/reload-plugins`). Verify with `/mcp` — the server appears as `plugin:oracle-forms:oracle-forms`.
+Skip the prompt and the server still starts; its tools then answer with an error asking for the
+directory until you set it in `/plugin`.
 
 ## Requirements
 
@@ -32,7 +34,7 @@ Set these in `/plugin` → **Oracle Forms** → configure; they are stored in yo
 
 | Option | Default | What it does |
 |---|---|---|
-| `forms_dir` | — (required) | The directory of Forms modules to serve. Scanned non-recursively. |
+| `forms_dir` | — | The directory of Forms modules to serve. Scanned non-recursively. Until it is set the server still starts, and every tool answers with an error asking for it (plugin 1.6.0+, with a server newer than 0.18.0). |
 | `convert_command` | — (optional) | A site-supplied converter to run instead of Oracle's `frmf2xml` — a whole command line with its arguments (`/opt/forms/convert.sh --xml {}`), quoted where a part contains spaces, or a JSON array. It runs with the working directory set to the module's cache directory; the module's path replaces `{}`, or is appended when `{}` is absent. Never goes through a shell. Takes precedence over `ORACLE_HOME`. |
 | `compile_command` | — (optional) | A separate converter for `.pll` libraries only, with the same syntax as `convert_command`; the output `.pld` path replaces `{out}`. Needed when `convert_command` is built on `frmf2xml`, which rejects libraries: `frmcmp_batch Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}`. Needs server 0.11.0+. |
 | `converted_dir` | — (optional) | Where to keep the converted XML / `.pld` text forms: one flat directory for all modules, each file named after its module (`orders_fmb.xml`, `utils.pld`). Must not be the forms directory. Defaults to inside the cache. |

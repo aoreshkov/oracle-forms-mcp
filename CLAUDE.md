@@ -162,7 +162,8 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   lead with it. Resources and the prompt reach `FormsService` directly, so its entry points call
   `requireFormsDir()` — a new one reachable from them must too. Never answer with an empty list
   instead: an agent reads that as "there are no Forms modules here". A prefetch, and a directory
-  given but missing, are still refused at startup.
+  given but missing, are still refused at startup. `forms_dir` is optional in the plugin and MCPB
+  manifests for the same reason, and the launcher must not refuse an unset directory on its own.
 - **Every list-shaped result is bounded and says so.** Clients cap tool output (Claude Code at
   25k tokens), and a real forms directory holds thousands of modules, so no tool may return an
   unbounded collection: `list_modules` filters (`pattern`/`type`/`status`) then pages
