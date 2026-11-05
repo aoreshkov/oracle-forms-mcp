@@ -217,7 +217,8 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   **next to its input** on Linux 14.1.2, so it converts a *copy* of the module in a per-run
   staging dir inside the target (cwd = that dir) and the result is moved out — never point it at
   the module in place, the forms dir may be read-only. Outside Windows the tools get
-  `TERM=vt220` / `FORMS_API_TK_BYPASS=TRUE` when unset (`headlessEnv`): without them a host's
+  `TERM=vt220` / `FORMS_API_TK_BYPASS=TRUE` when unset — `TERM=dumb` counts as unset, it fails
+  the same way (`headlessEnv`): without them a host's
   minimal environment fails `frmcmp_batch` (`FRM-91500`) and `frmf2xml` (no display).
   Exit codes are unreliable — success is judged by the output file. `frmcmp_batch` over `frmcmp`.
   `--convert-command` swaps in a site-supplied converter on the same cwd convention

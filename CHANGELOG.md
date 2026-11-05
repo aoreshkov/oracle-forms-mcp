@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`TERM=dumb` no longer fails `frmcmp_batch` with `FRM-91500`** (#120). The server already set
+  `TERM=vt220` when the environment had none; a host that captures the server's output may set
+  `TERM=dumb` instead, which Forms cannot run under either, so it is now replaced the same way.
+
 ## [0.18.0] - 2026-11-04
 
 ### Added
