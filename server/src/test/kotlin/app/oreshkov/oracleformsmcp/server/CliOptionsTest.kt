@@ -259,13 +259,31 @@ class CliOptionsTest {
         assertEquals(Path.of("/srv/forms"), run.options?.formsDir)
         assertContains(run.result.stderr, "warning: --forms-dir: ignoring")
 
-        val none = refused()
-        assertContains(none, "the forms directory is required")
-        assertContains(none, ENV_FORMS_DIR, message = "the error names every way to give it")
         assertContains(refused("--forms-dir", "/a", "/b"), "cannot be combined")
-        val unfilled = refused("--forms-dir", "\${user_config.forms_dir}")
-        assertContains(unfilled, "ignoring '\${user_config.forms_dir}'")
-        assertContains(unfilled, "the forms directory is required")
+    }
+
+    /**
+     * None at all still starts the server (#128): a plugin host launches it for everyone who
+     * installed it, and an exit reads as a crash to a user who has not set the directory yet. The
+     * server then refuses every tool call instead; that half is `UnconfiguredServerTest`'s.
+     */
+    @Test
+    fun noFormsDirectoryStillStartsTheServer() {
+        assertNull(parse().formsDir)
+        val unfilled = run("--forms-dir", "\${user_config.forms_dir}")
+        assertEquals(ExitStatus.OK, unfilled.result.status, unfilled.result.stderr)
+        assertNull(unfilled.options?.formsDir)
+        assertContains(unfilled.result.stderr, "ignoring '\${user_config.forms_dir}'")
+    }
+
+    /** ...but a prefetch has nothing to warm and no session to tell, so it is still refused. */
+    @Test
+    fun aPrefetchStillNeedsTheFormsDirectory() {
+        // The real start function: the refusal is startServer's, after a parse that succeeded.
+        val result = program(emptyMap<String, String>()::get).record("--prefetch-all").assertPipeSafe()
+        assertEquals(ExitStatus.USAGE, result.status, result.stderr)
+        assertContains(result.stderr, "a prefetch needs the forms directory")
+        assertContains(result.stderr, ENV_FORMS_DIR)
     }
 
     /**
@@ -285,9 +303,9 @@ class CliOptionsTest {
             "an unfilled flag gives way to the variable, as it does to the positional",
         )
 
-        // What a host passes for a setting the user never filled in.
-        assertContains(refused(env = mapOf(ENV_FORMS_DIR to "\${user_config.forms_dir}")), "which counts as not set")
-        assertContains(refused(env = mapOf(ENV_FORMS_DIR to "  ")), "the forms directory is required")
+        // What a host passes for a setting the user never filled in: not set, so no directory.
+        assertNull(parse(env = mapOf(ENV_FORMS_DIR to "\${user_config.forms_dir}")).formsDir)
+        assertNull(parse(env = mapOf(ENV_FORMS_DIR to "  ")).formsDir)
     }
 
     @Test

@@ -144,13 +144,15 @@ internal fun fakeService(
     // Passed in when a test needs to reach the entries — to leave one behind the way an older
     // build of the server would have written it, for instance.
     cache: ModuleCache = InMemoryCache(cacheRoot),
+    // `null` is a server started without one, which refuses every call.
+    formsDir: Path? = Path.of("."),
 ): FormsService = FormsService(
     scanner = scanner,
     converter = converter,
     parser = parser,
     cache = cache,
     annotationStore = annotationStore,
-    formsDir = Path.of("."),
+    formsDir = formsDir,
     convertedDir = convertedDir,
 )
 

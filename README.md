@@ -461,7 +461,8 @@ tool to anyone who can reach it.
 ### Options
 
 ```
---forms-dir <path>          Directory containing the Forms modules (or pass it positionally, or set OFMCP_FORMS_DIR)
+--forms-dir <path>          Directory containing the Forms modules (or pass it positionally, or set OFMCP_FORMS_DIR);
+                            without one the server starts and every tool answers with an error naming it
 --convert-command <cmd>     Site-supplied converter command (with its arguments) instead of frmf2xml
 --compile-command <cmd>     Separate converter command for .pll libraries (0.11.0+)
 --converted-dir <path>      Directory the converted XML/.pld is written into (default: the cache)

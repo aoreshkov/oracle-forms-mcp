@@ -151,7 +151,13 @@ class FormsService(
     private val parser: ModuleParser,
     private val cache: ModuleCache,
     private val annotationStore: AnnotationStore,
-    private val formsDir: Path,
+    /**
+     * The directory the modules are scanned from. `null` when none was configured: the server still
+     * starts — a plugin host launches it for everyone who installed it, configured or not — but
+     * every operation refuses with [FormsDirNotConfiguredException] rather than serving an empty
+     * directory, which an agent would read as "there are no Forms modules here".
+     */
+    private val formsDir: Path?,
     /**
      * Where converted XML (and `.pld`) files are kept, from `--converted-dir`. One flat directory
      * shared by every module, each file named canonically after its [ModuleKey]
@@ -191,11 +197,22 @@ class FormsService(
     private val fetchLocks = ConcurrentHashMap<ModuleKey, Mutex>()
 
     /**
+     * Why nothing can be served, or `null` when a forms directory is configured. The tool layer
+     * answers every call with it up front (see `registerAllTools`); the checks below cover the
+     * resources and the prompt, which reach the service directly.
+     */
+    internal val unavailableReason: String? get() = if (formsDir == null) FORMS_DIR_NOT_CONFIGURED else null
+
+    /** The configured forms directory, or the refusal that names how to configure one. */
+    private fun requireFormsDir(): Path = formsDir ?: throw FormsDirNotConfiguredException()
+
+    /**
      * Resolves a tool's `module` argument: `NAME.ext` is parsed directly; a bare name matches
      * when exactly one scanned or cached module carries it. Ambiguity and misses raise errors
      * that tell the model what to pass instead.
      */
     suspend fun resolveModule(spec: String): ModuleKey {
+        val formsDir = requireFormsDir()
         ModuleKey.parseOrNull(spec)?.let { return it }
         val known = (scanner.scan().map { it.key } + cache.list()).distinct()
         val matches = known.filter { it.name.equals(spec.trim(), ignoreCase = true) }
@@ -258,6 +275,7 @@ class FormsService(
         limit: Int? = null,
         cursor: String? = null,
     ): ModuleList {
+        val formsDir = requireFormsDir()
         val scanned = scanner.scan()
         val scannedKeys = scanned.mapTo(mutableSetOf()) { it.key }
         val cachedKeys = cache.list().toSet()
@@ -352,6 +370,7 @@ class FormsService(
         force: Boolean = false,
         onModule: suspend (done: Int, total: Int, outcome: PrefetchOutcome) -> Unit = { _, _, _ -> },
     ): List<PrefetchOutcome> {
+        requireFormsDir()
         val nameMatcher = pattern?.let { moduleNameMatcher(it, regex) }
         val keys = scanner.scan().map { it.key }
             .filter { (nameMatcher == null || nameMatcher(it.name)) && (type == null || it.type == type) }
@@ -374,6 +393,7 @@ class FormsService(
         force: Boolean,
         onProgress: suspend (FetchProgress) -> Unit,
     ): FetchModuleSummary {
+        val formsDir = requireFormsDir()
         val all = scanner.scan()
         val scanned = all.find { it.key == key }
             ?: throw IllegalArgumentException(
@@ -1583,6 +1603,7 @@ class FormsService(
      * when it fits one read, otherwise cut with the totals and the call that narrows it.
      */
     suspend fun moduleAnnotations(key: ModuleKey): ModuleAnnotationsView {
+        requireFormsDir()
         val cached = cache.get(key)
         val (notes, relations) = storeViews(key, cached?.let { Path.of(it.sourceFile) })
         val page = capAnnotations(notes, relations)
@@ -1641,6 +1662,9 @@ class FormsService(
      * untouched, and the answers in the entry are still the previous build's.
      */
     suspend fun index(key: ModuleKey): ModuleIndex {
+        // A cache entry left by a run that had a forms directory is still not served: without one,
+        // nothing says which directory this session means.
+        requireFormsDir()
         val cached = cache.get(key) ?: throw ModuleNotFetchedException(key)
         val source = Path.of(cached.sourceFile)
         if (source.exists() && !Fingerprints.matches(cached.fingerprint, source)) {

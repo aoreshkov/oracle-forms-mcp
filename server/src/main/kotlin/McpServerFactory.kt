@@ -3,9 +3,12 @@ package app.oreshkov.oracleformsmcp.server
 import app.oreshkov.oracleformsmcp.annotation.OnDiskAnnotationStore
 import app.oreshkov.oracleformsmcp.cache.OnDiskModuleCache
 import app.oreshkov.oracleformsmcp.convert.ModuleConverters
+import app.oreshkov.oracleformsmcp.convert.PreConvertedCopyConverter
 import app.oreshkov.oracleformsmcp.core.AnnotationStore
+import app.oreshkov.oracleformsmcp.core.FormsDirectoryScanner
 import app.oreshkov.oracleformsmcp.core.ModuleCache
 import app.oreshkov.oracleformsmcp.model.ModuleKey
+import app.oreshkov.oracleformsmcp.model.ScannedModule
 import app.oreshkov.oracleformsmcp.parse.FormsModuleParser
 import app.oreshkov.oracleformsmcp.scan.FormsDirectoryScannerImpl
 import app.oreshkov.oracleformsmcp.server.prompts.registerExplainModulePrompt
@@ -32,6 +35,7 @@ import app.oreshkov.oracleformsmcp.server.tools.registerRemoveAnnotationTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchAnnotationsTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchModulesTool
 import app.oreshkov.oracleformsmcp.server.tools.registerSearchSourceTool
+import app.oreshkov.oracleformsmcp.server.tools.refuseTools
 import co.touchlab.kermit.Logger
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
@@ -102,9 +106,28 @@ internal val SERVER_INSTRUCTIONS: String =
         "(notes/tags/summaries/classifications) and relate_elements (cross-references); it " +
         "persists across sessions and re-indexing, and the read tools surface it inline."
 
+/**
+ * The instructions a server with this configuration sends: [SERVER_INSTRUCTIONS], led by
+ * [FORMS_DIR_NOT_CONFIGURED] when there is no forms directory, so a client that reads the
+ * instructions knows before its first call that every one will be refused, and why. Only then: in
+ * a configured session the line would be paid for in every context and never apply.
+ */
+internal fun serverInstructions(formsDirConfigured: Boolean): String =
+    if (formsDirConfigured) SERVER_INSTRUCTIONS else "$FORMS_DIR_NOT_CONFIGURED\n\n$SERVER_INSTRUCTIONS"
+
+/** A scanner for a server with no forms directory; [FormsService] refuses before it would scan. */
+private val UNCONFIGURED_SCANNER = object : FormsDirectoryScanner {
+    override suspend fun scan(): List<ScannedModule> = throw FormsDirNotConfiguredException()
+}
+
 /** Runtime configuration shared by both transports, populated from the CLI flags in `Main`. */
 data class ServerConfig(
-    val formsDir: Path,
+    /**
+     * The directory of modules to serve. `null` starts a server that answers every tool call with
+     * [FORMS_DIR_NOT_CONFIGURED]: a plugin host starts the server for everyone who installed it,
+     * and exiting looks like a crash to a user who has not set the directory yet.
+     */
+    val formsDir: Path?,
     val cacheDir: Path = OnDiskModuleCache.defaultCacheRoot(),
     val annotationsDir: Path = OnDiskAnnotationStore.defaultRoot(),
     val oracleHome: String? = System.getenv("ORACLE_HOME"),
@@ -162,21 +185,34 @@ object McpServerFactory {
         routeKermitToSlf4j()
         val cache = OnDiskModuleCache(config.cacheDir)
         val annotationStore = OnDiskAnnotationStore(config.annotationsDir)
+        val formsDir = config.formsDir
         val service = FormsService(
-            scanner = FormsDirectoryScannerImpl(config.formsDir),
-            converter = ModuleConverters.forEnvironment(
-                oracleHome = config.oracleHome,
-                formsDir = config.formsDir,
-                timeout = config.conversionTimeout,
-                convertCommand = config.convertCommand,
-                compileCommand = config.compileCommand,
-            ),
+            // Without a directory the service refuses before it scans or converts anything, so
+            // these two are never reached; they exist only to keep the service's ports non-null.
+            scanner = if (formsDir == null) UNCONFIGURED_SCANNER else FormsDirectoryScannerImpl(formsDir),
+            converter = if (formsDir == null) {
+                PreConvertedCopyConverter()
+            } else {
+                ModuleConverters.forEnvironment(
+                    oracleHome = config.oracleHome,
+                    formsDir = formsDir,
+                    timeout = config.conversionTimeout,
+                    convertCommand = config.convertCommand,
+                    compileCommand = config.compileCommand,
+                )
+            },
             parser = FormsModuleParser(),
             cache = cache,
             annotationStore = annotationStore,
-            formsDir = config.formsDir,
+            formsDir = formsDir,
             convertedDir = config.convertedDir,
         )
+        if (formsDir == null) {
+            Logger.withTag("McpServerFactory").w {
+                "No forms directory is configured: the server starts, but every tool answers with an error " +
+                    "naming $ENV_FORMS_DIR / --forms-dir until one is set and the server restarted."
+            }
+        }
 
         // Bounds how many per-module index resources `resources/list` ever carries; see
         // ModuleIndexResources for why an unbounded set is a client-side overflow.
@@ -194,7 +230,7 @@ object McpServerFactory {
                     logging = EmptyJsonObject,
                 ),
             ),
-            instructions = SERVER_INSTRUCTIONS,
+            instructions = serverInstructions(formsDirConfigured = formsDir != null),
         ) {
             registerAllTools(service) { key ->
                 // Newly indexed modules appear in resources/list without a restart, oldest
@@ -235,6 +271,7 @@ internal fun Server.registerAllTools(
     service: FormsService,
     onFetched: suspend (ModuleKey) -> Unit = {},
 ) {
+    val before = tools.keys.toSet()
     registerListModulesTool(service)
     registerFetchModuleTool(service, onFetched)
     registerGetModuleOverviewTool(service)
@@ -255,4 +292,7 @@ internal fun Server.registerAllTools(
     registerGetElementAnnotationsTool(service)
     registerSearchAnnotationsTool(service)
     registerRemoveAnnotationTool(service)
+    // Every tool, annotation tools included: an annotation is about a module in a directory, and
+    // without one there is no saying which directory's module it is.
+    service.unavailableReason?.let { refuseTools(tools.keys - before, it) }
 }
