@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
 ### Changed
 - **The server starts without a forms directory** (#128). It used to exit, which a plugin host —
   starting the server for everyone who installed it — showed as a crash to a user who had not set
@@ -18,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`forms_dir` is optional in the Claude Code plugin and the `.mcpb` bundle** (plugin version
   1.6.0), so installing either without a directory gives that same error from every tool. The
   plugin's launcher no longer exits on an unset directory; it leaves that to the server. Leaving it
-  empty needs a server newer than 0.18.0. Servers 0.5.0 to 0.18.0, whether pinned or still the
+  empty needs server 0.19.0 or newer. Servers 0.5.0 to 0.18.0, whether pinned or still the
   latest release, exit as before, and a server pinned to 0.4.0 or older takes the empty value as
   the directory it was started in.
 
@@ -888,7 +890,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.15.0...v0.16.0
