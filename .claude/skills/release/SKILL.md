@@ -63,7 +63,7 @@ indented continuations, and keep nested list items as `  - `.
 
 - **MCP registry field caps:** in `server.json`, both `.description` and `.title` must be **≤ 100
   characters** or the registry publish rejects the listing. Verify:
-  `jq -r '.description | length, (.title | length)' server.json` → both ≤ 100. (The release
+  `jq -r '(.description | length), (.title | length)' server.json` → both ≤ 100. (The release
   workflow's guard step re-checks this, along with the icon URLs being tag-pinned.)
 - **MCPB bundle builds:** `./gradlew :server:packageMcpb` produces
   `server/build/mcpb/oracle-forms-mcp-<VERSION>.mcpb`. Its sha256 is computed in CI and written
