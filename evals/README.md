@@ -37,31 +37,41 @@ plugin so that it doesn't ship to users, and changing it doesn't need a plugin v
 | `modal-return` | How does the picker modal return the chosen value to the form that opened it? | The skill loads, the window is checked for modality, and the answer names the global and the calling item |
 | `plain-plsql` | What's the difference between a PL/SQL function and a procedure? | The skill and the server stay out |
 | `react-modal` | How does a modal dialog in a React form return the selected value to the form that opened it? | The skill and the server stay out, despite the shared words |
+| `oracle-apex` | In an Oracle APEX form, how does a modal dialog page return the selected value to an item on the page that opened it? | The skill and the server stay out, in another Oracle product |
 
 Keep at least one grader per case on the answer itself. A grader on the tool call alone passes even
 when the tool returned an error.
 
 ## Baseline
 
-Plugin 1.7.0, Claude Code 2.1.319, three runs per case. Each cell is the passes out of the runs.
+Plugin 1.7.1, Claude Code 2.1.319, three runs per case. Each cell is the passes out of the runs.
 
 | Case | Grader | Haiku 5.5 | Sonnet 5.5 |
 |---|---|---|---|
-| `value-source` | `skill-fired` | 0/3 | 3/3 |
+| `value-source` | `skill-fired` | 3/3 | 3/3 |
 | | `fetch-before-block` | 3/3 | 3/3 |
-| | `names-the-column` | 3/3 | 3/3 |
-| | `names-the-lov` | 2/3 | 3/3 |
-| `empty-trigger` | `skill-fired` | 0/3 | 3/3 |
-| | `fetch-parent-then-resolve` | 0/3 | 3/3 |
+| | `names-the-column` | 2/3 | 3/3 |
+| | `names-the-lov` | 3/3 | 3/3 |
+| `empty-trigger` | `skill-fired` | 3/3 | 3/3 |
+| | `fetch-parent-then-resolve` | 1/3 | 3/3 |
 | | `finds-the-inherited-body` | 3/3 | 3/3 |
-| | `follows-it-to-key-help` | 2/3 | 3/3 |
-| `modal-return` | `skill-fired` | 1/3 | 3/3 |
-| | `checks-the-window` | 1/3 | 2/3 |
+| | `follows-it-to-key-help` | 3/3 | 3/3 |
+| `modal-return` | `skill-fired` | 3/3 | 3/3 |
+| | `checks-the-window` | 3/3 | 2/3 |
 | | `names-the-global` | 3/3 | 3/3 |
 | | `names-the-caller` | 3/3 | 3/3 |
 | `plain-plsql` | both | 3/3 | 3/3 |
 | `react-modal` | both | 3/3 | 3/3 |
-| **Overall score** | | **0.75** | **0.98** |
-| Estimated cost at list price | | $0.07 | $1.36 |
+| `oracle-apex` | both | 3/3 | 3/3 |
+| **Overall score** | | **0.96** | **0.99** |
+| Estimated cost at list price | | $0.10 | $1.51 |
+
+Haiku's two misses didn't come from a wrong trace. Two `fetch-parent-then-resolve` runs tried
+`resolve: true` before fetching `TOOLBAR`, which costs one extra call. The `names-the-column` miss was
+a 2-1 judge vote on an answer that named the column but led with the LOV.
 
 Three runs is a small sample, so a one-run change isn't a signal on its own.
+
+Before 1.7.1, the description didn't say to load the skill before calling the tools. On the first five
+cases, that version scored 0.75 on Haiku, which loaded the skill in 1 of 9 runs, and 0.98 on Sonnet,
+which loaded it in 9 of 9.

@@ -15,6 +15,15 @@ Claude Code then asks for the **Forms directory**. Point it at the folder holdin
 Skip the prompt and the server still starts; its tools then answer with an error asking for the
 directory until you [set it](#configuration).
 
+To install from a shell or a script, use the same commands without the slash. There's no prompt in
+this case, so pass the directory with `--config`, which you can repeat for the other
+[options](#configuration):
+
+```
+claude plugin marketplace add aoreshkov/oracle-forms-mcp
+claude plugin install oracle-forms@oracle-forms-mcp --config forms_dir=/path/to/forms
+```
+
 ## Requirements
 
 - **A JDK 25+**, on your `PATH` (check with `javac -version`) or anywhere else, named by the
@@ -43,7 +52,7 @@ Either way, the values are stored in your user `settings.json` under `pluginConf
 | Option | Default | What it does |
 |---|---|---|
 | `forms_dir` | — | The directory of Forms modules to serve. Scanned non-recursively. Until it is set the server still starts, and every tool answers with an error asking for it (plugin 1.6.0+, with server 0.19.0+). |
-| `convert_command` | — (optional) | A site-supplied converter to run instead of Oracle's `frmf2xml` — a whole command line with its arguments (`/opt/forms/convert.sh --xml {}`), quoted where a part contains spaces, or a JSON array. It runs with the working directory set to the module's cache directory; the module's path replaces `{}`, or is appended when `{}` is absent. Never goes through a shell. Takes precedence over `ORACLE_HOME`. |
+| `convert_command` | — (optional) | A site-supplied converter to run instead of Oracle's `frmf2xml` — a whole command line with its arguments (`/opt/forms/convert.sh --xml {}`), quoted where a part contains spaces, or a JSON array. It runs with the working directory set to `converted_dir`, or to the module's cache directory when that is unset, and must write its output there; the module's path replaces `{}`, or is appended when `{}` is absent. Never goes through a shell. Takes precedence over `ORACLE_HOME`. |
 | `compile_command` | — (optional) | A separate converter for `.pll` libraries only, with the same syntax as `convert_command`; the output `.pld` path replaces `{out}`. Needed when `convert_command` is built on `frmf2xml`, which rejects libraries: `frmcmp_batch Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}`. Needs server 0.11.0+. |
 | `converted_dir` | — (optional) | Where to keep the converted XML / `.pld` text forms: one flat directory for all modules, each file named after its module (`orders_fmb.xml`, `utils.pld`). Must not be the forms directory. Defaults to inside the cache. |
 | `server_version` | `latest` | Which released server build to run. Set a version such as `0.4.0` to pin. |
@@ -156,9 +165,10 @@ subagent's `tools` list, or a hook matcher.
 ### The `trace-form` skill
 
 The plugin also ships one skill, `skills/trace-form/SKILL.md`. It carries what no individual tool
-description can: the order to ask in when tracing how a screen works, the four readings that are
+description can: the order to ask in when tracing how a screen works, the five readings that are
 misleading rather than merely incomplete (an inherited body that looks empty, modality living on the
-window, a property class that *is* the item's role, and `null` meaning "not overridden" rather than
-"off"), when `get_object_xml` is the right call and when it is a detour, and a worked trace over the
-demo directory. Claude loads it on its own when a question is about how a form, field, button or
-modal behaves; `/oracle-forms:trace-form` invokes it directly.
+window, a property class that *is* the item's role, `null` meaning "not overridden" rather than
+"off", and a classed item's properties coming from its class), when `get_object_xml` is the right
+call and when it is a detour, and a worked trace over the demo directory. Claude loads it on its own
+when a question is about how a form, field, button or modal behaves; `/oracle-forms:trace-form`
+invokes it directly.
