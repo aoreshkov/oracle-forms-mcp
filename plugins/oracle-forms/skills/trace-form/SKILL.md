@@ -1,6 +1,7 @@
 ---
 name: trace-form
-description: Trace how an Oracle Forms screen actually works — which form opens a modal, where a button's code really lives when its body looks empty, what a :GLOBAL carries back into a field. Use when asked how a Forms form, block, item, button, modal window or LOV behaves, where a value comes from, what calls what, or when a trigger comes back with no body.
+description: Traces how an Oracle Forms screen actually works — which form opens a modal, where a button's code really lives when its body looks empty, what a :GLOBAL carries back into a field. Load it before calling the oracle-forms tools to answer how a form (.fmb), block, item, button, modal window or LOV behaves, where an item gets its value, what calls what, or why a trigger has no body; it gives the order to call them in and the readings that mislead.
+argument-hint: "[form or question]"
 ---
 
 # Trace a Forms interaction
@@ -10,8 +11,8 @@ The `oracle-forms` MCP server answers every step of that; this is the order to a
 places where a naive reading is not merely incomplete but **wrong**.
 
 Tool names below are the plain ones. Through this plugin they are namespaced —
-`mcp__plugin_oracle-forms_oracle-forms__get_block` — which is the form to use in permission rules,
-a subagent's `tools` list, or a hook matcher.
+`mcp__plugin_oracle-forms_oracle-forms__get_block` — which is the name to call, and the form to use
+in permission rules, a subagent's `tools` list, or a hook matcher.
 
 ## Read through the tools, not the files
 
@@ -41,7 +42,7 @@ Every reflex has a call:
 | `grep` across the whole directory | `search_modules` (every fetched module at once) |
 | `grep` one attribute across a block | `search_source` with `scope: "xml"` — one call, with line numbers |
 | `sed -n '320,340p'` on the XML | `get_object_xml` for one named object, `read_source` for a line range |
-| open the sidecar a hit named | `read_source` with the hit's `uri` |
+| open the sidecar a hit named | `read_source` with the hit's `uri`; an `oracleforms://` URI is not a file path, so file tools can't open it |
 
 ## The order to ask in
 
@@ -58,10 +59,10 @@ Every reflex has a call:
    different levels are told apart — and `get_trigger` takes the same `level` (or an exact
    `ownerPath`, `:FORM` for form level). While the module attaches a library that is not fetched,
    a body's `hint` says so: a routine it calls that the module does not define may live there, and
-   what that call does is undetermined until the library is read. A body comes back in a file of its own, so its line numbers
-   count from the first line of *that body*: cite them as `POST-INSERT:75`, never `ORDERS.fmb:75`,
-   which is a line nobody opening the form will find. (A `.pll` is the exception — its units are
-   ranges within the one `.pld` dump of the whole library.)
+   what that call does is undetermined until the library is read. A body comes back in a file of
+   its own, so its line numbers count from the first line of *that body*: cite them as
+   `POST-INSERT:75`, never `ORDERS.fmb:75`, which is a line nobody opening the form will find. (A
+   `.pll` is the exception — its units are ranges within the one `.pld` dump of the whole library.)
 6. **`search_source`** inside one module; **`search_modules`** when the question leaves it.
 7. **`read_source`** — the lines around anything a result pointed at, by its `uri` alone (the URI
    names its module, so `module` is not needed with it). Over converted
@@ -102,9 +103,10 @@ applied, not `items[].dml`, which is only what the item itself wrote. An item ap
 not is listed in `unresolvedItems` with the module to fetch — an item absent from the map is an
 unknown, never a default. The same holds for *how big* a field is: a classed item writes a width and
 no height at all, so ask `effectiveGeometry`, not `items[].width`/`height`, which are only what the
-item itself wrote. (Neither is the length it accepts — that is `maximumLength`.) `items: [...]` narrows the call to the fields a question is about. `columns: true` adds the
-base table's columns, the ones no item supplies, and which of *those* are mandatory — the columns
-an insert fails on unless a trigger assigns them.
+item itself wrote. (Neither is the length it accepts — that is `maximumLength`.) `items: [...]`
+narrows the call to the fields a question is about. `columns: true` adds the base table's columns,
+the ones no item supplies, and which of *those* are mandatory — the columns an insert fails on
+unless a trigger assigns them.
 
 ## Where is a value written
 
@@ -142,7 +144,7 @@ Two rules that cost a wrong claim if skipped:
 
 - **A zero-hit pattern proves the pattern absent, not the write.** A regex like
   `(customer_name|…)\s*:=` returning nothing says nothing about a
-  `SELECT … INTO :orders.customer_name`. A search that found nothing says so itself now —
+  `SELECT … INTO :orders.customer_name`. A search that found nothing says so itself —
   `filesSearched` with a `hint` naming what that scope cannot reach — but it cannot know which
   shapes you did not try. Before concluding "written only here", check that the searches above were
   actually run, and read `total` and `files`, which count the whole module, not just the page you

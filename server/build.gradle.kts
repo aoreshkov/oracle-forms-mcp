@@ -23,10 +23,12 @@ dependencies {
 }
 
 // Classpath fixtures under /fixtures/** come from the canonical demo dir at the repo root; the
-// MCPB manifest is copied in too, so a test can compare its tool list with the registered tools.
+// MCPB manifest and the plugin's skill are copied in too, so a test can compare the tools they name
+// with the registered tools.
 tasks.processTestResources {
     from(rootDir.resolve("sample-forms")) { into("fixtures") }
     from(layout.projectDirectory.file("mcpb/manifest.template.json")) { into("mcpb") }
+    from(rootDir.resolve("plugins/oracle-forms/skills/trace-form/SKILL.md")) { into("plugin-skill") }
 }
 
 // Single source of truth for the MCP `Implementation` version: bake `project.version`

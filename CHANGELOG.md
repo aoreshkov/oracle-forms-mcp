@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   users ahead of a server it needs. CI now compares the plugin's `version` with the one on `stable`,
   so a changed plugin can't reuse the version users already have. An existing install moves over on
   its next update, which may need `claude plugin marketplace update oracle-forms-mcp` first.
+- **The `trace-form` skill loads more reliably** (plugin version 1.7.1). Its description now says to
+  load it before calling the tools. In the evals, Haiku 5.5 went from loading it in 1 of 9 runs to 9
+  of 9, and it still stays out of unrelated questions.
 
 ### Added
 - **The plugin's launcher honours `HTTPS_PROXY` and `NO_PROXY`** (plugin version 1.7.0), which the

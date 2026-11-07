@@ -116,6 +116,11 @@ jobs:
             sed -n '2,/^---$/p' "$skill" | grep -qE '^description: .+' || {
               echo "${skill}: frontmatter needs a description — it is what decides when the skill loads"
               exit 1; }
+            # 1,024 is the limit outside Claude Code, whose own listing cuts at 1,536.
+            description=$(sed -n '2,/^---$/p' "$skill" | sed -n 's/^description: *//p')
+            test "${#description}" -le 1024 || {
+              echo "${skill}: description is ${#description} characters, over the limit of 1024"
+              exit 1; }
             # The directory name is the fallback invocation name; keeping them equal means the
             # documented `/oracle-forms:<name>` cannot drift from the directory users see.
             test "$name" = "$(basename "$(dirname "$skill")")" || {
