@@ -8,7 +8,12 @@
   "plugins": [
     {
       "name": "oracle-forms",
-      "source": "./plugins/oracle-forms",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/aoreshkov/oracle-forms-mcp.git",
+        "path": "plugins/oracle-forms",
+        "ref": "stable"
+      },
       "displayName": "Oracle Forms",
       "description": "Read Oracle Forms modules (.fmb/.mmb/.pll/.olb) from a directory — blocks, items, triggers, program units, PL/SQL, and durable annotations. Needs a JDK 25+, on PATH or configured by path.",
       "category": "development",

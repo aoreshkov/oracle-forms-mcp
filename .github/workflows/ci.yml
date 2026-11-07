@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The version check below compares against the last release tag.
+          # The version check below compares against the stable branch.
           fetch-depth: 0
 
       - name: Set up JDK 25
@@ -73,16 +73,23 @@ jobs:
           distribution: temurin
           java-version: 25
 
-      # The plugin is consumed straight from the repository by `/plugin marketplace add`, so a
-      # broken manifest or launcher ships the moment it lands on main — there is no build step
-      # between here and the user. These checks are that build step.
+      # The marketplace is read from main and the plugin is served from the stable branch, so a
+      # broken marketplace entry ships the moment it lands on main, and a broken manifest or
+      # launcher ships when stable next moves. Nothing builds the plugin on the way to the user.
+      # These checks are that build step.
       - name: Validate the marketplace and plugin manifests
         run: |
           MARKET=.claude-plugin/marketplace.json
           PLUGIN=plugins/oracle-forms/.claude-plugin/plugin.json
           jq -e '.name and .owner.name and (.plugins | length > 0)' "$MARKET" > /dev/null
+          # Every entry is served from stable, over HTTPS: an owner/repo shorthand needs a GitHub
+          # SSH key on the user's machine, and installs from /plugin don't fall back without one.
+          jq -e 'all(.plugins[].source; .source == "git-subdir" and .ref == "stable"
+                     and (.url | startswith("https://")))' "$MARKET" > /dev/null || {
+            echo "Marketplace entries must be git-subdir sources on ref stable with an https URL"
+            exit 1; }
           # Every marketplace entry must point at a directory that actually holds a plugin.
-          for src in $(jq -r '.plugins[].source' "$MARKET"); do
+          for src in $(jq -r '.plugins[].source.path' "$MARKET"); do
             test -f "${src}/.claude-plugin/plugin.json" || {
               echo "Marketplace source ${src} has no .claude-plugin/plugin.json"; exit 1; }
           done
@@ -95,8 +102,8 @@ jobs:
           test -f "$(jq -r '.mcpServers["oracle-forms"].args[0]' plugins/oracle-forms/.mcp.json \
                      | sed 's|${CLAUDE_PLUGIN_ROOT}|plugins/oracle-forms|')"
 
-      # The skills ship by the same route as the manifests — no build step between a commit and a
-      # user's install — and a skill whose frontmatter does not parse is simply never offered.
+      # The skills ship by the same route as the manifests, with nothing to build on the way, and a
+      # skill whose frontmatter does not parse is simply never offered.
       - name: Validate the plugin skills
         run: |
           shopt -s nullglob
@@ -124,24 +131,27 @@ jobs:
       # Claude Code updates an installed plugin only when plugin.json's `version` changes, so
       # a change under the plugin without a bump never reaches anyone who already has it. That
       # covers users of this repository's marketplace, and of any marketplace that pins a
-      # release of it. Bump once per release cycle, in the first change after a tag. README.md
-      # is left out: Claude Code never loads it.
+      # release of it. Users get what's on stable, so that's the comparison. The last tag isn't
+      # the same thing, because stable can also be moved by hand. Bump once per release cycle, in
+      # the first change after stable moves. README.md is left out: Claude Code never loads it.
       - name: Plugin version moves with the plugin
         run: |
           dir=plugins/oracle-forms
-          tag=$(git describe --tags --abbrev=0 --match 'v*' HEAD 2>/dev/null) || {
-            echo "No release tag yet: nothing to compare against"; exit 0; }
+          stable=origin/stable
+          git rev-parse --verify --quiet "${stable}^{commit}" > /dev/null || {
+            echo "::error file=.claude-plugin/marketplace.json::The marketplace serves the plugin from the stable branch, which doesn't exist, so nobody can install it. Create stable from a commit on main whose plugin works with a released server."
+            exit 1; }
           paths=("$dir" ":(exclude)${dir}/README.md")
-          if git diff --quiet "$tag" HEAD -- "${paths[@]}"; then
-            echo "OK: ${dir}/ unchanged since ${tag}"; exit 0
+          if git diff --quiet "$stable" HEAD -- "${paths[@]}"; then
+            echo "OK: ${dir}/ is the same as on stable"; exit 0
           fi
-          was=$(git show "${tag}:${dir}/.claude-plugin/plugin.json" | jq -r .version)
+          was=$(git show "${stable}:${dir}/.claude-plugin/plugin.json" | jq -r .version)
           now=$(jq -r .version "${dir}/.claude-plugin/plugin.json")
           test "$now" != "$was" || {
-            echo "::error file=${dir}/.claude-plugin/plugin.json::${dir}/ changed since ${tag}, but its version is still ${now}. Bump it, or users who have ${now} never get the change."
-            git diff --stat "$tag" HEAD -- "${paths[@]}"
+            echo "::error file=${dir}/.claude-plugin/plugin.json::${dir}/ differs from stable, but its version is still ${now}. Bump it, or users who have ${now} never get the change."
+            git diff --stat "$stable" HEAD -- "${paths[@]}"
             exit 1; }
-          echo "OK: ${dir}/ changed since ${tag}, and its version moved ${was} -> ${now}"
+          echo "OK: ${dir}/ differs from stable, and its version moved ${was} -> ${now}"
 
       # The checks above cover this repository's own invariants; `validate` covers Claude
       # Code's, including the MCP server entry and every ${user_config.*} reference in it.

@@ -106,11 +106,13 @@ The server and the plugin update separately:
 - **Server:** with `server_version` set to `latest`, it updates itself as described
   [above](#how-the-server-gets-here), and a new release takes effect in the session after it is
   downloaded.
-- **Plugin (launcher, skill and options):** auto-update is off by default for a third-party
-  marketplace like this one. To turn it on, run `/plugin`, go to the **Marketplaces** tab, select
-  this marketplace, and choose **Enable auto-update**. To update by hand, select **Update now** on
-  the plugin's page in the **Installed** tab, or run
-  `claude plugin update oracle-forms@oracle-forms-mcp` in your shell.
+- **Plugin (launcher, skill and options):** a new version becomes available with a server release.
+  Auto-update is off by default for a third-party marketplace like this one. To turn it on, run
+  `/plugin`, go to the **Marketplaces** tab, select this marketplace, and choose **Enable
+  auto-update**. To update by hand, select **Update now** on the plugin's page in the **Installed**
+  tab, or run `claude plugin update oracle-forms@oracle-forms-mcp` in your shell. If that says you
+  already have the latest version when you don't, first run
+  `claude plugin marketplace update oracle-forms-mcp`.
 
 ## Troubleshooting
 
