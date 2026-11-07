@@ -53,7 +53,10 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   install. It also carries one skill,
   `skills/trace-form/SKILL.md`: the traversal order and the habit→tool mapping that the server's
   `instructions` state in brief, at the length a worked example needs. Both are guidance, not
-  behaviour — keep them agreeing with each other and with the tools they name.
+  behaviour — keep them agreeing with each other and with the tools they name. `evals/` tests the
+  skill with real model calls, so it runs by hand when the skill changes (Linux or WSL, through
+  `evals/run.sh`, never `claude plugin eval` directly: an eval run has no `forms_dir`, so the
+  script evaluates a temporary copy whose `.mcp.json` names `sample-forms` and a local build).
 
 ## Invariants
 
