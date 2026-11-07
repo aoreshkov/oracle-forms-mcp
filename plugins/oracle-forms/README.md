@@ -13,7 +13,7 @@ Claude Code then asks for the **Forms directory**. Point it at the folder holdin
 `.mmb`, `.pll`, and `.olb` modules and the tools are live in the next session (or immediately after
 `/reload-plugins`). Verify with `/mcp` — the server appears as `plugin:oracle-forms:oracle-forms`.
 Skip the prompt and the server still starts; its tools then answer with an error asking for the
-directory until you set it in `/plugin`.
+directory until you [set it](#configuration).
 
 ## Requirements
 
@@ -29,8 +29,15 @@ directory until you set it in `/plugin`.
 
 ## Configuration
 
-Set these in `/plugin` → **Oracle Forms** → configure; they are stored in your user
-`settings.json` under `pluginConfigs`.
+In a Claude Code session, set these with `/plugin configure oracle-forms@oracle-forms-mcp`, or run
+`/plugin`, select the plugin on the **Installed** tab, and choose **Configure options**. They also
+appear as rows in `/config`.
+
+From a shell, `claude plugin configure oracle-forms@oracle-forms-mcp` lists them. Adding
+`--values-stdin` saves a JSON object piped to it, and any option you leave out keeps its value.
+Restart Claude Code to apply what you saved this way.
+
+Either way, the values are stored in your user `settings.json` under `pluginConfigs`.
 
 | Option | Default | What it does |
 |---|---|---|

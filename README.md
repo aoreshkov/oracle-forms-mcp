@@ -305,7 +305,7 @@ server into the plugin's data directory on first use — no clone, no build, no 
 tools are live after `/reload-plugins`, and the plugin's `trace-form` skill teaches the traversal
 above — the order to ask in, and the readings that mislead — so a trace does not start with `grep`.
 Skip the prompt and the server still starts; its tools then answer with an error asking for the
-directory until you set it in `/plugin`.
+directory until you set it with `/plugin configure oracle-forms@oracle-forms-mcp`.
 
 > **Requires a JDK 25+** (`javac -version`), because the plugin's bootstrap runs in Java's
 > single-file source mode. It uses the one on your `PATH` unless you set the plugin's `java` option
@@ -511,7 +511,7 @@ directory, in either spelling:
 | `--host` | `OFMCP_HTTP_HOST` |
 
 `--convert-command` and `--converted-dir` are also exposed as configuration in the
-[Claude Code plugin](plugins/oracle-forms/README.md) (`/plugin` → Oracle Forms), and all three in
+[Claude Code plugin](plugins/oracle-forms/README.md#configuration), and all three in
 the `.mcpb` bundle (Claude Desktop's connector settings) and the registry listing for the Docker
 image — so whichever channel you install from, you can point the server at your own converter and
 your own output directory without editing JSON by hand. Leaving any of them unset is always valid:
