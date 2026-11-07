@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release in the background for the next session. A network that silently dropped GitHub traffic
   could otherwise outlast Claude Code's startup limit. A failed check or install is retried after an
   hour, and connecting now times out after 5 seconds rather than 60.
+- **The Claude Code plugin now ships from a `stable` branch instead of `main`.** The release workflow
+  moves the branch to each tag once the release is published, so a plugin change can no longer reach
+  users ahead of a server it needs. CI now compares the plugin's `version` with the one on `stable`,
+  so a changed plugin can't reuse the version users already have. An existing install moves over on
+  its next update, which may need `claude plugin marketplace update oracle-forms-mcp` first.
 
 ### Added
 - **The plugin's launcher honours `HTTPS_PROXY` and `NO_PROXY`** (plugin version 1.7.0), which the

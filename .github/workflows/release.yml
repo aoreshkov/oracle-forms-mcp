@@ -136,6 +136,43 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
 
+  move-stable:
+    name: Move the plugin's stable branch
+    runs-on: ubuntu-latest
+    # The marketplace serves the Claude Code plugin from stable, so this job is what delivers a
+    # plugin change. It runs only once the release is published, which keeps a plugin from
+    # reaching users ahead of a server it needs. It doesn't wait for the image or the registry,
+    # because the plugin uses neither.
+    needs: [github-release]
+    permissions:
+      contents: write
+    steps:
+      # The update isn't forced, so the API accepts only a fast-forward. A re-run, or a tag older
+      # than stable, changes nothing: moving back would return users to an old plugin.
+      - name: Move stable to the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status=$(gh api "repos/${GITHUB_REPOSITORY}/compare/stable...${GITHUB_REF_NAME}" --jq .status) || {
+            echo "::error::Could not compare stable with ${GITHUB_REF_NAME}. If stable is missing, create it from the tag: git push origin ${GITHUB_REF_NAME}^{commit}:refs/heads/stable"
+            exit 1; }
+          case "$status" in
+            ahead)
+              # A tag's own object can't be a branch tip, so ask for the commit it points at.
+              sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_REF_NAME}" --jq .sha)
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/heads/stable" \
+                -f sha="$sha" -F force=false --silent
+              echo "Moved stable to ${GITHUB_REF_NAME} (${sha})"
+              ;;
+            identical | behind)
+              echo "::notice::stable already contains ${GITHUB_REF_NAME}, so it stays where it is"
+              ;;
+            *)
+              echo "::error::stable and ${GITHUB_REF_NAME} have ${status}. The server is released, but the plugin wasn't moved. Fix it by hand, without moving stable back past what users already have."
+              exit 1
+              ;;
+          esac
+
   docker:
     name: Docker image (GHCR)
     runs-on: ubuntu-latest

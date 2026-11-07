@@ -31,9 +31,13 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   gradient instead draws a different icon). Consumed by `server/build.gradle.kts` (server
   resources), `server/mcpb/manifest.template.json`, and `server.json`'s tag-pinned `icons` URLs —
   so a change here reaches the registry listing only at the next tag.
-- `plugins/oracle-forms/` + `.claude-plugin/marketplace.json` — the Claude Code plugin channel,
-  served straight from the repo by `/plugin marketplace add aoreshkov/oracle-forms-mcp`. The plugin
-  carries no jars: `.mcp.json` runs `launcher/OracleFormsMcpLauncher.java` in Java single-file
+- `plugins/oracle-forms/` + `.claude-plugin/marketplace.json` — the Claude Code plugin channel.
+  `/plugin marketplace add aoreshkov/oracle-forms-mcp` reads the marketplace from `main`, and its
+  entry serves the plugin from the **`stable` branch**. `release.yml` moves `stable` to each tag once
+  the release is published, so a plugin change reaches users at the next release and never ahead of
+  a server it needs. A plugin-only fix waits for a release, or for `stable` to be moved by hand. A
+  hand move must fast-forward to a commit on `main`, never force, and never cross a plugin change
+  that needs an unreleased server. The plugin carries no jars: `.mcp.json` runs `launcher/OracleFormsMcpLauncher.java` in Java single-file
   source mode (hence a **JDK** 25+, not a JRE), which downloads the release zip, verifies its published
   sha256, unpacks it under `${CLAUDE_PLUGIN_DATA}` (passed as `OFMCP_PLUGIN_DATA`; without it, a
   per-user OS data directory, so a host that sets only `OFMCP_*` variables can run it too), and
@@ -43,8 +47,10 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   stays on the Java 21 language and API (CI compiles it with `--release 21`), so on a JDK older
   than the server needs it still starts, runs the server as a child on `JAVA_HOME`'s Java when that
   is new enough, and otherwise names the fix instead of failing to compile. The
-  `claude-code-plugin` CI job validates the manifests and compiles the launcher — nothing else
-  stands between a commit on main and a user's install. It also carries one skill,
+  `claude-code-plugin` CI job validates the manifests, compiles the launcher, and requires `version`
+  to differ from `stable`'s whenever the plugin's files do, because Claude Code won't update an
+  install to the same version. Nothing else stands between a commit on main and the next release's
+  install. It also carries one skill,
   `skills/trace-form/SKILL.md`: the traversal order and the habit→tool mapping that the server's
   `instructions` state in brief, at the length a worked example needs. Both are guidance, not
   behaviour — keep them agreeing with each other and with the tools they name.

@@ -73,7 +73,10 @@ indented continuations, and keep nested list items as `  - `.
   against the `oracle-forms-mcp-server-<VERSION>.zip.sha256` asset the release workflow publishes,
   so a release missing that asset breaks `/plugin install` for everyone on `server_version=latest`.
   Confirm the "Package distribution" step still writes it, and after the release confirm the asset
-  is attached (`gh release view v<VERSION> --json assets`).
+  is attached (`gh release view v<VERSION> --json assets`). The same release delivers the plugin
+  itself: the "Move the plugin's stable branch" job moves `stable` to the tag. Afterwards, confirm
+  that `git ls-remote origin refs/heads/stable` shows the same commit as
+  `git rev-parse "v<VERSION>^{commit}"`.
 - **`gradlew` executable bit:** the wrapper must stay executable in git or the CI build fails
   on a fresh checkout. Verify: `git ls-files -s gradlew` shows mode `100755`.
 - **No private paths leak:** confirm nothing under `docs/` (private) is referenced from
@@ -119,5 +122,5 @@ Summarize: old → new version, the two files updated, changelog entry, pre-flig
 (description/title length, MCPB bundle build, gradlew mode, checkKotlinAbi, build status, local
 guard simulation), and whether a tag was pushed or is pending. Note that the tag publishes four
 things: the GitHub release (zip + its `.sha256` + `.mcpb`), the GHCR image, and the MCP Registry
-listing. The Claude Code plugin channel is not tagged — it serves from `main` — but it *consumes*
-the release, so it only picks up the new server once the release assets are live.
+listing. It also moves the Claude Code plugin's `stable` branch, once the release assets are live,
+so everything changed under `plugins/oracle-forms/` since the last release reaches users with it.
