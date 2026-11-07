@@ -59,7 +59,7 @@ jobs:
       # 2.1.281 or later: earlier `validate` skips the checks on the plugin's MCP servers.
       # Pinned so a new Claude Code release cannot change what `--strict` accepts without a
       # reviewed commit. Bump it deliberately.
-      CLAUDE_CODE_VERSION: 2.1.294
+      CLAUDE_CODE_VERSION: 2.1.319
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -95,6 +95,15 @@ jobs:
           done
           # forms_dir stays optional: without it the server starts and every tool asks for it.
           jq -e '.name and .version and .userConfig.forms_dir.required == false' "$PLUGIN" > /dev/null
+          # The marketplace entry repeats these fields from plugin.json, and nothing else keeps the
+          # two copies the same.
+          name=$(jq -r .name "$PLUGIN")
+          for field in displayName description homepage repository license keywords; do
+            test "$(jq -c --arg name "$name" --arg field "$field" \
+                      '.plugins[] | select(.name == $name) | .[$field]' "$MARKET")" \
+              = "$(jq -c --arg field "$field" '.[$field]' "$PLUGIN")" || {
+              echo "${field} differs between ${MARKET} and ${PLUGIN}"; exit 1; }
+          done
           # The MCP entry must keep resolving the launcher through ${CLAUDE_PLUGIN_ROOT}: a bare
           # relative path would resolve against the session's working directory instead.
           jq -e '.mcpServers["oracle-forms"].args[0]
