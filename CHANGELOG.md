@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-07
+
+This release changes the Claude Code plugin. The server's code is the same as in 0.19.0.
+
 ### Changed
 - **The Claude Code plugin no longer waits for the network once a server is installed** (plugin
   version 1.7.0). It starts the installed version at once, then checks for and installs a newer
@@ -915,7 +919,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_object_xml`.
 - Per-module index resources, `oracleforms://{module}/index` template, `explain_module` prompt.
 
-[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/aoreshkov/oracle-forms-mcp/compare/v0.16.0...v0.17.0
