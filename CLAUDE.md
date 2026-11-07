@@ -37,9 +37,12 @@ A KMP core of pure models + ports, with a JVM MCP server of declarative tool ada
   source mode (hence a **JDK** 25+, not a JRE), which downloads the release zip, verifies its published
   sha256, unpacks it under `${CLAUDE_PLUGIN_DATA}` (passed as `OFMCP_PLUGIN_DATA`; without it, a
   per-user OS data directory, so a host that sets only `OFMCP_*` variables can run it too), and
-  loads it in-process. The launcher itself
+  loads it in-process. Once a version is installed, the network is never in the way of a start:
+  with `latest` the check and any newer install run on a daemon thread for the next session, and
+  only a first install blocks. The launcher itself
   stays on the Java 21 language and API (CI compiles it with `--release 21`), so on a JDK older
-  than the server needs it still starts and names the fix instead of failing to compile. The
+  than the server needs it still starts, runs the server as a child on `JAVA_HOME`'s Java when that
+  is new enough, and otherwise names the fix instead of failing to compile. The
   `claude-code-plugin` CI job validates the manifests and compiles the launcher — nothing else
   stands between a commit on main and a user's install. It also carries one skill,
   `skills/trace-form/SKILL.md`: the traversal order and the habit→tool mapping that the server's

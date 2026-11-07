@@ -17,15 +17,22 @@
 // without OFMCP_PLUGIN_DATA it keeps its downloads in a per-user data directory of the OS.
 //
 // The launcher itself deliberately stays within the Java 21 language and API (CI compiles it with
-// `--release 21`): on a JDK too old for the server it must still compile and start, so it can say
-// what is wrong instead of dying in a compiler error the user never sees.
+// `--release 21`): on a JDK too old for the server it must still compile and start, so it can run
+// the server on JAVA_HOME's Java, or say what is wrong, instead of dying in a compiler error the
+// user never sees.
 //
 // INVARIANT: stdout belongs to the MCP stdio protocol. Every diagnostic here goes to stderr.
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.net.http.HttpClient;
@@ -34,6 +41,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
@@ -59,11 +67,20 @@ public final class OracleFormsMcpLauncher {
 
     /** How long a resolved "latest" tag is trusted before the GitHub API is asked again. */
     private static final Duration LATEST_TTL = Duration.ofHours(24);
-    private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(60);
+    /**
+     * How long a failed check or install is left alone. Shorter than {@link #LATEST_TTL} so a
+     * network that comes back, or a release that finishes uploading, is picked up the same day.
+     */
+    private static final Duration RETRY_AFTER_FAILURE = Duration.ofHours(1);
+    /** Short, because a first install has to finish inside the client's startup limit. */
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(60);
     /** An unpack directory this old belongs to no running launcher: unpacking takes seconds. */
     private static final Duration ABANDONED_AFTER = Duration.ofHours(1);
 
     private static final Pattern TAG_NAME = Pattern.compile("\"tag_name\"\\s*:\\s*\"v?([^\"]+)\"");
+    /** The feature release in a JDK's {@code release} file: {@code JAVA_VERSION="25.0.4"}. */
+    private static final Pattern JAVA_VERSION = Pattern.compile("(?m)^JAVA_VERSION=\"(\\d+)");
     /** Leading digit required: a version becomes a directory name, and "." or ".." must not. */
     private static final Pattern VERSION = Pattern.compile("[0-9][0-9A-Za-z.+-]*");
     /** A value that is nothing but a variable reference its host never expanded. */
@@ -73,7 +90,7 @@ public final class OracleFormsMcpLauncher {
      * Where a user pins the server version, for messages. Not only /plugin: a host other than Claude
      * Code may start this launcher and pass the user's settings as variables.
      */
-    private static final String PIN_WHERE = "(server_version in /plugin, or OFMCP_SERVER_VERSION)";
+    private static final String PIN_WHERE = "(server_version in /plugin configure, or OFMCP_SERVER_VERSION)";
 
     public static void main(String[] args) throws Exception {
         // An unset forms directory is not refused here: it arrives blank, or as Claude Code's
@@ -86,16 +103,22 @@ public final class OracleFormsMcpLauncher {
         // without a network.
         String home = envOrDefault("OFMCP_SERVER_HOME", "");
         Path dist;
+        Method server;
         try {
             dist = home.isEmpty() ? resolveDistribution() : Path.of(home);
+            server = loadServer(dist);
         } catch (Exception e) {
             // Bootstrap failures are the user's problem to fix, not a bug report: Claude Code shows
             // this server as failed and the reason is whatever we last wrote to stderr. A stack
-            // trace would bury it.
+            // trace would bury it. The server's own run stays outside this: a crash there is a bug.
             fail(describe(e));
             return;
         }
-        launch(dist, args);
+        if (server == null) {
+            runOnJavaHome(dist, args);
+            return;
+        }
+        server.invoke(null, (Object) args);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -123,59 +146,102 @@ public final class OracleFormsMcpLauncher {
         }
 
         Path marker = dataDir.resolve("latest-release.txt");
-        String version = cachedLatest(marker);
-        boolean fromApi = version == null;
-        if (fromApi) {
-            try {
-                version = fetchLatest();
-            } catch (IOException | InterruptedException e) {
-                String installed = newestInstalled(distRoot);
-                if (installed == null) {
-                    throw new IOException("Could not reach the GitHub releases API to find the latest"
-                            + " oracle-forms-mcp server, and no version is installed yet. Check the"
-                            + " network, or pin a version " + PIN_WHERE + ".", e);
-                }
-                warn("could not check for the latest release (" + e + "); using installed " + installed);
-                return distRoot.resolve(installed);
+        Path failure = dataDir.resolve("latest-check-failed.txt");
+        String remembered = rememberedLatest(marker);
+        boolean fresh = remembered != null && isYoungerThan(marker, LATEST_TTL);
+
+        // The marker's version comes first, not simply the newest on disk: a version pinned earlier
+        // can be newer than the latest release.
+        String ready = remembered != null && isInstalled(distRoot.resolve(remembered))
+                ? remembered
+                : newestInstalled(distRoot);
+        if (ready != null) {
+            // Something runnable is here, so the network must not stand between the client and the
+            // handshake: a dropped connection can outlast the client's startup limit, and a newer
+            // release's download easily does.
+            boolean upToDate = fresh && ready.equals(remembered);
+            if (!upToDate && !isYoungerThan(failure, RETRY_AFTER_FAILURE)) {
+                updateInBackground(ready, dataDir, distRoot, stagingRoot, marker, failure);
             }
+            return distRoot.resolve(ready);
         }
 
+        // Nothing to run until a download finishes, so this one has to block.
+        String version = fresh ? remembered : fetchLatestForFirstInstall();
         Path dist = distRoot.resolve(version);
-        if (!isInstalled(dist)) {
-            try {
-                install(version, dist, stagingRoot);
-            } catch (InterruptedException e) {
-                throw e; // asked to stop, not a failed install
-            } catch (Exception e) {
-                // "latest" asks for the newest server that works, and an older one that is already
-                // here still does: a CDN hiccup, a release whose assets are still uploading, or a
-                // checksum mismatch must not take the plugin down with it. The marker is left alone,
-                // so the next session start tries the install again.
-                String installed = newestInstalled(distRoot);
-                if (installed == null) throw e;
-                warn("could not install the latest release " + version + ": " + describe(e)
-                        + "; using installed " + installed);
-                return distRoot.resolve(installed);
-            }
-        }
-        // Remembered only once it is installed: a marker naming a version that failed to install
-        // would otherwise be trusted for a whole TTL.
-        if (fromApi) {
-            Files.createDirectories(dataDir);
-            Files.writeString(marker, version, StandardCharsets.UTF_8);
-        }
+        install(version, dist, stagingRoot);
+        remember(dataDir, marker, failure, version);
         return dist;
     }
 
+    private static String fetchLatestForFirstInstall() throws IOException, InterruptedException {
+        try {
+            return fetchLatest();
+        } catch (IOException e) {
+            throw new IOException("Could not reach the GitHub releases API to find the latest"
+                    + " oracle-forms-mcp server, and no version is installed yet. Check the"
+                    + " network and any proxy settings (HTTPS_PROXY), or pin a version "
+                    + PIN_WHERE + ".", e);
+        }
+    }
+
     /**
-     * The "latest" version resolved within the last {@link #LATEST_TTL}, so a session start is not
-     * a GitHub API call — or null when there is none, or it has expired.
+     * Checks for a newer release and installs it for the next session; {@code running} keeps
+     * serving this one. A daemon thread, so it never holds up the end of a session, and an install
+     * cut off that way is left in the staging directory, where nothing looks for one. "latest" asks
+     * for the newest server that works, and the one already running still does, so a failure only
+     * goes to stderr. It is recorded so that the next starts leave it alone for
+     * {@link #RETRY_AFTER_FAILURE}.
      */
-    private static String cachedLatest(Path marker) throws IOException {
-        if (!Files.isRegularFile(marker)) return null;
-        long age = System.currentTimeMillis() - Files.getLastModifiedTime(marker).toMillis();
-        String cached = Files.readString(marker, StandardCharsets.UTF_8).trim();
-        return age < LATEST_TTL.toMillis() && VERSION.matcher(cached).matches() ? cached : null;
+    private static void updateInBackground(String running, Path dataDir, Path distRoot,
+            Path stagingRoot, Path marker, Path failure) {
+        Thread update = new Thread(() -> {
+            try {
+                String version = fetchLatest();
+                Path dist = distRoot.resolve(version);
+                boolean installing = !isInstalled(dist);
+                if (installing) install(version, dist, stagingRoot);
+                // Remembered only once it is installed: this is what the next session will run.
+                remember(dataDir, marker, failure, version);
+                if (installing) warn("installed server " + version + "; the next session uses it");
+            } catch (Exception e) {
+                warn("could not update from the latest release (" + describe(e)
+                        + "); running installed " + running);
+                try {
+                    Files.createDirectories(dataDir);
+                    Files.writeString(failure, e.toString(), StandardCharsets.UTF_8);
+                } catch (IOException recording) {
+                    warn("could not record the failed update (" + recording + ")");
+                }
+            }
+        }, "oracle-forms-mcp-update");
+        update.setDaemon(true);
+        update.start();
+    }
+
+    private static void remember(Path dataDir, Path marker, Path failure, String version) throws IOException {
+        Files.createDirectories(dataDir);
+        Files.writeString(marker, version, StandardCharsets.UTF_8);
+        Files.deleteIfExists(failure);
+    }
+
+    /** The version in the marker, whatever its age, or null when there is no usable one. */
+    private static String rememberedLatest(Path marker) {
+        try {
+            String remembered = Files.readString(marker, StandardCharsets.UTF_8).trim();
+            return VERSION.matcher(remembered).matches() ? remembered : null;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** False when the file doesn't exist. */
+    private static boolean isYoungerThan(Path file, Duration age) {
+        try {
+            return System.currentTimeMillis() - Files.getLastModifiedTime(file).toMillis() < age.toMillis();
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     /** The newest released version, asked of the GitHub API. */
@@ -331,11 +397,12 @@ public final class OracleFormsMcpLauncher {
     // ---------------------------------------------------------------------------------------
 
     /**
-     * Runs the server in this JVM. In-process rather than a child process: the launcher's stdin and
-     * stdout are already the pipes Claude Code opened for the stdio transport, so handing them over
-     * directly avoids both a second JVM and the orphaned-child problem when a session ends.
+     * Loads the server into this JVM, or returns null when this Java is too old to run it.
+     * In-process rather than a child process: the launcher's stdin and stdout are already the pipes
+     * Claude Code opened for the stdio transport, so handing them over directly avoids both a second
+     * JVM and the orphaned-child problem when a session ends.
      */
-    private static void launch(Path dist, String[] args) throws Exception {
+    private static Method loadServer(Path dist) throws Exception {
         Path lib = dist.resolve("lib");
         if (!Files.isDirectory(lib)) {
             throw new IOException("Not a server distribution (no lib/ directory): " + dist);
@@ -353,20 +420,65 @@ public final class OracleFormsMcpLauncher {
         URLClassLoader loader =
                 new URLClassLoader(classpath.toArray(URL[]::new), ClassLoader.getPlatformClassLoader());
         Thread.currentThread().setContextClassLoader(loader); // Logback resolves logback.xml via this
-        Class<?> server;
         try {
-            server = loader.loadClass(MAIN_CLASS);
+            return loader.loadClass(MAIN_CLASS).getMethod("main", String[].class);
         } catch (UnsupportedClassVersionError e) {
             // "latest" moved past the Java that runs us: servers after 0.14.0 are compiled for Java 25.
+            return null;
+        }
+    }
+
+    /**
+     * Runs the server on JAVA_HOME's Java, for someone whose PATH has an older one: without this,
+     * all they see is a server that failed to connect. It has to be a child process, so unlike
+     * {@link #loadServer} it costs a second JVM. Its stdin is the client's pipe, so the child still
+     * ends with the session even if this JVM is killed outright. It runs the jars directly rather
+     * than this launcher again, so there is nothing to recompile and no way to loop.
+     */
+    private static void runOnJavaHome(Path dist, String[] args) throws Exception {
+        Path java = javaHomeExecutable();
+        if (java == null) {
             fail("The oracle-forms-mcp server in " + dist + " needs Java " + SERVER_JAVA
                     + " or later, but the plugin is running on Java " + Runtime.version().feature()
-                    + " (" + System.getProperty("java.home") + "). Set the plugin's Java executable"
-                    + " to a JDK " + SERVER_JAVA + "+ java (or put one on PATH), or pin server"
-                    + " version 0.14.0, the last to run on Java 21 " + PIN_WHERE + ".");
+                    + " (" + System.getProperty("java.home") + "), and JAVA_HOME doesn't name a new"
+                    + " enough one. Set the plugin's java option to a JDK " + SERVER_JAVA
+                    + "+ java executable (/plugin configure), put one on PATH or in JAVA_HOME, or pin"
+                    + " server version 0.14.0, the last to run on Java 21 " + PIN_WHERE + ".");
             return;
         }
-        Method main = server.getMethod("main", String[].class);
-        main.invoke(null, (Object) args);
+        warn("this Java " + Runtime.version().feature() + " (" + System.getProperty("java.home")
+                + ") is too old for the server; running it with JAVA_HOME's " + java);
+        List<String> command = new ArrayList<>(List.of(
+                java.toString(), "-cp", dist.resolve("lib") + File.separator + "*", MAIN_CLASS));
+        command.addAll(List.of(args));
+        Process server;
+        try {
+            server = new ProcessBuilder(command).inheritIO().start();
+        } catch (IOException e) {
+            fail("Could not start " + java + " (" + e + "). Set the plugin's java option to a JDK "
+                    + SERVER_JAVA + "+ java executable (/plugin configure).");
+            return;
+        }
+        Runtime.getRuntime().addShutdownHook(new Thread(server::destroyForcibly));
+        System.exit(server.waitFor());
+    }
+
+    /** JAVA_HOME's java executable when it is at least {@link #SERVER_JAVA}, otherwise null. */
+    private static Path javaHomeExecutable() {
+        String javaHome = envOrDefault("JAVA_HOME", "");
+        if (javaHome.isEmpty()) return null;
+        try {
+            Path home = Path.of(javaHome);
+            Matcher version = JAVA_VERSION.matcher(
+                    Files.readString(home.resolve("release"), StandardCharsets.UTF_8));
+            Path java = home.resolve("bin").resolve(isWindows() ? "java.exe" : "java");
+            boolean usable = version.find()
+                    && Integer.parseInt(version.group(1)) >= SERVER_JAVA
+                    && Files.isRegularFile(java);
+            return usable ? java : null;
+        } catch (IOException | InvalidPathException | NumberFormatException e) {
+            return null;
+        }
     }
 
     // ---------------------------------------------------------------------------------------
@@ -374,20 +486,91 @@ public final class OracleFormsMcpLauncher {
     // ---------------------------------------------------------------------------------------
 
     private static byte[] get(URI uri) throws IOException, InterruptedException {
-        HttpClient client = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NORMAL) // release downloads redirect to a CDN
-                .connectTimeout(HTTP_TIMEOUT)
-                .build();
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .header("User-Agent", USER_AGENT)
                 .header("Accept", "application/octet-stream, application/json")
-                .timeout(HTTP_TIMEOUT)
+                .timeout(REQUEST_TIMEOUT)
                 .build();
-        HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        HttpResponse<byte[]> response = Http.CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());
         if (response.statusCode() != 200) {
             throw new IOException("HTTP " + response.statusCode() + " for " + uri);
         }
         return response.body();
+    }
+
+    /** In a holder so that a start with nothing to check never builds a client. */
+    private static final class Http {
+        static final HttpClient CLIENT = build();
+
+        private static HttpClient build() {
+            HttpClient.Builder client = HttpClient.newBuilder()
+                    .followRedirects(HttpClient.Redirect.NORMAL) // release downloads redirect to a CDN
+                    .connectTimeout(CONNECT_TIMEOUT);
+            ProxySelector proxy = proxySelector();
+            if (proxy != null) client.proxy(proxy);
+            return client.build();
+        }
+    }
+
+    /**
+     * {@code HTTPS_PROXY} and {@code NO_PROXY}, which the JVM itself ignores. Without them this is
+     * the JVM's default selector, which keeps {@code -Dhttps.proxyHost} working. The lower-case
+     * names win, as they do in curl.
+     */
+    private static ProxySelector proxySelector() {
+        String lower = envOrDefault("https_proxy", "");
+        InetSocketAddress proxy = parseProxy(lower.isEmpty() ? envOrDefault("HTTPS_PROXY", "") : lower);
+        if (proxy == null) return ProxySelector.getDefault();
+        String lowerNoProxy = envOrDefault("no_proxy", "");
+        String noProxy = lowerNoProxy.isEmpty() ? envOrDefault("NO_PROXY", "") : lowerNoProxy;
+        return new ProxySelector() {
+            @Override
+            public List<Proxy> select(URI uri) {
+                return List.of(bypassesProxy(uri.getHost(), noProxy)
+                        ? Proxy.NO_PROXY
+                        : new Proxy(Proxy.Type.HTTP, proxy));
+            }
+
+            @Override
+            public void connectFailed(URI uri, SocketAddress address, IOException e) {
+                // There is only the one proxy, so nothing to fail over to.
+            }
+        };
+    }
+
+    /**
+     * {@code http://host:port} or {@code host:port}, or null. Messages never repeat the value, which
+     * can hold a password. Credentials aren't sent: the JDK disables Basic authentication on HTTPS
+     * tunnels unless a JVM property says otherwise.
+     */
+    private static InetSocketAddress parseProxy(String value) {
+        if (value.isEmpty()) return null;
+        try {
+            URI uri = new URI(value.contains("://") ? value : "http://" + value);
+            if (!"http".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) {
+                warn("ignoring HTTPS_PROXY: only an http://host:port proxy is supported");
+                return null;
+            }
+            if (uri.getRawUserInfo() != null) {
+                warn("HTTPS_PROXY carries credentials, which are not sent: a proxy that requires"
+                        + " authentication is not supported");
+            }
+            return InetSocketAddress.createUnresolved(uri.getHost(), uri.getPort() < 0 ? 80 : uri.getPort());
+        } catch (URISyntaxException e) {
+            warn("ignoring HTTPS_PROXY: it is not a valid URL");
+            return null;
+        }
+    }
+
+    /** {@code NO_PROXY} entries: {@code *}, or a host that also covers its subdomains. Ports are ignored. */
+    private static boolean bypassesProxy(String host, String noProxy) {
+        String name = host == null ? "" : host.toLowerCase(java.util.Locale.ROOT);
+        for (String entry : noProxy.toLowerCase(java.util.Locale.ROOT).split(",")) {
+            String suffix = entry.trim().replaceFirst(":\\d+$", "").replaceFirst("^\\*?\\.", "");
+            if (suffix.equals("*")) return true;
+            if (!suffix.isEmpty() && (name.equals(suffix) || name.endsWith("." + suffix))) return true;
+        }
+        return false;
     }
 
     private static String sha256(byte[] bytes) throws Exception {
@@ -440,7 +623,7 @@ public final class OracleFormsMcpLauncher {
         String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
         Path home = Path.of(System.getProperty("user.home"));
         Path base;
-        if (os.startsWith("windows")) {
+        if (isWindows()) {
             String local = envOrDefault("LOCALAPPDATA", "");
             base = local.isEmpty() ? home.resolve("AppData").resolve("Local") : Path.of(local);
         } else if (os.startsWith("mac")) {
@@ -451,6 +634,10 @@ public final class OracleFormsMcpLauncher {
             base = !xdg.isEmpty() && Path.of(xdg).isAbsolute() ? Path.of(xdg) : home.resolve(".local").resolve("share");
         }
         return base.resolve("oracle-forms-mcp").resolve("launcher");
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows");
     }
 
     private static String envOrDefault(String name, String fallback) {

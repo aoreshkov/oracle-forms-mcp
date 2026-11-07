@@ -309,7 +309,8 @@ directory until you set it with `/plugin configure oracle-forms@oracle-forms-mcp
 
 > **Requires a JDK 25+** (`javac -version`), because the plugin's bootstrap runs in Java's
 > single-file source mode. It uses the one on your `PATH` unless you set the plugin's `java` option
-> to another JDK's `java` executable. With only a JRE, use the `.mcpb` bundle or `claude mcp add` below.
+> to another JDK's `java` executable, and falls back to `JAVA_HOME` when that one is too old for the
+> server. With only a JRE, use the `.mcpb` bundle or `claude mcp add` below.
 
 Details, configuration options, and the escape hatches are in the
 [plugin README](plugins/oracle-forms/README.md).
