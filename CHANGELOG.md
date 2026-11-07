@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The Claude Code plugin no longer waits for the network once a server is installed** (plugin
+  version 1.7.0). It starts the installed version at once, then checks for and installs a newer
+  release in the background for the next session. A network that silently dropped GitHub traffic
+  could otherwise outlast Claude Code's startup limit. A failed check or install is retried after an
+  hour, and connecting now times out after 5 seconds rather than 60.
+
+### Added
+- **The plugin's launcher honours `HTTPS_PROXY` and `NO_PROXY`** (plugin version 1.7.0), which the
+  JVM itself ignores. A proxy that requires authentication isn't supported.
+- **The launcher falls back to `JAVA_HOME`** (plugin version 1.7.0). With Java 21 to 24 on `PATH` and
+  Java 25+ in `JAVA_HOME`, the server now runs on `JAVA_HOME`'s Java instead of failing to connect.
+
+### Fixed
+- A launcher that can't load the server, for example because `OFMCP_SERVER_HOME` isn't a server
+  distribution, now prints the reason rather than a stack trace.
+
 ## [0.19.0] - 2026-11-07
 
 ### Changed
