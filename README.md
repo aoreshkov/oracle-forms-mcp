@@ -39,9 +39,6 @@ review, and documentation** — anyone who needs to read Forms logic faster than
 
 ## See it work
 
-<!-- TODO: record a short asciinema/GIF of a Claude session and embed it here:
-     ![demo](assets/demo.gif) -->
-
 A typical session against the bundled `sample-forms` directory:
 
 ```text
@@ -61,36 +58,18 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 
 ## How it works
 
-1. `list_modules` scans the configured `--forms-dir` (non-recursive) and reports each module's
-   cache status: `NOT_CACHED`, `CACHED`, `STALE`, or `SOURCE_MISSING`. A `STALE` row's
-   `staleReason` says why: the source changed on disk (`SOURCE_CHANGED`), which a re-fetch
-   re-converts, or an older build of this server wrote the index (`INDEX_OUTDATED`), which a
-   re-fetch only re-parses.
-   A production forms directory holds thousands of modules, so the answer is filtered and paged:
-   narrow with `pattern`/`type`/`status`, follow `nextCursor` for the rest, and read
-   `countsByStatus` for the shape of the whole match.
-2. `fetch_module` produces the module's text form in the cache and indexes it:
-   - **`ORACLE_HOME` set** — binaries are converted with the Oracle tools in
-     `%ORACLE_HOME%\bin` (then `$FORMS_INSTANCE/bin`, where Linux Forms 12c+ keeps
-     `frmf2xml.sh`): `frmf2xml` for `.fmb`/`.mmb`/`.olb` (XML), `frmcmp_batch`
-     (`Module_Type=LIBRARY Script=YES`) for `.pll` (a `.pld` text dump).
-   - **`ORACLE_HOME` not set** — pre-converted files are expected next to the modules
-     (`orders_fmb.xml`, `dupes_fmb.xml`, `picker_fmb.xml`, `toolbar_fmb.xml`,
-     `mainmenu_mmb.xml`, `objects_olb.xml`, `utils.pld`) and copied into the cache.
-3. A single StAX pass parses the XML into a structured index (blocks with items, triggers with
-   decoded PL/SQL, program units, LOVs, record groups, windows, canvases, …). PL/SQL bodies are
-   extracted to `.sql` sidecar files; every named XML element gets a line-range reference so
-   `get_object_xml` can slice it back out of the converted file.
-4. The other tools read the cached index. Caching is fingerprint-based (size + mtime + sha256 of
-   the source file): editing a module marks it `STALE` and read tools ask for a re-fetch.
-5. `annotate_element` and `relate_elements` let the assistant write durable meta-information back
-   about individual elements (notes, tags, summaries, classifications, cross-references). This is
-   kept in a **separate** store — not the derived index — so it survives re-fetching, and the read
-   tools surface it inline. An annotation made before a source change is flagged, never dropped.
+`list_modules` scans the directory you name and reports each module's cache status. `fetch_module`
+produces the module's text form, with the Oracle tools when `ORACLE_HOME` is set and from
+pre-converted files next to the modules when it is not, and parses it into a structured index. The
+other tools read that index. A `STALE` module is one whose source changed or whose index an older
+build wrote, and fetching it again clears that. Notes recorded with `annotate_element` and
+`relate_elements` live in a separate store, so re-fetching keeps them.
+
+[How it works](guide/how-it-works.md) has the full sequence and the cache layout.
 
 ## Tools
 
-| Tool | What it returns |
+| Tool | What it does |
 |---|---|
 | `list_modules` | Modules in the forms dir with type, size, and cache status; filter by `pattern`/`regex`, `type`, `status` and page via `limit`/`cursor` |
 | `fetch_module` | Converts + indexes one module (idempotent; `force=true` converts a current one again; progress notifications) |
@@ -105,193 +84,30 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 | `search_modules` | The same search across **every cached module** — cross-form calls, shared `:GLOBAL`s, subclassing pointers; reports the modules it could not reach; paged via an opaque `cursor` |
 | `read_source` | A line range of a cached file, by `uri` (which names its module) or `module` + `file` — the converted XML or an extracted PL/SQL sidecar |
 | `get_object_xml` | The raw XML fragment of any named object — the escape hatch |
-
-Every tool checks its arguments against its own input schema before running. An argument it does
-not have is never silently dropped: the call fails with every problem listed at once (unknown
-arguments with the name most likely meant, missing ones with their permitted values, values outside
-an enum), plus an example call where the tool has one.
-
-### Where an object's meaning lives
-
-Two Forms properties carry more meaning than anything else in a module, and both used to be
-reachable only one `get_object_xml` call at a time.
-
-An item's **property class** is usually its role: Forms shops name their classes for what the
-object does, so a push button is an *LOV* button and a text item is a *filter* field only because
-of the class it inherits. `get_block` reports `propertyClass` on every item and block, confirmed
-against the classes the module actually declares.
-
-A window's **modality** decides how a form is read — a modal window is a dialog, so the code that
-fills it and the code that consumes the result sit on opposite sides of one interaction.
-`get_module_overview(verbosity: "detailed")` returns the window and canvas objects behind two of
-its name lists: modality, size, toolbar canvases, and the window each canvas sits on.
-
-A property Forms did not write comes back as `null`, meaning the object keeps the Forms default —
-never `false`. On an item that has a property class it does not even mean the default: the class
-supplies the value, and in a real form that is where most of an item's behaviour lives. So
-`get_block(verbosity: "detailed")` returns both — `items[].dml`, what the item itself wrote, and
-`effectiveDml`, the same properties with the class applied (item, then class, then whatever that
-class is based on, followed into other modules that are already fetched). An item is listed in
-`effectiveDml` only when that chain resolved to the end, so a `null` there really is the Forms
-default. Every other item is a row of `unresolvedItems`, with the reason and — when fetching fixes
-it — the module to fetch; `propertyClasses` and the result's `hint` give the same account per class
-and name the `fetch_module` call. `items: [...]` narrows all of it to the items a question is about.
-
-`get_block(columns: true)` adds the block's data-source columns, the columns no item supplies, and
-which of those are mandatory in the database — the ones an insert fails on unless a trigger assigns
-them.
-
-A block's **master-detail relations** decide what it can be queried through, so `get_block` serves
-them at every verbosity: `block.relations`, the relations it is the master of (join condition,
-`deferred`, `autoQuery`, `deleteRecord`, `preventMasterlessOperations`), and `detailOf`, the
-relations that name it as their detail, with the master each is written on. A detail with
-`preventMasterlessOperations` cannot be queried except through its master — which the form enforces,
-not the database, so a port has to enforce it itself.
-
-### Reading around a result
-
-Everything indexed is a line range into a file the cache owns, and those ranges used to name a
-path with no way to resolve it. Every result that points at a file now carries a `source`:
-
-```jsonc
-"source": {
-  "uri": "oracleforms://ORDERS.fmb/plsql/triggers/ORDERS.ORDER_ID.WHEN-VALIDATE-ITEM.sql",
-  "file": "plsql/triggers/ORDERS.ORDER_ID.WHEN-VALIDATE-ITEM.sql",
-  "startLine": 1, "endLine": 3
-}
-```
-
-`read_source` takes either form back, so a search hit can be read in context and a truncated
-fragment continued. The same files are readable as MCP resources —
-`oracleforms://{module}/converted` for the converted text form and
-`oracleforms://{module}/plsql/{category}/{name}` for one extracted block of PL/SQL — and every
-such result also carries a `resource_link` content block, so a client can follow it without
-parsing JSON. Reads are capped by lines *and* characters; a cut resource read says so in the text
-it returns and names the call that continues it.
-
-Paths stay cache-relative and URIs stay layout-independent: an absolute host path would mean
-nothing to a client talking to the container image or over HTTP.
-
-### Subclassed (inherited) objects
-
-Forms lets a block, item, trigger or program unit be **subclassed** from another module, or copied
-in with an **object group** (typically from an `.olb`). Either way the child stores only what it
-overrides, so its PL/SQL body is genuinely empty in its own file while the code that runs lives in
-the parent. Served naively that is not merely incomplete but wrong — an empty body reads as "this
-button does nothing".
-
-Every result that carries PL/SQL therefore also carries `bodySource`:
-
-| `bodySource` | Meaning |
-|---|---|
-| `own` | The body is defined in this module (the ordinary case) |
-| `inherited` | The object is subclassed; `text` is empty here and `inherited` names where the code is |
-| `resolved` | The body shown is the parent's, followed for this call (`resolvedFrom` says from where) |
-| `empty` | The object genuinely has no body |
-
-The `inherited` reference is stated in the **parent's** vocabulary and in the shape the tools take,
-so it is directly callable — `BAR_LIST.SELECT` in this form is `name: SELECT`, `ownerPath: BAR` over
-there:
-
-```jsonc
-{
-  "name": "WHEN-BUTTON-PRESSED", "block": "BAR_LIST", "item": "SELECT",
-  "text": "", "bodySource": "inherited",
-  "inherited": { "module": "TOOLBAR", "file": "toolbar.fmb", "name": "SELECT", "ownerPath": "BAR" },
-  "hint": "… Call fetch_module(module=\"TOOLBAR.fmb\"), then get_trigger(module=\"TOOLBAR.fmb\", name=\"WHEN-BUTTON-PRESSED\", ownerPath=\"BAR.SELECT\")."
-}
-```
-
-For an object-group member, `name` is the object's own name and `objectGroup` names the group that
-carried it — where the library files that group is not recorded in this module, so no `ownerPath`
-is claimed for it. A parent in the *same* module is a **property class**: it supplies properties
-rather than a definition, hides nothing, and is deliberately not reported as inheritance.
-
-`get_trigger` and `get_program_unit` take `resolve: true` to follow the pointer in one call. It
-reads only modules that are **already cached** — reaching an un-cached one would mean converting
-it, which a read-only tool must not do — and falls back to the pointer plus the `fetch_module`
-hint rather than failing. `get_block` flags subclassed blocks and items the same way, and
-`get_object_xml` returns the pointer resolved to the level it was asked about (Forms writes the
-raw `ParentModule` attribute on the enclosing owner, so the fragment alone cannot answer it).
-
-### Tracing across modules
-
-A question about one form rarely stays inside it. A modal window is opened by whoever calls it, the
-value it hands back travels through a `:GLOBAL`, and its toolbar is defined in a third form
-entirely — so `search_source`, which searches the module you name, cannot answer any of the three:
-
-```text
-search_modules "PICKER"                                    → which forms call it
-search_modules ":GLOBAL.picked_ref"                        → every module that writes or reads it
-search_modules 'ParentFilename="toolbar.fmb"' scope=xml    → every module that subclasses it
-```
-
-Each hit names its module (`moduleSpec`, the `NAME.ext` string the other tools take), the
-cache-relative file, the line, a snippet, and the `uri` that opens it. Matching is
-case-insensitive by default, because Forms code writes the same module name as `PICKER`, `picker`
-and `Call_Form('picker')` in the same code base; pass `ignoreCase: false` when precision matters.
-
-Only modules that have been fetched are searched — reaching an un-fetched one would mean converting
-it, which a read-only tool must not do. So the coverage is part of the answer rather than an
-assumption:
-
-```jsonc
-{
-  "query": ":GLOBAL.picked_ref",
-  "cachedModules": 12, "scannedModules": 12, "skippedNotCached": 3090, "skippedStale": 1,
-  "hint": "3090 matching module(s) are not cached and were not searched — list_modules(status=\"not_cached\") names them, and fetch_module adds one to the search. 1 cached module(s) changed on disk …"
-}
-```
-
-To make a whole directory searchable, warm the cache before the session instead of one
-`fetch_module` at a time: `--prefetch` runs the server once as a batch job that converts and
-indexes every matching module, one line per module on stderr, then exits (with 1 if any failed).
-Modules already current cost a fingerprint check, so a rerun picks up where a stopped one left off.
-
-```
-server --forms-dir /srv/forms --prefetch-all
-server --forms-dir /srv/forms --prefetch ORDER --prefetch-type form
-```
-
-A module is current as long as its *file* is unchanged — which says nothing about whether it was
-converted right. `frmf2xml` run without the forms directory on `FORMS_PATH`, for one, succeeds but
-leaves out every inherited object, and that result is served until the module is saved again. After
-fixing the conversion setup, convert again with `--force` (`--prefetch-all --force`), or one module
-at a time with `fetch_module(module=…, force=true)`. Annotations are kept either way.
-
-Both bounds are enforced and resumable: `maxResults` hits per page, and a ceiling on how many
-modules one call reads — a query that matches nothing would otherwise read every converted file in
-the cache before answering. Either one sets `truncated` and returns a `nextCursor` to pass back
-with the same arguments. The cursor is bound to those arguments, so it cannot silently continue a
-different search.
-
-### Annotations
-
-Meta-information the assistant records back **about** an element rather than reads *from* it —
-semantic notes, tags, classifications, and cross-reference relations. It is persisted in a durable
-store, kept separate from the derived index (not in the protocol `_meta` field), so it survives
-`fetch_module` re-indexing and is served back to later sessions. Each entry carries its author and
-is flagged `staleAgainstSource` when it predates the module's current source, so a note is never
-silently dropped. The read tools above (`get_module_overview`, `get_block`, `get_trigger`,
-`get_program_unit`, `get_object_xml`) surface an element's annotations inline.
-
-| Tool | What it does |
-|---|---|
 | `annotate_element` | Store a note / summary / tag / classification about one element |
 | `relate_elements` | Record a directed cross-reference between two elements (e.g. a trigger `calls` a program unit) |
 | `get_element_annotations` | The notes and relations stored about one element |
 | `search_annotations` | Search a module's stored notes/tags/relations by text, kind, or tag |
 | `remove_annotation` | Delete a stored annotation or relation by id |
 
-Plus a resource per cached module (`oracleforms://ORDERS.fmb/index`), the
+Every tool checks its arguments against its own input schema before running. An argument it does
+not have is never silently dropped: the call fails with every problem listed at once (unknown
+arguments with the name most likely meant, missing ones with their permitted values, values outside
+an enum), plus an example call where the tool has one.
+
+The server also offers a resource per cached module (`oracleforms://ORDERS.fmb/index`), the
 `oracleforms://{module}/index` and `oracleforms://{module}/annotations` resource templates, and an
 `explain_module` prompt.
+
+[Tools in depth](guide/tools-in-depth.md) explains how to read the results: property classes,
+`source` references, subclassed objects, tracing across modules, and annotations.
 
 ## Quick start
 
 Pick the channel that matches your client: the [plugin](#claude-code-one-command-plugin) for Claude
 Code, the [`.mcpb` bundle](#claude-desktop-one-click-bundle) for Claude Desktop, the
-[Docker image](#docker-copy-mode-only) for everything else, or a
+[Docker image](guide/install.md#docker-copy-mode-only) for
+[other MCP clients](guide/install.md#other-mcp-clients), or a
 [build from source](#build-from-source). The server is published to the
 [official MCP Registry](https://registry.modelcontextprotocol.io) as
 `io.github.aoreshkov/oracle-forms-mcp`.
@@ -305,11 +121,13 @@ Code, the [`.mcpb` bundle](#claude-desktop-one-click-bundle) for Claude Desktop,
 
 Claude Code prompts for your forms directory, then fetches and checksum-verifies the released
 server into the plugin's data directory on first use — no clone, no build, no JSON to edit. The
-tools are live after `/reload-plugins`, and the plugin's `trace-form` skill teaches the traversal
-above — the order to ask in, and the readings that mislead — so a trace does not start with `grep`.
+tools are live after `/reload-plugins`, and the plugin's `trace-form` skill teaches the
+[traversal](guide/tools-in-depth.md#tracing-across-modules) — the order to ask in, and the readings
+that mislead — so a trace does not start with `grep`.
 Skip the prompt and the server still starts; its tools then answer with an error asking for the
 directory until you set it with `/plugin configure oracle-forms@oracle-forms-mcp`.
 
+> [!IMPORTANT]
 > **Requires a JDK 25+** (`javac -version`), because the plugin's bootstrap runs in Java's
 > single-file source mode. It uses the one on your `PATH` unless you set the plugin's `java` option
 > to another JDK's `java` executable, and falls back to `JAVA_HOME` when that one is too old for the
@@ -317,6 +135,25 @@ directory until you set it with `/plugin configure oracle-forms@oracle-forms-mcp
 
 Details, configuration options, and the escape hatches are in the
 [plugin README](plugins/oracle-forms/README.md).
+
+### Claude Desktop (one-click bundle)
+
+Download `oracle-forms-mcp-<version>.mcpb` from the
+[latest release](https://github.com/aoreshkov/oracle-forms-mcp/releases/latest) and open it. Claude
+Desktop installs it as a connector and prompts for your forms directory with a native folder picker
+— no JSON editing, no local build. Leave it empty and the connector still starts; its tools then
+answer with an error asking for the directory until you set it in the connector's settings.
+
+> [!IMPORTANT]
+> **Requires a JRE 25+.** The bundle ships the server, not a Java runtime. It runs on the **Java
+> installation** chosen in the connector's settings, else the one `JAVA_HOME` names, else the `java`
+> on your `PATH`. The [MCPB](https://github.com/modelcontextprotocol/mcpb) manifest format can only
+> declare Node and Python runtimes, so this cannot be checked at install time: if the connector
+> fails to start, choose the Java installation in its settings, or confirm `java -version` works in
+> a terminal.
+
+The same copy-mode caveat as [Docker](guide/install.md#docker-copy-mode-only) applies unless the
+machine has an Oracle Forms installation (`ORACLE_HOME`) for live `.fmb`/`.pll` conversion.
 
 ### Build from source
 
@@ -340,383 +177,30 @@ the `java` on `PATH`, so a JRE that is not on `PATH` is one variable away:
 claude mcp add --env OFMCP_JAVA_HOME=C:\Java\jdk-25 --transport stdio oracle-forms -- server/build/install/server/bin/server --forms-dir C:\path\to\forms
 ```
 
-### Claude Desktop (one-click bundle)
-
-Download `oracle-forms-mcp-<version>.mcpb` from the
-[latest release](https://github.com/aoreshkov/oracle-forms-mcp/releases/latest) and open it. Claude
-Desktop installs it as a connector and prompts for your forms directory with a native folder picker
-— no JSON editing, no local build. Leave it empty and the connector still starts; its tools then
-answer with an error asking for the directory until you set it in the connector's settings.
-
-> **Requires a JRE 25+.** The bundle ships the server, not a Java runtime. It runs on the **Java
-> installation** chosen in the connector's settings, else the one `JAVA_HOME` names, else the `java`
-> on your `PATH`. The [MCPB](https://github.com/modelcontextprotocol/mcpb) manifest format can only
-> declare Node and Python runtimes, so this cannot be checked at install time: if the connector
-> fails to start, choose the Java installation in its settings, or confirm `java -version` works in
-> a terminal.
-
-The same copy-mode caveat as [Docker](#docker-copy-mode-only) applies unless the machine has an
-Oracle Forms installation (`ORACLE_HOME`) for live `.fmb`/`.pll` conversion.
-
-<details>
-<summary><b>Other MCP clients</b> (Cursor, VS Code, Claude Desktop without the bundle) — via the Docker image</summary>
-
-The published image runs the server over stdio with no local build. Point the volume mount at
-your forms directory (copy-mode: the pre-converted `*_fmb.xml`/`*.pld` files must sit next to the
-modules — see [Docker](#docker-copy-mode-only)).
-
-**Claude Desktop** (`claude_desktop_config.json`) and **Cursor** (`~/.cursor/mcp.json`) use the same shape:
-
-```json
-{
-  "mcpServers": {
-    "oracle-forms": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm",
-               "-v", "ofmcp-cache:/home/mcp/.cache", "-v", "/path/to/forms:/forms",
-               "ghcr.io/aoreshkov/oracle-forms-mcp", "--forms-dir", "/forms"]
-    }
-  }
-}
-```
-
-**VS Code** (`.vscode/mcp.json`) uses a `servers` key instead:
-
-```json
-{
-  "servers": {
-    "oracle-forms": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm",
-               "-v", "ofmcp-cache:/home/mcp/.cache", "-v", "${workspaceFolder}/forms:/forms",
-               "ghcr.io/aoreshkov/oracle-forms-mcp", "--forms-dir", "/forms"]
-    }
-  }
-}
-```
-
-The `ofmcp-cache` named volume keeps the parsed-module cache and — more importantly — the durable
-annotation store across container restarts; `--rm` removes the container but not a named volume. Drop
-it and the notes/tags/relations the assistant records won't survive the next run. See
-[Docker](#docker-copy-mode-only) for the bind-mount variant and its one-time `chown`.
-
-Prefer the native launcher? Swap `"command": "docker", "args": [...]` for
-`"command": "/abs/path/to/server/build/install/server/bin/server", "args": ["--forms-dir", "/abs/path/to/forms"]`.
-
-</details>
-
 Try it without any Oracle installation using the bundled fixtures:
 
 ```
 server --forms-dir sample-forms
 ```
 
-HTTP transport:
+## Using your own converter
 
-```
-server --forms-dir C:\forms --transport http --port 3000   # endpoint: http://127.0.0.1:3000/mcp
-```
+If your site wraps the Forms tools or uses a different converter, `--convert-command` runs it in
+place of `frmf2xml`, and `--compile-command` does the same for `.pll` libraries. The
+[converters guide](guide/converters.md#using-your-own-converter) has the command syntax, the
+placeholders and the precedence.
 
-The HTTP transport listens on `127.0.0.1` only. It has no authentication of its own, so the bind
-address decides who can call every tool, including `fetch_module`, which runs your converter, and
-the annotation writes. `--host` (or `OFMCP_HTTP_HOST`) binds it elsewhere, and the server logs a
-warning at startup whenever that address is not loopback. The Host/Origin check stops a browser
-from being used against the server through DNS rebinding. It does not stop a client on the network
-that sends `Host: 127.0.0.1` itself.
+## Documentation
 
-Sessions expire after 30 minutes without a request (an open event stream does not count, a tool
-call still running does), and their id then answers `404`, on which an MCP client starts a new
-session. At most 10,000 sessions are open at once.
-
-### Docker (copy-mode only)
-
-A container image is published to `ghcr.io/aoreshkov/oracle-forms-mcp`. Oracle's `frmf2xml` /
-`frmcmp_batch` binaries are proprietary and **not** bundled, so the image works only in
-**copy-mode**: the modules you mount must already have their pre-converted text form
-(`*_fmb.xml`/`*_mmb.xml`/`*_olb.xml`/`*.pld`) sitting next to them. For live `.fmb`/`.pll`
-conversion, run the server on a host with an Oracle Forms installation (`ORACLE_HOME` set).
-
-```
-docker run -i -v /path/to/forms:/forms ghcr.io/aoreshkov/oracle-forms-mcp --forms-dir /forms
-```
-
-**Persisting the cache and annotations.** Without a volume, the cache and the durable annotation
-store live in the container's writable layer and are discarded when it exits. Mount a volume at
-`/home/mcp/.cache` to keep them across runs:
-
-```
-docker run -i -v ofmcp-cache:/home/mcp/.cache -v /path/to/forms:/forms \
-  ghcr.io/aoreshkov/oracle-forms-mcp --forms-dir /forms
-```
-
-A named or anonymous volume inherits the image's non-root ownership (uid 10001) and just works.
-A host **bind mount** does not — Docker never chowns the target — so run `chown 10001 /host/cache`
-once on the host first, or redirect the writes with `--cache-dir` / `--annotations-dir` onto a path
-the container user can write.
-
-**Running the HTTP transport in a container.** Inside the container, loopback is the container's
-own, so the server has to listen on `0.0.0.0` there. Publish the port on the *host's* loopback so
-that it stays unreachable from the network:
-
-```
-docker run -p 127.0.0.1:3000:3000 -v /path/to/forms:/forms ghcr.io/aoreshkov/oracle-forms-mcp \
-  --forms-dir /forms --transport http --host 0.0.0.0 --port 3000   # http://127.0.0.1:3000/mcp
-```
-
-A plain `-p 3000:3000` publishes the port on every interface of the host, which exposes every
-tool to anyone who can reach it.
-
-### Options
-
-```
---forms-dir <path>          Directory containing the Forms modules (or pass it positionally, or set OFMCP_FORMS_DIR);
-                            without one the server starts and every tool answers with an error naming it
---convert-command <cmd>     Site-supplied converter command (with its arguments) instead of frmf2xml
---compile-command <cmd>     Separate converter command for .pll libraries (0.11.0+)
---converted-dir <path>      Directory the converted XML/.pld is written into (default: the cache)
---transport stdio|http      Transport (default: stdio)
---host <address>            HTTP bind address (default: 127.0.0.1; pass 0.0.0.0 inside a container)
---port <int>                HTTP port (default: 3000)
---allowed-host <host>       Extra HTTP Host header to accept (localhost-only by default)
---allowed-origin <url>      Extra browser Origin to accept, e.g. https://forms.example
---cache-dir <path>          Cache override (default: OS cache dir + /oracle-forms-mcp)
---annotations-dir <path>    Durable annotation store (default: <cache dir>/annotations)
---conversion-timeout <sec>  Kill a stuck conversion (default: 120)
---prefetch <pattern>        Fetch every module whose name contains <pattern>, then exit
---prefetch-all              Fetch every module in the forms directory, then exit
---prefetch-type <type>      Limit --prefetch to form, menu, library or object_library
---json                      With a prefetch: the summary on stdout as a JSON object
---force                     With a prefetch: convert modules again even when they are current
---help / --version          Print the full help page, or the version, and exit
-```
-
-`server --help` is the complete reference: every option with its default and its variable, and
-the rules between them. `--port`, `--allowed-host` and `--allowed-origin` need `--transport http`,
-and `--prefetch` and `--prefetch-all` cannot be combined. Exit status 0 is success, 1 a prefetch
-in which a module failed, 2 a command-line mistake, and 70 an unexpected failure, whose stack trace
-precedes it on stderr.
-
-Both allowlists add to localhost rather than replace it, and the two are checked separately:
-allowing a host does not allow an origin. A browser-based client opened from anywhere but
-localhost needs its origin passed with `--allowed-origin`, or it gets `403`. Clients that are not
-browsers send no `Origin` and need only the host.
-
-The forms directory, the converter options and the HTTP bind address can also be set as
-environment variables, for clients that configure a server with variables rather than arguments
-(`docker run -e`, the `env` block of an MCP config, a plugin host that starts every installation
-with the same command line). The command line always wins over its variable — for the forms
-directory, in either spelling:
-
-| Flag | Variable |
-| --- | --- |
-| `--forms-dir` (or the argument) | `OFMCP_FORMS_DIR` |
-| `--convert-command` | `OFMCP_CONVERT_COMMAND` |
-| `--compile-command` | `OFMCP_COMPILE_COMMAND` |
-| `--converted-dir` | `OFMCP_CONVERTED_DIR` |
-| `--host` | `OFMCP_HTTP_HOST` |
-
-`--convert-command`, `--compile-command` and `--converted-dir` are also exposed as configuration
-in the [Claude Code plugin](plugins/oracle-forms/README.md#configuration), the `.mcpb` bundle
-(Claude Desktop's connector settings) and the registry listing for the Docker image — so whichever
-channel you install from, you can point the server at your own converter and
-your own output directory without editing JSON by hand. Leaving any of them unset is always valid:
-an empty value counts as "not configured".
-
-### Keeping the converted XML
-
-By default a module's converted text form lives inside its cache entry. Point `--converted-dir` at
-a directory of your own to keep the XML where you can read, diff, or feed it to other tooling:
-
-```
-server --forms-dir C:\forms --converted-dir C:\forms-xml
-```
-
-All modules share that one flat directory, each file named the way Oracle names it —
-`orders_fmb.xml`, `mainmenu_mmb.xml`, `utils.pld` — so a re-fetch replaces a module's file rather
-than accumulating copies. The directory is created if missing, and it must not be the forms
-directory itself (the names would collide with the pre-converted modules read from there); a
-subdirectory of the forms directory is fine, since it is scanned non-recursively.
-
-**This is the directory the converter writes into**, not somewhere files are moved to afterwards:
-the converter runs with it as its working directory, so a wrapper that writes to a fixed location
-can simply be pointed at it. Output is attributed to a module by Oracle's naming first
-(`orders_fmb.xml`), falling back to "the newest matching file this run wrote" for converters that
-name their output freely. A file that was already there when the run started — another module's
-text form, a killed run's partial output — never counts, and conversions sharing the directory are
-serialised, rename included, so two modules cannot be mixed up. Whatever name the converter chose, the file is renamed to the
-canonical one, and the index records it by a stable `converted/<name>` path either way — so an
-index stays valid whether or not this option is set.
-
-### Using your own converter
-
-If your site wraps the Forms tools — its own environment setup, logon handling, a patched
-`frmf2xml`, or a different converter entirely — point the server at it:
-
-```
-server --forms-dir C:\forms --convert-command C:\tools\fmb2xml.bat
-```
-
-The value is a **whole command line, not just an executable**, so a wrapper that needs arguments
-of its own — an interpreter, a container, a compatibility layer — is configured directly:
-
-```
-server --forms-dir /srv/forms --convert-command "/opt/forms/convert.sh --xml --quiet"
-server --forms-dir C:\forms  --convert-command "\"C:\tools\my tools\f2x.bat\" /nologon"
-server --forms-dir /srv/forms --convert-command '["wine", "/opt/forms/frmf2xml.exe", "{}"]'
-```
-
-Two syntaxes are accepted, and neither is ever handed to a shell — the command is split here and
-spawned with an argv list:
-
-- **A quoted string.** Split on whitespace, with `"…"` or `'…'` grouping a part that contains
-  spaces. Backslashes are literal, so Windows paths need no doubling.
-- **A JSON array** — `["wine", "f2x.exe", "-xml"]` — one element per argument, the same shape MCP
-  clients use for `command`/`args`. Prefer it when quoting gets awkward, and note that JSON itself
-  requires `\\` for a backslash.
-
-A value that names an existing file is taken whole, spaces and all, so a plain path configured
-before this option accepted arguments keeps working unquoted.
-
-The module's absolute path goes wherever you write **`{}`**; with no `{}` in the command it is
-appended as the last argument, which is what the earlier `<command> <module>` convention did. The
-command runs with the **working directory set to the converted directory** — that module's cache
-directory by default — and is expected to write the text form there. A tool that cannot be pointed
-at a working directory is given the output file instead: **`{out}`** is replaced with its absolute
-path (`<converted dir>/orders_fmb.xml`, `<converted dir>/utils.pld`). `{out}` is only ever
-substituted, never appended, so a command without it is run exactly as before. This mirrors how `frmf2xml` is
-driven, so a script that already wraps it needs no changes. Emit the same formats the parser reads:
-XML for `.fmb`/`.mmb`/`.olb`, a `.pld` dump for `.pll`. Oracle's `<name>_fmb.xml` naming is
-preferred but not required — any `.xml` (or `.pld` for a library) written into the working directory
-is picked up.
-
-The program itself may be a path (absolute or relative to where the server was started) or a bare
-name, which is looked up on `PATH`. An *argument*, though, is read by the command, which runs in
-the converted directory — so a file shipped beside the server and passed to an interpreter would be
-looked for there. Write it with **`{start}`**, which is replaced with the absolute directory the
-server was started in (and, like `{out}`, never appended):
-
-```
-server --forms-dir /srv/forms --convert-command '["java", "{start}/converter/Convert.java", "xml", "{}", "{out}"]'
-```
-
-That is how a plugin whose host starts its server in the plugin's own directory, and passes
-configuration through literally, names a converter it carries.
-
-With [`--converted-dir`](#keeping-the-converted-xml) that working directory *is* your directory, so
-a wrapper that writes to a fixed place of its own — rather than to wherever it was started — works
-by pointing `--converted-dir` at it. Scripts that write into their working directory need no
-adjustment either way.
-
-Precedence is `--convert-command` → `ORACLE_HOME` → copy-mode, so an explicitly configured
-command wins even on a machine with a Forms installation (`.pll` libraries can be taken out of
-that order — see [below](#converting-plsql-libraries-with-their-own-command)). A blank value counts
-as unset. Like `ORACLE_HOME`, the command is parsed and validated at the first conversion rather
-than at startup, so a stale setting still leaves cached modules readable; the error then names the
-flag to fix.
-
-> **The output must be freshly written.** Because Forms-era tools return unreliable exit codes,
-> a run is judged by its output file, and a file older than the run is treated as a leftover from
-> a previous failed attempt. A script that *copies* a pre-generated file with `copy`, `xcopy`, or
-> `cp -p` preserves the source's timestamp and will be rejected with "produced no output file".
-> Redirect or rewrite instead (`type src > out`, `cat src > out`), or `touch` the result.
-
-The command is **operator configuration only** — no tool argument can choose or extend it. Tool
-callers supply a module name, which is resolved against the scanned forms directory before the
-converter sees it, and the command is spawned directly with an argv list rather than through a
-shell, so nothing in a module's path or in your own quoting can turn into a second command.
-
-#### Converting PL/SQL libraries with their own command
-
-*Since 0.11.0.* No Oracle tool converts a `.pll` to XML: `frmf2xml` accepts forms, menus, and object
-libraries only, and a library is dumped to `.pld` text by `frmcmp` instead. A `--convert-command`
-built around `frmf2xml` therefore fails on every library. `--compile-command` gives `.pll` modules
-a command line of their own, with the same syntax and placeholders, and leaves every other module
-type where it was:
-
-```
-server --forms-dir /srv/forms --converted-dir /srv/forms-xml --convert-command "/opt/forms/f2xml.sh {}" --compile-command "frmcmp_batch Module={} Module_Type=LIBRARY Script=YES Batch=YES Logon=NO Output_File={out}"
-```
-
-or, as a JSON array:
-
-```
---compile-command '["frmcmp_batch", "Module={}", "Module_Type=LIBRARY", "Script=YES", "Batch=YES", "Logon=NO", "Output_File={out}"]'
-```
-
-Write it on one line. The value is split into arguments without a shell, so a `\` line
-continuation copied into a configuration field would reach the tool as a literal argument.
-
-**Give `frmcmp` `Output_File={out}`.** Without it, `frmcmp` writes the `.pld` next to the *module* —
-into the forms directory, whatever its working directory — where the server would then read it as
-a pre-converted file. When a run produces nothing in the converted directory but did leave a fresh
-file next to the module, the error names that file and says to add `{out}`; the server does not
-delete it.
-
-`Logon=NO` matters too: without it (or a real `Userid=`), `frmcmp` prints its usage and exits 0
-having written nothing.
-
-Which converter a module reaches:
-
-| `--compile-command` | `--convert-command` | `ORACLE_HOME` | `.pll` | `.fmb` / `.mmb` / `.olb` |
-| --- | --- | --- | --- | --- |
-| — | — | — | copy-mode | copy-mode |
-| — | — | set | `frmcmp` | `frmf2xml` |
-| — | set | — / set | convert command | convert command |
-| set | — | — | compile command | copy-mode |
-| set | — | set | compile command | `frmf2xml` |
-| set | set | — / set | compile command | convert command |
-
-With `--compile-command` unset, nothing changes: a `--convert-command` that already handles
-libraries keeps receiving them. Where a type is served in copy-mode, its pre-converted text form is
-what the cache entry is checked against, so re-exporting an `_fmb.xml` still marks that form stale
-while its libraries are converted from their binaries.
-
-## Cache
-
-`%LOCALAPPDATA%\oracle-forms-mcp` (Windows), `~/Library/Caches/oracle-forms-mcp` (macOS),
-`$XDG_CACHE_HOME/oracle-forms-mcp` (Linux). One directory per module:
-
-```
-ORDERS.fmb/
-  converted/orders_fmb.xml      converted (or copied) text form
-  plsql/triggers/*.sql          decoded trigger bodies
-  plsql/program-units/*.sql     decoded program units
-  plsql/menu-items/*.sql        menu-item command bodies (menu modules)
-  index.json                    the structured index
-```
-
-Safe to delete at any time; modules are simply re-fetched. With
-[`--converted-dir`](#keeping-the-converted-xml) the `converted/` file is written to the directory
-you name instead and the rest of the entry stays here.
-
-Annotations are **not** part of this derived cache. They live in a separate `annotations/` store
-(one `NAME.ext.json` per module, defaulting to `<cache dir>/annotations`, overridable with
-`--annotations-dir`), so deleting a module's cache entry — or re-fetching it — leaves the notes,
-tags, and relations you recorded intact.
-
-## Notes on the Oracle tools
-
-- The tools are looked for in `$ORACLE_HOME/bin`, then in `$FORMS_INSTANCE/bin`: on Linux,
-  Forms 12c and later ship `frmf2xml` only as `frmf2xml.sh` in the Forms instance. `.sh`
-  wrappers are accepted there (and `.bat`/`.cmd`/`.exe` on Windows).
-- `frmf2xml` writes its output into the process working directory on some installs and next to
-  its input on others (Linux 14.1.2). The server therefore converts a copy of the module in a
-  private staging directory, with that directory as cwd, and moves the result into the converted
-  directory (`--converted-dir`, else the module's cache dir) — so the forms directory is never
-  written to and may be read-only. It passes `OVERWRITE=YES USE_PROPERTY_IDS=NO`.
-- Outside Windows, the tools run with `TERM=vt220` and `FORMS_API_TK_BYPASS=TRUE` unless the
-  server's environment already sets them: an MCP host may start the server with neither a
-  terminal nor a display, and without them `frmcmp_batch` fails with `FRM-91500` and `frmf2xml`
-  with "Failed to create new forms context". `TERM=dumb` counts as unset, since `frmcmp_batch`
-  fails under it the same way. Set either yourself to override it.
-- `frmcmp_batch` is preferred over `frmcmp` (headless); the server passes
-  `Script=YES Batch=YES Logon=NO` and an explicit `Output_File` — without one, `frmcmp` writes the
-  `.pld` next to the module rather than into its working directory — and augments `FORMS_PATH`
-  with the forms dir so attached libraries resolve.
-- Forms tools have unreliable exit codes — success is judged by the output file existing,
-  being non-empty, and being newer than the invocation; failures surface the tool's output tail.
-- `.pld` files may be written in the client NLS charset; the parser reads UTF-8 with a
-  windows-1252 fallback (set `NLS_LANG` accordingly if you see mojibake).
+| Page | What it covers |
+|---|---|
+| [Installing](guide/install.md) | Other MCP clients, the HTTP transport, Docker |
+| [Configuration](guide/configuration.md) | Command-line options and environment variables |
+| [Converters](guide/converters.md) | Keeping the converted XML, your own converter, PL/SQL libraries, notes on the Oracle tools |
+| [How it works](guide/how-it-works.md) | The fetch-and-index sequence and the cache layout |
+| [Tools in depth](guide/tools-in-depth.md) | How to read tool results, subclassed objects, tracing across modules, annotations |
+| [Claude Code plugin](plugins/oracle-forms/README.md) | Plugin options, how the server is delivered, escape hatches |
+| [Changelog](CHANGELOG.md) | What changed in each release |
 
 ## Privacy Policy
 
@@ -726,7 +210,7 @@ Oracle Forms MCP runs entirely on your machine and collects nothing.
   and it makes no network requests of its own.
 - **What it reads and stores.** It reads the modules in the `--forms-dir` you name and writes
   derived files — converted text forms, decoded PL/SQL, and `index.json` — to the local
-  [cache](#cache) (or `--converted-dir`). Annotations you or your assistant record are written to
+  [cache](guide/how-it-works.md#cache) (or `--converted-dir`). Annotations you or your assistant record are written to
   the local annotations store. All of these stay on your disk, and you can delete them at any time.
 - **Where content goes.** Module content leaves the server only as responses to the MCP client you
   connected it to. What that client does with it — including sending it to a model provider — is
@@ -743,14 +227,16 @@ Oracle Forms MCP runs entirely on your machine and collects nothing.
 - **Contact.** Questions go to [GitHub issues](https://github.com/aoreshkov/oracle-forms-mcp/issues);
   security reports follow [SECURITY.md](SECURITY.md).
 
-## Development
+## Help
 
-```
-gradlew build          # compile + all tests (no Oracle installation needed)
-gradlew updateKotlinAbi   # refresh the ABI dump (core/api/*.api) after public API changes
-gradlew :server:run --args="--forms-dir sample-forms"
-gradlew :server:packageMcpb  # build the installable .mcpb bundle
-```
+Ask questions in [Discussions](https://github.com/aoreshkov/oracle-forms-mcp/discussions), and
+report bugs or request features in [issues](https://github.com/aoreshkov/oracle-forms-mcp/issues).
+Security reports follow [SECURITY.md](SECURITY.md).
 
-Converter behavior is tested against a fake `ORACLE_HOME` (stub scripts); the full copy-mode
-pipeline is covered end-to-end by `FormsServiceIntegrationTest` against the bundled fixtures.
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers building, testing and sending a change.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
