@@ -4,298 +4,54 @@ MCP server serving Oracle Forms module content (.fmb/.mmb/.pll/.olb) from a `--f
 A KMP core of pure models + ports, with a JVM MCP server of declarative tool adapters over one
 `FormsService`.
 
+The detail behind everything here is in `.claude/rules/`, which loads when a matching file is
+touched: `core.md`, `server.md`, `conversion.md`, `plugin.md`, `distribution.md`.
+
 ## Layout
 
 - `core/` — KMP library. `commonMain`: pure `@Serializable` models (`ModuleIndex`, `ModuleKey`,
-  `SourceRef`, plus the annotation layer `ElementId`, `Annotation`/`Relation`/`ModuleAnnotations`),
-  DTOs (`dto/ToolResults.kt`), and ports (`ModuleConverter`, `ModuleParser`, `ModuleCache`,
-  `AnnotationStore`, `FormsDirectoryScanner`). `jvmMain`: implementations — `OnDiskModuleCache`,
-  `OnDiskAnnotationStore`, `FormsDirectoryScannerImpl`, converters (`convert/`), parsers (`parse/`).
+  `SourceRef`, the annotation layer), DTOs (`dto/ToolResults.kt`), and ports (`ModuleConverter`,
+  `ModuleParser`, `ModuleCache`, `AnnotationStore`, `FormsDirectoryScanner`). `jvmMain`:
+  implementations, with converters in `convert/` and parsers in `parse/`.
 - `server/` — JVM MCP app. `FormsService` is the single logic layer; tool files in `tools/` are
-  declarative adapters (parse args → service call → `toolResult(dto)`). The read tools plus the
-  annotation tools (`annotate_element`, `relate_elements`, `get_element_annotations`,
-  `search_annotations`, `remove_annotation`) and the `oracleforms://{module}/annotations` resource
-  live here. Transports in `transport/`, resources/prompts in their packages, composition root
-  `McpServerFactory`.
-- `build-logic/` — convention plugins `kmp-library` (toolchain 21, explicitApi, kover, KGP ABI validation) and
-  `jvm-application`.
-- Distribution — three channels, all cut by `.github/workflows/release.yml` from a `v*` tag: the
-  GHCR image, the release zip (plus its `.zip.sha256`), and an `.mcpb` desktop bundle
-  (`server/mcpb/manifest.template.json` → `packageMcpb`). `server.json` is the MCP Registry
-  listing; the publish job rewrites its version, icon tag, and appends the `mcpb` package with the
-  bundle's sha256.
-- `assets/icon.svg` + `assets/icon-512.png` — **generated artwork, not hand-edited.** Both files are
-  drawn from one geometry description by a generator kept outside this repo, and copied in; editing
-  either in place is undone by the next redraw, and editing only one re-creates the divergence they
-  were unified to fix (the SVG's gradients are per-shape, and a raster that uses one canvas-wide
-  gradient instead draws a different icon). Consumed by `server/build.gradle.kts` (server
-  resources), `server/mcpb/manifest.template.json`, and `server.json`'s tag-pinned `icons` URLs —
-  so a change here reaches the registry listing only at the next tag.
-- `plugins/oracle-forms/` + `.claude-plugin/marketplace.json` — the Claude Code plugin channel.
-  `/plugin marketplace add aoreshkov/oracle-forms-mcp` reads the marketplace from `main`, and its
-  entry serves the plugin from the **`stable` branch**. `release.yml` moves `stable` to each tag once
-  the release is published, so a plugin change reaches users at the next release and never ahead of
-  a server it needs. A plugin-only fix waits for a release, or for `stable` to be moved by hand. A
-  hand move must fast-forward to a commit on `main`, never force, and never cross a plugin change
-  that needs an unreleased server. The plugin carries no jars: `.mcp.json` runs `launcher/OracleFormsMcpLauncher.java` in Java single-file
-  source mode (hence a **JDK** 25+, not a JRE), which downloads the release zip, verifies its published
-  sha256, unpacks it under `${CLAUDE_PLUGIN_DATA}` (passed as `OFMCP_PLUGIN_DATA`; without it, a
-  per-user OS data directory, so a host that sets only `OFMCP_*` variables can run it too), and
-  loads it in-process. Once a version is installed, the network is never in the way of a start:
-  with `latest` the check and any newer install run on a daemon thread for the next session, and
-  only a first install blocks. The launcher itself
-  stays on the Java 21 language and API (CI compiles it with `--release 21`), so on a JDK older
-  than the server needs it still starts, runs the server as a child on `JAVA_HOME`'s Java when that
-  is new enough, and otherwise names the fix instead of failing to compile. The
-  `claude-code-plugin` CI job validates the manifests, compiles the launcher, and requires `version`
-  to differ from `stable`'s whenever the plugin's files do, because Claude Code won't update an
-  install to the same version. Nothing else stands between a commit on main and the next release's
-  install. It also carries one skill,
-  `skills/trace-form/SKILL.md`: the traversal order and the habit→tool mapping that the server's
-  `instructions` state in brief, at the length a worked example needs. Both are guidance, not
-  behaviour — keep them agreeing with each other and with the tools they name (`PluginSkillTest`
-fails on a tool name in the skill that isn't registered). `evals/` tests the
-  skill with real model calls, so it runs by hand when the skill changes (Linux or WSL, through
-  `evals/run.sh`, never `claude plugin eval` directly: an eval run has no `forms_dir`, so the
-  script evaluates a temporary copy whose `.mcp.json` names `sample-forms` and a local build).
+  declarative adapters (parse args → service call → `toolResult(dto)`). Transports in `transport/`,
+  resources and prompts in their packages, composition root `McpServerFactory`.
+- `build-logic/` — convention plugins `kmp-library` (toolchain 25, explicitApi, kover, KGP ABI
+  validation) and `jvm-application`.
+- `plugins/oracle-forms/` + `.claude-plugin/marketplace.json` — the Claude Code plugin channel,
+  served from the `stable` branch. `evals/` tests its skill.
+- `server.json`, `server/mcpb/`, `.github/workflows/release.yml` — the release channels: GHCR image,
+  release zip, `.mcpb` bundle, MCP Registry listing.
 
 ## Invariants
 
-- **stdout is the stdio protocol channel.** All logging goes Kermit → SLF4J → Logback → stderr
-  (`routeKermitToSlf4j()` runs before the SDK creates any logger; `logback.xml` targets stderr).
-  The command line is cli-kit's (`Main.kt`: one `CommandSpec` drives parsing, help and the
-  Environment list; `CliOptionsTest` runs it through `program.record`, the help page is pinned in
-  `golden/help-root.txt`, regenerated with `-Pgolden.update=true`). The kit writes stdout only for
-  `--help` and `--version`; a summary that belongs on stdout (`--prefetch`) goes through
-  `context.output`, never `println`.
-- **Index JSON stays small.** PL/SQL bodies live in `plsql/**` sidecars (or the `.pld` itself),
-  referenced by 1-based inclusive `SourceRef` line ranges. Never inline code into `ModuleIndex`.
-- **`SourceRef` paths are cache-relative and layout-independent.** The converted text form is
-  always addressed as `converted/<name>` even when `--converted-dir` has moved it out of the cache
-  entry; `FormsService.resolveRef` maps that prefix to the configured directory and re-checks
-  containment against whichever root it used. Never put an absolute path in a `SourceRef` — not
-  even to make one resolvable, which is what the URIs below are for.
-- **A ref a caller cannot open is half a fact.** Every result that names a file carries a
-  `SourceLocation` (`uri` + `file` + line range) and a `resource_link` content block, and
-  `read_source` takes either form back. The URIs (`resources/SourceUris.kt`) stay
-  layout-independent like the refs they mirror — an absolute host path would mean nothing under
-  the GHCR image or the HTTP transport. Sidecars are reachable by **template**
-  (`oracleforms://{module}/plsql/{category}/{name}`), never one registered resource per file: a
-  form has hundreds, and `resources/list` has no cursor in the SDK. Resource reads are capped like
-  everything else, with the cut stated *inside* the returned text — a resource read carries bytes
-  and nothing else, so a silent truncation is indistinguishable from a short file.
-- **Cache entries are fingerprinted** (size+mtime, sha256-confirmed) against the file the
-  pipeline consumed; reads throw `ModuleStaleException` on mismatch. Exception messages are
-  written for the model — they must say which tool call fixes the situation.
-- **An entry also carries the parser version that wrote it.** Nothing about a new build changes an
-  `.fmb`, so the fingerprint alone keeps a warm entry warm across an upgrade and it answers with
-  the previous build's facts forever — which is exactly what happened to the inheritance, decoding
-  and property-class fixes. `ModuleIndex.indexVersion` vs `CURRENT_INDEX_VERSION` closes that:
-  reads throw `ModuleIndexOutdatedException`, `list_modules` reports `STALE` with
-  `staleReason = INDEX_OUTDATED`, and `fetch_module` heals it by **re-parsing the converted file
-  already in the entry — never re-converting**, since the source is unchanged by definition.
-  **Bump `CURRENT_INDEX_VERSION` in the same commit as any parser change that alters what is
-  written or what a written field means.**
-- **Annotations are asserted, not derived.** They live in `AnnotationStore` (own root, separate
-  from the fingerprinted cache), keyed by a stable `ElementId` (module + kind + name + ownerPath —
-  never `SourceRef` line ranges), so they survive re-fetch and cache eviction. A source-fingerprint
-  mismatch is a `staleAgainstSource` drift flag on the served view, never a delete. Never inline
-  annotations into `ModuleIndex`.
-- **An empty body is never served as a fact.** A subclassed object stores only its overrides, so
-  its `TriggerText` is empty here while the code that runs lives in the parent module. Every read
-  that serves a body carries a `bodySource` (`own`/`inherited`/`resolved`/`empty`) and, when it is
-  `inherited`, the `InheritanceRef` plus a hint naming the exact next call. The pointer is
-  reassembled by the parser (`FormsXmlParser.inheritanceOf`) because Forms splits it across two
-  levels — `ParentModule` on the owner, `SubclassSubObject` on the child — and it is stated in the
-  *parent's* vocabulary (`BAR_LIST.SELECT` here is `name=SELECT, ownerPath=BAR` there) so it is
-  directly callable. `get_trigger`/`get_program_unit` take `resolve` to follow it, but only into
-  **already-cached** modules: converting one would break `readOnlyHint`.
-- **The `Parent*` attributes mean three different things**, and only two are inheritance.
-  `ParentFilename` (or a `ParentModule` naming another module) is a real subclassing pointer and
-  `ParentName` is the object's name *there*. `SubclassObjectGroup="true"` means the object was
-  copied in with an **object group**: it keeps its own name, and `ParentName` is the *group* — so
-  it goes in `objectGroup`, and no `ownerPath` is claimed, because where a library puts a group's
-  members is not recorded here. A `ParentModule` naming **this** module is a *property class*,
-  which supplies properties and hides nothing; it is deliberately **not** an `InheritanceRef` —
-  a real form carries dozens, and reporting them would be uncallable noise.
-- **A property Forms did not write is `null`, never `false`.** Forms2XML emits a property only
-  where it differs from the default, so `Visible`/`Required`/`Modal`/`RaiseOnEnter` and friends are
-  nullable: absence means "not overridden". `propertyClass` is confirmed against the module's own
-  declared `PropertyClass` elements in a pass at the end of parsing — `ParentType` would say so
-  directly, but its numbering is version-dependent and the XML defines it nowhere, and the
-  property classes are written *after* the objects that use them.
-- **…and on a classed object, absence is not the default either — the class decides it.** In a real
-  form most items write almost no DML properties of their own, and the class they name is usually a
-  *stub* pointing at a shared module. So the two are served separately and never merged in the
-  index: `ItemInfo.dml`/`BlockInfo.dml` are what the object wrote, and `get_block`'s `effectiveDml`
-  is item → class → the class that one is based on, resolved at serve time. Resolution follows a
-  pointer only into an **already-cached, current** module (`readOnlyHint`), and an item appears in
-  `effectiveDml` only when its whole chain resolved — that is what makes a `null` there mean the
-  Forms default. Everything unresolved is counted and named — per item in `unresolvedItems`
-  (beside the map, never as `null`s inside it), per class in `propertyClasses`, and in the
-  `hint` — never approximated.
-- **The item's *size* is one of those properties, and the rule holds for it too.** A classed item in
-  a real form writes a `Width` and no `Height` at all, so `ItemInfo.width`/`height` alone report
-  every such item as having no height — an absence indistinguishable from one nobody set.
-  `PropertyClassInfo.geometry` records what a class supplies and `get_block`'s `effectiveGeometry`
-  resolves the same chain as `effectiveDml`, with the same contract: present only when the chain
-  resolved, absent (and named in `unresolvedItems`) when it did not. An item with no size anywhere
-  in its chain is left out rather than served as a row of `null`s.
-- **Data-source columns are read, not indexed.** One form repeats the same wide base table across
-  several blocks — thousands of `DataSourceColumn` elements, hundreds of KB — so `ModuleIndex` keeps
-  only `BlockInfo.dataSourceColumnCount` and `get_block(columns=true)` reads them from the block's
-  own XML slice through `DataSourceColumnReader`. An item supplies a column by `ColumnName` with any
-  table alias dropped (a block over an inline subquery writes `S.OWNER` for the column `OWNER`), or
-  by its own name; `mandatoryColumnsWithoutItem` is the part an insert fails on.
-- **A relation is stored once, on its master.** Forms2XML writes `Relation` inside the master
-  `Block`, so that is the only place `BlockInfo.relations` holds it; `get_block`'s `detailOf` (the
-  relations naming a block as detail) is found at serve time, never indexed a second time. Relations
-  are structure, not description — served at every verbosity, and spent through the result budget
-  ahead of the items.
-- **Doubly-escaped bodies are recovered at parse time, and say so.** A converter that writes
-  `&amp;#10;` leaves the whole body on one physical line, which makes `lineCount` 1 for a whole
-  procedure and collapses every `SourceRef` onto that line. `decodeDoubleEscaped` undoes it only
-  when the text has no real line break *and* decoding introduces one, and marks the result
-  `TextEncoding.RECOVERED` — the transformation cannot be proven, so it is never invisible.
-- **The XML parser never fails on unknown vocabulary.** Forms XML is huge and version-dependent;
-  unknown elements are skipped generically (but still get an `ObjectRef` when named).
-- **Every tool** declares title, annotations, and `outputSchemaOf<Dto>()`; DTO fields are
-  defaulted so schemas stay forward-compatible. `ToolRegistrationTest` enforces this.
-- **Every tool is registered with `addCheckedTool`, never the SDK's bare `addTool`.** It checks the
-  arguments against the tool's own `inputSchema` before the handler runs — the SDK's `ToolSchema`
-  cannot say `additionalProperties: false`, so without it an argument a tool lacks is silently
-  dropped — and reports every unknown/missing/out-of-enum argument in one error, then counts every
-  `isError` in `ToolErrorTally`. So the schema *is* the contract: an argument a handler reads must
-  be declared, and a new tool that bypasses the wrapper fails
-  `ToolRegistrationTest.everyToolRejectsAnArgumentItDoesNotHave`. Write tools pass an `example`.
-- **No forms directory is a state the server serves, not an exit.** A plugin host starts the server
-  for everyone who installed it, so `ServerConfig.formsDir` is nullable: the tool list stays the
-  real one, `registerAllTools` ends by making every tool registered in it answer
-  `FORMS_DIR_NOT_CONFIGURED` (`refuseTools`, ahead of the argument check), and the instructions
-  lead with it. Resources and the prompt reach `FormsService` directly, so its entry points call
-  `requireFormsDir()` — a new one reachable from them must too. Never answer with an empty list
-  instead: an agent reads that as "there are no Forms modules here". A prefetch, and a directory
-  given but missing, are still refused at startup. `forms_dir` is optional in the plugin and MCPB
-  manifests for the same reason, and the launcher must not refuse an unset directory on its own.
-- **Every list-shaped result is bounded and says so.** Clients cap tool output (Claude Code at
-  25k tokens), and a real forms directory holds thousands of modules, so no tool may return an
-  unbounded collection: `list_modules` filters (`pattern`/`type`/`status`) then pages
-  (`limit`/opaque `cursor` → `nextCursor`), and the per-module lists cap rows with a `truncated`
-  flag beside an honest `total` (see `MAX_LIST_ROWS`/`MAX_OVERVIEW_NAMES` next to
-  `MAX_OBJECT_XML_CHARS`). Paging vocabulary is fixed: `offset`/`nextOffset` where page N is cheap
-  to recompute (`search_source`), an opaque `cursor` where it is not.
-- **A size ceiling is counted the way the result travels.** `read_source` and `get_object_xml` cap
-  on **JSON-escaped** characters (`ResultBudget.kt`), because converted XML is mostly quotes and a
-  budget counted on raw text overshoots exactly where responses are largest; both sit inside
-  `MAX_RESULT_CHARS`, which they declare to the client as
-  `_meta["anthropic/maxResultSizeChars"]` so its limit for them is the server's own number rather
-  than a token estimate. Declare that key **only** on a tool the server caps below it — on an
-  uncapped tool it lowers the client's limit instead of raising it. A cut result says where to
-  continue (`nextStartLine` plus a `hint` naming the call), because `truncated` alone gets read
-  past and the next call then starts past a hole.
-- **A cross-module scan is bounded by modules too, not only by rows.** `search_modules` reads at
-  most `MAX_MODULES_PER_SEARCH` cache entries per call, because a query that matches nothing has no
-  row cap to stop it and would read every converted file in the cache. Whichever bound stops the
-  scan, the result is `truncated` with a keyset `cursor` (module + hits already served from it) that
-  is fingerprinted against the query/scope/pattern it was minted for. Coverage is reported, never
-  assumed: un-fetched and stale modules are counted and named in the hint rather than being
-  silently absent — a search that reached a tenth of the directory must not read like one that
-  found nothing. Never search an un-cached module by converting it; `readOnlyHint` says we do not.
-- **`resources/list` stays bounded too.** It is a call the *client* issues on its own and the SDK
-  answers without a cursor, so per-module index resources are capped at the 50 most recently
-  fetched (`ModuleIndexResources`) and no startup snapshot of the cache is registered. Every
-  cached module stays reachable through `registerModuleIndexTemplate`; never re-add a
-  registration per cache entry.
-- **Exactly two files carry the version by hand**: `gradle.properties` and `server.json` (the
-  release tag guard checks both). Everything else derives it — the MCP `Implementation` version
-  via `generateVersionResource`, the MCPB manifest via the `@version@` token in
-  `server/mcpb/manifest.template.json`. Never add a third. The Claude Code plugin's `version` is
-  **not** an exception: it versions the plugin's own files (manifest + launcher), which change on
-  their own schedule, and the server build it runs is resolved at runtime — never bump it as part
-  of a release.
-- **Tool handlers run concurrently.** Since MCP SDK 0.15 the server dispatches inbound requests in
-  parallel once the handshake is done (`ServerOptions.handlerCoroutineContext`, default
-  `Dispatchers.Default`, bounded internally, no opt-out). Anything reachable from a tool must be
-  safe for that: `FormsService.fetchModule` holds a per-`ModuleKey` `Mutex`,
-  `OnDiskModuleCache.putIndex` writes-then-renames, `OnDiskAnnotationStore` serialises on
-  `writeMutex`, and `addModuleIndexResource` tolerates a lost registration race. Lock order is
-  always per-module fetch lock → `sharedOutputLock`, never the reverse.
-- **Nothing is keyed on the MCP session.** Since SDK 0.16, HTTP sessions expire after 30 min idle
-  (`SESSION_IDLE_TIMEOUT` in `HttpTransport.kt`; an in-flight call holds one, an open `GET` does
-  not), and the 2026-07-28 spec revision drops sessions altogether. All state lives in
-  `FormsService`, the cache and the annotation store, keyed by module or element; paging is
-  opaque cursors/offsets. The only session-bound features — `list_changed` notifications and the
-  log forwarder — stay isolated in `ModuleIndexResources` and `Logging.kt`.
-- Public API changes require `gradlew updateKotlinAbi` (KGP ABI validation on `core`).
+- **stdout is the stdio protocol channel.** All logging goes to stderr; never `println`.
+- **Index JSON stays small.** Never inline PL/SQL into `ModuleIndex`; reference it by `SourceRef`.
+- **`SourceRef` paths are cache-relative.** Never put an absolute path in one.
+- **Bump `CURRENT_INDEX_VERSION` in the same commit** as any parser change that alters what is
+  written or what a written field means.
+- **Every tool declares title, annotations and `outputSchemaOf<Dto>()`, and registers with
+  `addCheckedTool`,** never the SDK's bare `addTool`. `ToolRegistrationTest` enforces both.
+- **Every list-shaped result is bounded and says so.** No tool may return an unbounded collection.
+- **Exactly two files carry the version by hand:** `gradle.properties` and `server.json`.
+- **Tool handlers run concurrently.** Anything reachable from a tool must be safe for that. Lock
+  order is always per-module fetch lock → `sharedOutputLock`, never the reverse.
 
 ## Gotchas
 
 - Kotlin nests block comments: a glob like `plsql/**` or `*.sql` after a `/` inside KDoc opens
   an unclosed nested comment. Spell paths without `/*` sequences in doc comments.
-- StAX reports an event's **end** location; `FormsXmlParser` derives element start lines from
-  the previous event's end (see `startLineOf`). Pinned by `objectRefSlicesReparseAsXml`.
-- Oracle tools: looked for in `ORACLE_HOME/bin`, then `FORMS_INSTANCE/bin` (Linux Forms 12c+ has
-  `frmf2xml` only as `frmf2xml.sh` there). `frmf2xml` writes to the process **cwd** on Windows but
-  **next to its input** on Linux 14.1.2, so it converts a *copy* of the module in a per-run
-  staging dir inside the target (cwd = that dir) and the result is moved out — never point it at
-  the module in place, the forms dir may be read-only. Outside Windows the tools get
-  `TERM=vt220` / `FORMS_API_TK_BYPASS=TRUE` when unset — `TERM=dumb` counts as unset, it fails
-  the same way (`headlessEnv`): without them a host's
-  minimal environment fails `frmcmp_batch` (`FRM-91500`) and `frmf2xml` (no display).
-  Exit codes are unreliable — success is judged by the output file. `frmcmp_batch` over `frmcmp`.
-  `--convert-command` swaps in a site-supplied converter on the same cwd convention
-  (`CustomCommandModuleConverter`); precedence is command → `ORACLE_HOME` → copy-mode. It is a
-  **whole command line**, not an executable: `ConvertCommandSpec` splits it into argv (quoted
-  string with literal backslashes, or a JSON array) and substitutes the module path for `{}`,
-  appending it when `{}` is absent. A value naming an existing file is taken whole — that is what
-  keeps unquoted `C:\Program Files\…` configs working, so keep that check ahead of tokenizing. The
-  command is **operator config only** — never reachable from a tool argument — and is spawned with
-  an argv list, never a shell. All four channels pass it as one string (flag, env var, two
-  `user_config` text fields), so the split has to live in the server. `--converted-dir` **is** that
-  cwd: conversion runs directly in `FormsService.convertedDirOf(key)` and
-  `canonicalizeConverted` only renames the result to `ModuleKey.convertedFileName` in place. What keeps
-  one shared directory unambiguous is `OutputRun` — a run's output is only a file it *produced*,
-  canonical name first, and a freely named fallback never one named as another module's text form
-  (`ModuleType.matchConverted`) — plus `FormsService.sharedOutputLock`, which serialises each conversion **together with its
-  `canonicalizeConverted` rename** whenever `--converted-dir` is set: a freely named output is
-  overwritable by the next run until it carries its module's name. Both options also read `OFMCP_CONVERT_COMMAND` /
-  `OFMCP_CONVERTED_DIR` (flag wins), and the `configured()` converter in `Main.kt` treats blank *and* an unsubstituted
-  `${user_config.…}` template as unset (cli-kit's `unsetWhen`) — that is how the MCPB/plugin channels pass "not set". Shared output/exit-code handling lives in `ConversionSupport.kt`: a file counts
-  as produced only when it is fresh (not older than `startedAt` minus the 2s FAT slack) **and** new or
-  changed (mtime+size) since the directory listing `OutputRun.begin` takes — freshness alone takes
-  the sibling converted a moment ago. So a converter that copies with preserved mtimes (`copy`,
-  `cp -p`) reads as having produced nothing.
-- `--compile-command` (`OFMCP_COMPILE_COMMAND`) is a second command of the same kind for `.pll`
-  only, because `frmf2xml` rejects libraries and a `--convert-command` built on it loses them all.
-  `ModuleConverters.forEnvironment` wraps the usual choice in `ByModuleTypeConverter`, so a `.pll`
-  goes compile → convert → `ORACLE_HOME` → copy and every other type is untouched; unset, nothing is
-  wrapped. `frmcmp` writes the `.pld` **next to the module**, whatever its cwd, unless given
-  `Output_File` — hence `{out}` (the absolute canonical output path, substituted in the same single
-  pass as `{}`, **never appended**) and the stray-file hint on "produced no output file". `{start}`
-  is the third placeholder in that pass (the server's start directory, never appended): a relative
-  *program* is resolved against it, but an argument is resolved by the child in its own cwd, so a
-  file beside the server reaches an interpreter only as `{start}/…`. Messages
-  name the right option through the internal `ConverterOption`, whose fallback advice differs per
-  option. **Whether a module's binary or its text form is consumed — and fingerprinted — is
-  `ModuleConverter.convertsBinary(type)`, asked per module type.** Never re-derive it from the
-  configuration in the server: with only `--compile-command` set, forms stay in copy-mode, and a
-  form fingerprinted against its `.fmb` would never go stale when its XML is re-exported
-  (`PerTypeConversionTest`).
-- This project deliberately does NOT add a custom `SegmentTemplateMatcher` (the SDK default
-  matcher works); see `.claude/rules/server.md` for the shadowing cause and the
-  `ModuleResourcesTest.sdkDefaultMatcherExtractsTheModuleSegment` regression canary.
-- Tests never require an Oracle installation: converter tests build a fake `ORACLE_HOME` with
-  stub `.bat`/sh scripts (`FakeOracleHome`); the copy-mode pipeline is covered by
-  `FormsServiceIntegrationTest` against `fixtures/`. Classpath fixtures under `/fixtures/**`
-  are not checked in per module — the build copies them from the canonical repo-root
-  `sample-forms/` dir (also the demo dir for `--forms-dir`).
+- Tests never require an Oracle installation: converter tests build a fake `ORACLE_HOME` with stub
+  `.bat`/sh scripts (`FakeOracleHome`), and the copy-mode pipeline is covered by
+  `FormsServiceIntegrationTest`. Classpath fixtures under `/fixtures/**` are copied by the build from
+  the canonical repo-root `sample-forms/` dir (also the demo dir for `--forms-dir`).
 
 ## Commands
 
 ```
 gradlew build                 # everything, incl. tests
 gradlew :core:jvmTest         # core tests only
-gradlew updateKotlinAbi       # refresh core/api/*.api after public API changes
+gradlew updateKotlinAbi       # required after public API changes (KGP ABI validation on core)
 gradlew :server:installDist   # launcher at server/build/install/server/bin/server(.bat)
 gradlew :server:packageMcpb   # .mcpb desktop bundle at server/build/mcpb/
 gradlew :server:run --args="--forms-dir sample-forms"
@@ -312,15 +68,5 @@ downloading a release:
 claude --plugin-dir ./plugins/oracle-forms
 ```
 
-## Claude Code setup
-
-The committed `.claude/` config is shareable (public repo); only `settings.local.json`,
-`plans/`, and `CLAUDE.local.md` are gitignored.
-
-- **Stop hook** (`.claude/hooks/stop-verify.sh`) runs `:server:compileKotlin` before a turn
-  ends, but only when `.kt/.kts` changed — a fast compile gate. Bypass a known-good stop via
-  `/hooks`.
-- **Path-scoped rules** auto-load when you edit matching sources: `.claude/rules/core.md`
-  (`core/src/**`) and `.claude/rules/server.md` (`server/src/**`).
-- **Skill:** `/release <version>` (bump the two guarded files + changelog, pre-flight, tag).
-- **Code review** comes from the `review-kit` plugin, not from config committed here.
+A Stop hook (`.claude/hooks/stop-verify.sh`) runs `:server:compileKotlin` before a turn ends when
+`.kt/.kts` files changed.

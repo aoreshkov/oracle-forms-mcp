@@ -39,7 +39,10 @@
       "WebFetch(domain:code.claude.com)",
       "WebFetch(domain:github.com)"
     ],
-    "deny": []
+    "deny": [
+      "Edit(/assets/icon.svg)",
+      "Edit(/assets/icon-512.png)"
+    ]
   },
   "hooks": {
     "Stop": [
