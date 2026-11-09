@@ -120,7 +120,7 @@ and the MCP registry). Fix a bad release by cutting the next version, not by mov
 
 Summarize: old → new version, the two files updated, changelog entry, pre-flight results
 (description/title length, MCPB bundle build, gradlew mode, checkKotlinAbi, build status, local
-guard simulation), and whether a tag was pushed or is pending. Note that the tag publishes four
+guard simulation), and whether a tag was pushed or is pending. Note that the tag publishes three
 things: the GitHub release (zip + its `.sha256` + `.mcpb`), the GHCR image, and the MCP Registry
 listing. It also moves the Claude Code plugin's `stable` branch, once the release assets are live,
 so everything changed under `plugins/oracle-forms/` since the last release reaches users with it.

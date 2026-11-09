@@ -62,7 +62,10 @@ AI →  annotate_element ORDERS trigger WHEN-VALIDATE-ITEM kind=note "Legacy pre
 ## How it works
 
 1. `list_modules` scans the configured `--forms-dir` (non-recursive) and reports each module's
-   cache status: `NOT_CACHED`, `CACHED`, `STALE` (source changed on disk), or `SOURCE_MISSING`.
+   cache status: `NOT_CACHED`, `CACHED`, `STALE`, or `SOURCE_MISSING`. A `STALE` row's
+   `staleReason` says why: the source changed on disk (`SOURCE_CHANGED`), which a re-fetch
+   re-converts, or an older build of this server wrote the index (`INDEX_OUTDATED`), which a
+   re-fetch only re-parses.
    A production forms directory holds thousands of modules, so the answer is filtered and paged:
    narrow with `pattern`/`type`/`status`, follow `nextCursor` for the rest, and read
    `countsByStatus` for the shape of the whole match.
@@ -317,7 +320,8 @@ Details, configuration options, and the escape hatches are in the
 
 ### Build from source
 
-Requires a JDK 25+ to build (Gradle provisions one if missing) and a JRE 25+ to run. Build and install:
+Building works from any JDK 17+ that can start the wrapper (Gradle downloads JDK 25 for its daemon
+and the toolchain when none is installed). Running needs a JRE 25+. Build and install:
 
 ```
 gradlew :server:installDist
@@ -511,10 +515,10 @@ directory, in either spelling:
 | `--converted-dir` | `OFMCP_CONVERTED_DIR` |
 | `--host` | `OFMCP_HTTP_HOST` |
 
-`--convert-command` and `--converted-dir` are also exposed as configuration in the
-[Claude Code plugin](plugins/oracle-forms/README.md#configuration), and all three in
-the `.mcpb` bundle (Claude Desktop's connector settings) and the registry listing for the Docker
-image — so whichever channel you install from, you can point the server at your own converter and
+`--convert-command`, `--compile-command` and `--converted-dir` are also exposed as configuration
+in the [Claude Code plugin](plugins/oracle-forms/README.md#configuration), the `.mcpb` bundle
+(Claude Desktop's connector settings) and the registry listing for the Docker image — so whichever
+channel you install from, you can point the server at your own converter and
 your own output directory without editing JSON by hand. Leaving any of them unset is always valid:
 an empty value counts as "not configured".
 
