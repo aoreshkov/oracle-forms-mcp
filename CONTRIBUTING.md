@@ -19,6 +19,7 @@ you invest time.
 ./gradlew build     # compiles all modules, runs tests and API checks
 ./gradlew :core:jvmTest :server:test    # unit tests only (core is KMP — a bare `test` skips it)
 ./gradlew :server:run --args="--forms-dir sample-forms"   # run the MCP server locally
+./gradlew :server:packageMcpb    # build the installable .mcpb bundle
 ```
 
 ## Project conventions

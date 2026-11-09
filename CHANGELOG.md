@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The README's long reference sections moved to a new `guide/` directory.** Installing for other
+  MCP clients, configuration, converters, the cache layout and how to read tool results each have a
+  page of their own, linked from the README.
+
 ## [0.20.0] - 2026-11-07
 
 This release changes the Claude Code plugin. The server's code is the same as in 0.19.0.

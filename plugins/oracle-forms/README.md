@@ -61,7 +61,7 @@ Either way, the values are stored in your user `settings.json` under `pluginConf
 The three optional ones are handed to the server as `OFMCP_CONVERT_COMMAND`,
 `OFMCP_COMPILE_COMMAND` and `OFMCP_CONVERTED_DIR` (see the [escape hatches](#escape-hatches) table)
 rather than as command-line arguments, so leaving them unset can never shift the argument list.
-Details in the [main README](https://github.com/aoreshkov/oracle-forms-mcp#using-your-own-converter).
+Details in the [converters guide](https://github.com/aoreshkov/oracle-forms-mcp/blob/main/guide/converters.md#using-your-own-converter).
 
 ## How the server gets here
 
