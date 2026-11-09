@@ -42,6 +42,36 @@ you invest time.
   hints explicitly as `fetch_module`/`remove_annotation` do), and an `outputSchema`
   (`outputSchemaOf<Dto>()`).
 
+## Changes that need an extra step
+
+- **Parser changes: bump `CURRENT_INDEX_VERSION`** in `ModuleIndex.kt`, in the same commit, whenever
+  a change alters what the parser writes or what a written field means. An upgrade changes no
+  `.fmb`, so without the bump an existing cache looks current and keeps serving the old parser's
+  answers. No test catches a missed bump.
+- **Plugin changes: bump the plugin's `version`** in
+  `plugins/oracle-forms/.claude-plugin/plugin.json`, which is separate from the server's version.
+  Claude Code updates an installed plugin only when that field changes. CI fails if anything under
+  `plugins/oracle-forms/` except its `README.md` differs from the `stable` branch while `version`
+  still matches `stable`. One bump covers a release cycle, so if `main` already has a newer
+  `version` than `stable`, you don't need another.
+- **Changes to the `trace-form` skill or its description: run the evals** and compare with the
+  baseline in [evals/README.md](evals/README.md). They need Linux or WSL and a JDK 25+ on `PATH`,
+  and they make real model calls, against your plan's usage or your API bill, so nothing runs them
+  automatically.
+
+  ```sh
+  ./gradlew :server:installDist
+  bash evals/run.sh --model sonnet
+  ```
+
+- **Changes to the command line: regenerate the help page.** `HelpPageTest` compares `--help` with
+  `server/src/test/resources/golden/help-root.txt`, so a changed option fails the build until you
+  run the command below. Read the diff before committing it.
+
+  ```sh
+  ./gradlew :server:test "-Pgolden.update=true"
+  ```
+
 ## Pull requests
 
 1. Fork, create a topic branch from `main`.
