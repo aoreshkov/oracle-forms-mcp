@@ -10,7 +10,7 @@
 # text (`*_fmb.xml`/`*_mmb.xml`/`*_olb.xml`/`*.pld`) sitting next to the modules in
 # the mounted forms dir. For live .fmb/.pll conversion, run the server on a host
 # that has an Oracle Forms installation (ORACLE_HOME set) instead.
-FROM eclipse-temurin:25-jre@sha256:ecdc0adb37bde1a281c4d245a3cd535004b1fc8322d560f5b09463b248c81df0
+FROM eclipse-temurin:25-jre@sha256:a640968ae55027b322cedd5f8228b01a84baff0b9e9360e47601c6a111ba1699
 
 LABEL org.opencontainers.image.source="https://github.com/aoreshkov/oracle-forms-mcp" \
       org.opencontainers.image.licenses="Apache-2.0" \
